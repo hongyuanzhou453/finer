@@ -22,11 +22,11 @@ None.
 
 ## Non-blocking Issues
 
-### 1. Minor spec-code discrepancy on PolicyMappingResult fields
+### 1. ~~Minor spec-code discrepancy on PolicyMappingResult fields~~ **FIXED (2026-04-28)**
 
-- **Spec**: `docs/specs/f-stage-contracts.md` F4 section lists `direction`, `target_name`, `target_symbol` as fields inherited from F3 on PolicyMappingResult
-- **Code**: `src/finer/schemas/policy.py` — PolicyMappingResult does NOT carry `direction`/`target_name`/`target_symbol`. It references the intent via `intent_id` only
-- **Assessment**: The code's approach is architecturally cleaner (F4 cannot accidentally modify direction since it doesn't own a copy). Recommended to update the spec to match the code.
+- ~~**Spec**: `docs/specs/f-stage-contracts.md` F4 section lists `direction`, `target_name`, `target_symbol` as fields inherited from F3 on PolicyMappingResult~~
+- ~~**Code**: `src/finer/schemas/policy.py` — PolicyMappingResult does NOT carry `direction`/`target_name`/`target_symbol`. It references the intent via `intent_id` only~~
+- **Resolution**: Spec updated to match code. PolicyMappingResult now correctly shows `intent_id` reference instead of copied F3 fields. Also aligned `action_hint`/`position_sizing_hint`/`holding_period_hint` to match actual string-literal types, and removed non-existent `stop_loss_pct`/`take_profit_pct`/`entry_condition`/`exit_condition`/`confidence_adjustment`/`max_holding_days` fields from the spec.
 
 ### 2. Pre-existing L/V naming in unmodified files
 

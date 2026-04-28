@@ -346,10 +346,10 @@ IntentExtractionResult(          # 批量容器
 
 ## F4: Policy（策略映射）
 
-- **Purpose**: 将 F3 的抽象 Intent 转换为可执行的 TradeAction 参数。**F4 是 Intent -> TradeAction 的唯一合法桥接。**
-- **Maturity Status**: `placeholder`（整个 F4 层代码缺失）
+- **Purpose**: 根据策略规则，将 F3 的抽象 Intent 映射为动作/仓位/持仓期 hint。F4 输出 hint，不输出 TradeAction。**F4 是 Intent -> 策略 hint 的唯一合法层。**
+- **Maturity Status**: `beta`（GlobalBasePolicy + PolicyMapper 已实现，StyleArchetype/KOLPersona 策略层待补）
 - **Allowed Input**: F3 `NormalizedInvestmentIntent[]`
-- **Required Output**: `PolicyMappedIntent[]`（Intent + policy 参数：仓位比例、时间范围、风险约束）
+- **Required Output**: `PolicyMappingResult[]`（Intent + 动作 hint + 仓位 hint + 持仓期 hint + 风险约束，不生成 TradeAction）
 
 > **CRITICAL BOUNDARY: F4 is the only legal Intent-to-TradeAction policy mapping layer.**
 > 任何绕过 F4 直接从 Intent 或原始文本生成 TradeAction 的路径，均为 legacy/deprecated。同一句"加仓"在不同 KOL 风格下应产生不同的仓位/持仓期/动作强度。
@@ -358,29 +358,29 @@ IntentExtractionResult(          # 批量容器
 
 ```python
 PolicyMappingResult(
-    policy_id: str,
-    intent_id: str,              # -> F3 Intent
-    policy_version: str,         # 使用的 policy 版本
+    policy_id: str,              # UUID，唯一标识
+    intent_id: str,              # -> F3 NormalizedInvestmentIntent
+    creator_id: Optional[str],   # 内容创作者 / KOL 标识
+    kol_id: Optional[str],       # creator_id 的别名，至少设一个
+    policy_version: str,         # 使用的 policy 版本（如 "global-base-v1"）
     policy_layers_applied: List[str],  # ["GlobalBase", "StyleArchetype", "KOLPersona"]
 
-    # 从 F3 Intent 继承（不修改）
-    direction: str,
-    target_name: str,
-    target_symbol: str,
+    # F4 生成的动作/仓位/持仓期 hint（是 hint，不是成交事实）
+    action_hint: Literal["watch_only", "consider_buy", "consider_sell",
+                         "review_required", "no_action"],
+    position_sizing_hint: Literal["none", "small", "medium", "large"],
+    holding_period_hint: Literal["intraday", "short_term", "medium_term",
+                                  "long_term", "review_required"],
 
-    # F4 生成
-    position_sizing_hint: float,       # 仓位比例提示 (0.0-1.0) -- 是 hint，不是成交事实
-    max_holding_days: int,             # 最大持仓天数
-    stop_loss_pct: Optional[float],    # 止损比例
-    take_profit_pct: Optional[float],  # 止盈比例
-    entry_condition: Optional[str],    # 入场条件描述
-    exit_condition: Optional[str],     # 出场条件描述
-    confidence_adjustment: float,      # policy 调整后的置信度
+    # 风险约束
+    risk_constraints: PolicyRiskConstraints,
 
     # 审计
-    mapping_rationale: str,            # 映射理由（human-readable）
-    metadata: dict,
+    mapping_rationale: str,      # 映射理由（human-readable）
 )
+```
+
+> **注意**：PolicyMappingResult **不复制** F3 的 `direction` / `target_name` / `target_symbol` / `conviction` 字段，而是通过 `intent_id` 引用上游 Intent。这是有意设计：F4 只有权写 hint，不能修改 F3 的方向或目标信息，避免策略层无意中改变信号语义。
 
 # Policy Context (输入到 F4)
 PolicyContext(
