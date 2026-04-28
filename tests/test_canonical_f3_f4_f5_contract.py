@@ -341,20 +341,20 @@ class TestCanonicalTraceContract:
         assert ta.canonical_trace_status in ("partial", "non_canonical")
 
     def test_no_evidence_span_ids_partial(self):
-        """Without evidence_span_ids, trace is partial (needs at least
-        intent_id + policy_id for canonical)."""
+        """Without evidence_span_ids, trace is partial even with intent_id + policy_id.
+        canonical requires: intent_id + policy_id + len(evidence_span_ids) >= 1."""
         ta = TradeAction(
             intent_id="intent-001",
             policy_id="policy-001",
-            # evidence_span_ids defaults to []
+            # evidence_span_ids defaults to [] — empty → cannot be canonical
             source=SourceInfo(content_id="test", evidence_text="Test"),
             target=TargetInfo(ticker="AAPL"),
             direction=TradeDirection.BULLISH,
         )
-        # With both intent_id and policy_id present, status should be canonical
-        # even if evidence_span_ids is empty (per current implementation).
-        # The empty evidence_span_ids is a data quality issue, not a trace issue.
-        assert ta.canonical_trace_status == "canonical"
+        assert ta.canonical_trace_status == "partial"
+        assert ta.intent_id is not None
+        assert ta.policy_id is not None
+        assert len(ta.evidence_span_ids) == 0
 
     def test_no_trace_ids_at_all_is_non_canonical(self):
         """No upstream IDs at all -> non_canonical (legacy path)."""

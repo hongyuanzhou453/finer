@@ -440,7 +440,12 @@ Global Base Policy          -> 通用语言->动作基准映射
 - **Required Output**: `TradeAction[]`，每条 **必须** 包含 `intent_id`, `policy_id`, `evidence_span_ids`
 
 > **CRITICAL BOUNDARY: F5 canonical TradeAction MUST include intent_id, policy_id, evidence_span_ids.**
-> 这三个字段是 TradeAction 可审计性的必要条件。缺少任一字段的 TradeAction 不得进入 F6 Review 或 F8 Backtest。
+> 这三个字段是 TradeAction 可审计性的必要条件。`canonical_trace_status` 的判定：
+> - **canonical**: intent_id present + policy_id present + len(evidence_span_ids) >= 1
+> - **partial**: intent_id 或 policy_id 存在，但 evidence_span_ids 为空，或三者不完整
+> - **non_canonical**: 没有 intent_id **且** 没有 policy_id（legacy direct-extraction）
+> 
+> 只有 canonical 状态允许进入 F6 Review 和 F8 Backtest。
 
 ### 输出 Schema
 

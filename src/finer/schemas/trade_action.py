@@ -467,7 +467,8 @@ class TradeAction(BaseModel):
     evidence_span_ids: List[str] = Field(
         default_factory=list,
         description="Reference to F2 EvidenceSpan.evidence_span_id entries. "
-                    "Canonical TradeActions SHOULD have at least one evidence span. "
+                    "Canonical TradeActions MUST have at least one evidence span. "
+                    "Required for canonical_trace_status='canonical' (together with intent_id + policy_id). "
                     "Empty list indicates no evidence traceability."
     )
 
@@ -482,9 +483,9 @@ class TradeAction(BaseModel):
     canonical_trace_status: str = Field(
         "non_canonical",
         description="Indicates whether the F3→F4→F5 trace chain is complete. "
-                    "'canonical': intent_id + policy_id both present and non-empty. "
-                    "'partial': at least one upstream ID present but not both. "
-                    "'non_canonical': no upstream IDs (legacy direct-extraction path)."
+                    "'canonical': intent_id + policy_id + len(evidence_span_ids) >= 1. "
+                    "'partial': at least one upstream ID present but evidence_span_ids empty or incomplete triple. "
+                    "'non_canonical': no intent_id AND no policy_id (legacy direct-extraction path)."
     )
 
     # =========================================================================
@@ -622,11 +623,18 @@ class TradeAction(BaseModel):
 
     @model_validator(mode='after')
     def validate_canonical_trace(self) -> TradeAction:
-        """Auto-set canonical_trace_status based on upstream ID presence."""
+        """Auto-set canonical_trace_status based on upstream ID presence.
+
+        canonical  = intent_id present + policy_id present + at least 1 evidence_span_id
+        partial    = intent_id and/or policy_id present, but evidence_span_ids empty
+                      or only one upstream ID present
+        non_canonical = no intent_id AND no policy_id (legacy direct-extraction)
+        """
         has_intent = bool(self.intent_id)
         has_policy = bool(self.policy_id)
+        has_evidence = len(self.evidence_span_ids) >= 1
 
-        if has_intent and has_policy:
+        if has_intent and has_policy and has_evidence:
             self.canonical_trace_status = "canonical"
         elif has_intent or has_policy:
             self.canonical_trace_status = "partial"

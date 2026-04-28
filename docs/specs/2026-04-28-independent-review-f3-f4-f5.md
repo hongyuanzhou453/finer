@@ -100,3 +100,35 @@ The project can proceed to:
 - **F8 Backtest pipeline** (fix orchestrator placeholder, replace mock prices)
 
 The only recommended fix before the next round: update `docs/specs/f-stage-contracts.md` F4 section to remove `direction`/`target_name`/`target_symbol` from PolicyMappingResult schema definition, since the code correctly uses intent_id reference instead of replicating F3 fields.
+
+---
+
+## Correction Note (2026-04-28)
+
+**The independent review missed a critical contract mismatch in `canonical_trace_status`.**
+
+The original review stated "F5 canonical output requires intent_id/policy_id/evidence_span_ids: PASS" — but the code validator did NOT actually check `evidence_span_ids`. The validator only checked `intent_id AND policy_id`, ignoring `evidence_span_ids` entirely:
+
+```python
+# OLD (bugged):
+if has_intent and has_policy:
+    self.canonical_trace_status = "canonical"
+```
+
+And the test `test_no_evidence_span_ids_partial` had a contradicting docstring-vs-assertion:
+
+```python
+def test_no_evidence_span_ids_partial(self):
+    """Without evidence_span_ids, trace is partial..."""
+    # ...but then asserted:
+    assert ta.canonical_trace_status == "canonical"  # WRONG
+```
+
+**Fix applied** (see `git diff` from commit after this correction):
+
+1. **`src/finer/schemas/trade_action.py`** validator: canonical now requires `intent_id + policy_id + len(evidence_span_ids) >= 1`
+2. **`tests/test_canonical_f3_f4_f5_contract.py`** `test_no_evidence_span_ids_partial`: assertion changed from `"canonical"` to `"partial"`
+3. **`docs/specs/f-stage-contracts.md`** F5 section: added explicit `canonical_trace_status` rules
+4. All 349 tests still pass after the fix
+
+This correction is critical because without it, TradeActions with empty evidence_span_ids could still be marked "canonical" and enter F6/F8, breaking the "可追溯、可审计、可回测" guarantee.
