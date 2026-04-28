@@ -186,7 +186,7 @@ def build_manifest_asset(
         type=extension,
         status=status,
         workflowStage=workflow_stage,
-        stageBadge=STAGE_BADGE_BY_WORKFLOW.get(workflow_stage, "L2"),
+        stageBadge=STAGE_BADGE_BY_WORKFLOW.get(workflow_stage, "F1"),
         creatorName=creator_name,
         sourcePlatform=manifest.get("source_platform", "unknown"),
         contentType=content_type,

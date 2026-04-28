@@ -99,9 +99,9 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     "比亚迪":   ("1211.HK", "HK", "ticker"),
     "1211":    ("1211.HK", "HK", "ticker"),
 
-    "理想汽车": ("2015.HK", "HK", "ticker"),
-    "理想":     ("2015.HK", "HK", "ticker"),
-    "LI":      ("2015.HK", "HK", "ticker"),
+    "理想汽车": ("LI",     "US", "ticker"),
+    "理想":     ("LI",     "US", "ticker"),
+    "LI":      ("LI",     "US", "ticker"),
 
     "蔚来":     ("NIO",    "US", "ticker"),
     "NIO":     ("NIO",    "US", "ticker"),
@@ -147,6 +147,21 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     # ── Others (from enrichment, mapped to real tickers) ───────────────────
     "禾赛":     ("HSAI",  "US", "ticker"),
     "泡泡玛特": ("9992.HK", "HK", "ticker"),
+
+    # ── Cat Lord fixture entities (net-new, others updated in-place above) ───
+    "宝丰能源": ("600989.SH", "CN", "ticker"),
+    "600989":  ("600989.SH", "CN", "ticker"),
+
+    "阿特斯":   ("CSIQ",   "US", "ticker"),
+    "阿特斯太阳能": ("CSIQ", "US", "ticker"),
+    "CSIQ":    ("CSIQ",   "US", "ticker"),
+
+    # ── Sectors / Themes ────────────────────────────────────────────────────
+    "绿电":     ("GREEN_POWER", "CN", "sector"),
+    "储能":     ("ENERGY_STORAGE", "CN", "sector"),
+    "算电协同": ("COMPUTE_POWER", "CN", "sector"),
+    "新能源":   ("NEW_ENERGY", "CN", "sector"),
+    "光模块":   ("OPTICAL_MODULE", "CN", "sector"),
 }
 
 

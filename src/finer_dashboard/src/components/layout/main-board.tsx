@@ -24,7 +24,7 @@ export function MainBoard({
   children,
   title = "探索器",
   subtitle = "围绕证据、事件与结果组织你的研究流程。",
-  tier = "L0",
+  tier = "F1",
   stageLabel = "WORKFLOW",
   importLabel = "Import Asset",
   searchPlaceholder = "搜索资产或事件...",

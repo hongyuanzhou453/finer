@@ -24,6 +24,14 @@ except ImportError:
     _PERF_TRACKER_AVAILABLE = False
 
 WORKFLOW_BY_TIER = {
+    # F-stage canonical keys
+    "F0": "intake",
+    "F1": "library",       # Standardize (merged L2 library + L3 parsing)
+    "F2": "enrichment",    # Anchor
+    "F5": "extraction",    # Execute
+    "F6": "review",
+    "F8": "backtest",
+    # Legacy L-tier keys (backward compat, deprecated)
     "L0": "intake",
     "L1": "enrichment",
     "L2": "library",
@@ -34,13 +42,13 @@ WORKFLOW_BY_TIER = {
 }
 
 STAGE_BADGE_BY_WORKFLOW = {
-    "intake": "L0",
-    "enrichment": "L1",
-    "library": "L2",
-    "parsing": "L3",
-    "extraction": "L5",
-    "review": "L6",
-    "backtest": "L8",
+    "intake": "F0",
+    "enrichment": "F2",
+    "library": "F1",
+    "parsing": "F1",
+    "extraction": "F5",
+    "review": "F6",
+    "backtest": "F8",
 }
 
 # Pre-compiled regex for timestamp extraction

@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.get("")
 async def get_files(
-    tier: str = Query("L2"),
+    tier: str = Query("F1"),
     source_type: Optional[str] = Query(None),
     source_group_id: Optional[str] = Query(None),
     sort_by: str = Query("file_timestamp"),
@@ -68,7 +68,7 @@ async def upload_file(file: UploadFile = File(...)):
             "message": f"File {file.filename} imported into canonical intake inbox",
             "path": str(file_path),
             "workflow": "intake",
-            "stageBadge": "L0"
+            "stageBadge": "F0"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to upload file")

@@ -27,53 +27,46 @@ type WorkflowItem = {
 
 const workflowItems: WorkflowItem[] = [
   {
-    tier: "L0",
+    tier: "F0",
     label: "Intake",
-    description: "原始素材入库与路由",
+    description: "多源内容接入与原始归档",
     icon: ArrowRightLeft,
-    badge: "L0",
+    badge: "F0",
   },
   {
-    tier: "L1",
-    label: "Enrichment",
-    description: "话题拆分与标的归类",
-    icon: Network,
-    badge: "L1",
-  },
-  {
-    tier: "L2",
-    label: "Library",
-    description: "标准化知识资产池",
+    tier: "F1",
+    label: "Standardize",
+    description: "内容标准化与 Block 拆分",
     icon: BookMarked,
-    badge: "L2",
+    badge: "F1",
   },
   {
-    tier: "L3",
-    label: "Parsing",
-    description: "OCR、视觉转录与上下文",
-    icon: Layers3,
-    badge: "L3",
+    tier: "F2",
+    label: "Anchor",
+    description: "质量评估与实体/时间锚定",
+    icon: Network,
+    badge: "F2",
   },
   {
-    tier: "L5",
-    label: "Extraction",
-    description: "候选事件与意图链",
+    tier: "F5",
+    label: "Execute",
+    description: "投资意图提取与交易执行",
     icon: Bot,
-    badge: "L5",
+    badge: "F5",
   },
   {
-    tier: "L6",
+    tier: "F6",
     label: "Review",
-    description: "字段修正与歧义裁决",
+    description: "人工复核与歧义裁决",
     icon: CheckCircle2,
-    badge: "L6",
+    badge: "F6",
   },
   {
-    tier: "L8",
+    tier: "F8",
     label: "Backtest",
-    description: "结果验证与收益复盘",
+    description: "策略回测与 KOL 评估",
     icon: Gauge,
-    badge: "L8",
+    badge: "F8",
   },
 ];
 
@@ -118,9 +111,9 @@ export function Sidebar({
     workflowItems.find((item) => item.tier === activeTier) ?? workflowItems[1];
 
   const pulseItems = [
-    { label: "Ingest", value: stats.intake.toString(), tone: "text-[var(--accent-teal)]" },
-    { label: "Library", value: stats.library.toString(), tone: "text-[var(--accent-gold)]" },
-    { label: "Review", value: stats.review.toString(), tone: "text-morningstar-red" },
+    { label: "F0 Intake", value: stats.intake.toString(), tone: "text-[var(--accent-teal)]" },
+    { label: "F1 Std", value: stats.library.toString(), tone: "text-[var(--accent-gold)]" },
+    { label: "F6 Review", value: stats.review.toString(), tone: "text-morningstar-red" },
   ];
 
   return (
@@ -314,7 +307,7 @@ export function Sidebar({
               Pipeline badges remain visible
             </div>
             <p className="mt-3 text-[12px] leading-relaxed text-[var(--ink-soft)]">
-              `L0-L8` 现在只作为证据链和运行状态的标识，不再作为主导航心智模型。
+              F0-F8 作为证据链和运行状态的标识，对应 canonical pipeline 各阶段。
             </p>
           </div>
         </div>

@@ -164,7 +164,7 @@ export function BilibiliConfig() {
       if (res.ok) {
         setTranscribeProgress(100);
         setTranscribeStatus("success");
-        setTranscribeMessage(`转录完成，已保存到 ${data.transcript_path || "L0"}`);
+        setTranscribeMessage(`转录完成，已保存到 ${data.transcript_path || "F0"}`);
         // Reload history
         await loadHistory();
       } else {

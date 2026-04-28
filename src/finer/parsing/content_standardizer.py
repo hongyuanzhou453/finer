@@ -48,8 +48,12 @@ HEADING_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$')
 UNORDERED_LIST_PATTERN = re.compile(r'^[\-\*\+]\s+(.+)$')
 ORDERED_LIST_PATTERN = re.compile(r'^\d+\.\s+(.+)$')
 
-# Table placeholder: lines containing | or starting with +-
-TABLE_PATTERN = re.compile(r'^\s*\|.*\|\s*$|^[-+|]+\s*$')
+# Table placeholder: lines containing | as column separators, or +--/+= style table borders
+# Excludes standalone --- (markdown horizontal rule) and --- with spaces
+TABLE_PATTERN = re.compile(r'^\s*\|.+\|\s*$')
+TABLE_BORDER_PATTERN = re.compile(r'^[\s\|+\-=]*(?:\||\+)[\s\|+\-=]*$')
+# Markdown horizontal rule or section separator (---, ***, ___)
+SECTION_SEPARATOR_PATTERN = re.compile(r'^[\-\*\_]{3,}\s*$')
 
 # Chart/image placeholder: [图表], [chart], (图), etc.
 CHART_PLACEHOLDER_PATTERN = re.compile(
@@ -104,9 +108,17 @@ def _detect_block_type(text: str) -> BLOCK_TYPE_LITERAL:
         if UNORDERED_LIST_PATTERN.match(line) or ORDERED_LIST_PATTERN.match(line):
             return "list"
 
-    # Check for table placeholder (check all lines)
+    # Check for section separator first (skip these)
     for line in lines:
-        if TABLE_PATTERN.match(line):
+        line_stripped = line.strip()
+        if SECTION_SEPARATOR_PATTERN.match(line_stripped) and len(line_stripped) >= 3:
+            if not TABLE_BORDER_PATTERN.match(line_stripped):
+                # This is a markdown hr like --- or ***, not a table border
+                return "section_separator"
+
+    # Check for table (must have | in content)
+    for line in lines:
+        if TABLE_PATTERN.match(line) or TABLE_BORDER_PATTERN.match(line):
             return "table"
 
     # Check for chart placeholder
@@ -234,6 +246,11 @@ def _split_into_blocks(text: str) -> List[str]:
         if not para:
             continue
 
+        # Skip section separators (---, *** markdown hr)
+        if SECTION_SEPARATOR_PATTERN.match(para) and len(para) >= 3:
+            if not TABLE_BORDER_PATTERN.match(para):
+                continue
+
         # Split paragraph into lines
         lines = para.split('\n')
 
@@ -245,6 +262,11 @@ def _split_into_blocks(text: str) -> List[str]:
             line = line.strip()
             if not line:
                 continue
+
+            # Skip section separator lines
+            if SECTION_SEPARATOR_PATTERN.match(line) and len(line) >= 3:
+                if not TABLE_BORDER_PATTERN.match(line):
+                    continue
 
             is_list = (
                 UNORDERED_LIST_PATTERN.match(line) is not None or
@@ -321,8 +343,14 @@ def standardize_text_source(
 
     # Create ContentBlock for each text block
     content_blocks: List[ContentBlock] = []
-    for order, block_text in enumerate(text_blocks):
+    block_order = 0
+    for block_text in text_blocks:
         block_type = _detect_block_type(block_text)
+
+        # Skip section separators (markdown hr)
+        if block_type == "section_separator":
+            continue
+
         block_id = f"block_{uuid4().hex[:12]}"
 
         # Create quality card
@@ -341,11 +369,12 @@ def standardize_text_source(
             block_id=block_id,
             block_type=block_type,
             text=block_text,
-            order=order,
+            order=block_order,
             quality_card=quality_card,
             evidence_spans=[evidence_span],
         )
         content_blocks.append(content_block)
+        block_order += 1
 
     # Create overall quality card
     overall_quality = QualityCard.create_default(overall=0.6)

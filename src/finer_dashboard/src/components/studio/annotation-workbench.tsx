@@ -144,7 +144,7 @@ export function AnnotationWorkbench({
   };
 
   const title = asset?.name ?? "未命名资产";
-  const stageBadge = asset?.stageBadge ?? "L6";
+  const stageBadge = asset?.stageBadge ?? "F6";
 
   const saveReview = async (status: "pending" | "approved" | "rejected") => {
     if (!asset) return;

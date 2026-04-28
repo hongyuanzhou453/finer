@@ -36,80 +36,70 @@ type WorkflowView = {
 const WORKFLOW_VIEWS: WorkflowView[] = [
   {
     id: "intake",
-    tier: "L0",
+    tier: "F0",
     title: "接入台 / INTAKE",
-    subtitle: "新文件、聊天转录与原始证据在这里完成入库与初步归档。",
+    subtitle: "多源内容接入与原始文件归档，建立来源锚点。",
     emptyTitle: "接入队列为空",
     emptyHint: "导入新文件，或继续从飞书同步新的原始素材。",
     importLabel: "Import Asset",
-    panelLabel: "INTAKE",
+    panelLabel: "F0 INTAKE",
   },
   {
-    id: "enrichment",
-    tier: "L1",
-    title: "富化台 / ENRICHMENT",
-    subtitle: "按标的、事件、话题对内容进行拆分与归类，构建结构化知识图谱。",
-    emptyTitle: "富化队列为空",
-    emptyHint: "先完成接入，再在此层进行话题拆分与标的归类。",
-    importLabel: "Enrich Content",
-    panelLabel: "ENRICHMENT",
-  },
-  {
-    id: "library",
-    tier: "L2",
-    title: "知识库 / LIBRARY",
-    subtitle: "统一浏览已标准化资产，作为后续解析、抽取和检索的基础层。",
-    emptyTitle: "标准化知识池为空",
-    emptyHint: "先完成接入与标准化，资产才会出现在这里。",
+    id: "standardize",
+    tier: "F1",
+    title: "标准化台 / STANDARDIZE",
+    subtitle: "将原始内容统一转为 ContentEnvelope + ContentBlock，保留证据链。",
+    emptyTitle: "标准化队列为空",
+    emptyHint: "先完成接入，再在此层进行内容标准化与 Block 拆分。",
     importLabel: "Add Research File",
-    panelLabel: "LIBRARY",
+    panelLabel: "F1 STANDARDIZE",
   },
   {
-    id: "parsing",
-    tier: "L3",
-    title: "解析台 / PARSING",
-    subtitle: "检查 OCR、视觉转录和结构化上下文，确认机器读到了什么。",
-    emptyTitle: "暂无待核对的解析产物",
-    emptyHint: "将原始素材送入解析流程后，这里会显示文本与视觉证据。",
-    importLabel: "Attach Evidence",
-    panelLabel: "PARSING",
+    id: "anchor",
+    tier: "F2",
+    title: "锚定台 / ANCHOR",
+    subtitle: "质量评估、实体解析、时间锚定，构建可追溯的证据图谱。",
+    emptyTitle: "锚定队列为空",
+    emptyHint: "标准化完成后，在此层进行质量门控与实体/时间锚定。",
+    importLabel: "Enrich Content",
+    panelLabel: "F2 ANCHOR",
   },
   {
-    id: "extraction",
-    tier: "L5",
-    title: "抽取台 / EXTRACTION",
-    subtitle: "把解析后的证据压缩成结构化候选事件，准备进入人工判断。",
+    id: "execute",
+    tier: "F5",
+    title: "执行台 / EXECUTE",
+    subtitle: "Intent 提取 → Policy 映射 → TradeAction 生成，完整执行链路。",
     emptyTitle: "候选事件队列为空",
-    emptyHint: "当前还没有新的事件候选，先完成解析或运行抽取模块。",
+    emptyHint: "当前还没有新的事件候选，先完成锚定或运行抽取模块。",
     importLabel: "Queue Extraction",
-    panelLabel: "EXTRACTION",
+    panelLabel: "F5 EXECUTE",
   },
   {
     id: "review",
-    tier: "L6",
+    tier: "F6",
     title: "复核台 / REVIEW",
     subtitle: "在证据、意图链和字段纠正之间做最终的人类判断。",
     emptyTitle: "复核队列为空",
     emptyHint: "当候选事件进入人工校准阶段，这里会成为主工作面。",
     importLabel: "Attach Review Input",
-    panelLabel: "REVIEW",
+    panelLabel: "F6 REVIEW",
   },
   {
     id: "backtest",
-    tier: "L8",
+    tier: "F8",
     title: "回测台 / BACKTEST",
-    subtitle: "让语言观点回到市场结果，用可执行规则验证事件质量。",
+    subtitle: "将语言观点映射到市场结果，用可执行规则验证事件质量。",
     emptyTitle: "还没有可展示的回测结果",
     emptyHint: "当事件完成标注并进入评测后，这里会出现结果面板。",
     importLabel: "Attach Benchmark Input",
-    panelLabel: "BACKTEST",
+    panelLabel: "F8 BACKTEST",
   },
 ];
 
 export default function Home() {
   const [files, setFiles] = useState<AssetFile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tier, setTier] = useState("L2");
+  const [tier, setTier] = useState("F1");
   const [showStudio, setShowStudio] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetFile | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -122,7 +112,7 @@ export default function Home() {
   const [sourceGroups, setSourceGroups] = useState<SourceGroup[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // L1 enrichment expansion state
+  // F2 Anchor enrichment expansion state
   const [expandedEntities, setExpandedEntities] = useState<Set<string>>(new Set());
   const [entityContents, setEntityContents] = useState<Map<string, EnrichmentContent[]>>(new Map());
   const [loadingEntities, setLoadingEntities] = useState<Set<string>>(new Set());
@@ -294,8 +284,8 @@ export default function Home() {
     } else {
       // Single click: Select asset and show in Inspector
       setSelectedAsset(file);
-      // For L5/L6, open studio after delay (allows double-click detection)
-      if (tier === "L5" || tier === "L6") {
+      // For F5/F6, open studio after delay (allows double-click detection)
+      if (tier === "F5" || tier === "F6") {
         const clickId = file.id;
         const clickTime = now;
         setTimeout(() => {
@@ -308,9 +298,9 @@ export default function Home() {
     }
   };
 
-  // Handle folder click (L1 enrichment folders)
+  // Handle folder click (F2 Anchor enrichment folders)
   const handleFolderClick = (file: AssetFile) => {
-    if (tier === "L1") {
+    if (tier === "F2") {
       toggleEntityExpansion(file.id);
     } else {
       handleFileClick(file);
@@ -404,7 +394,7 @@ export default function Home() {
                          )}
                        </div>
                        <div className="flex items-center gap-2">
-                         {isFolder && tier === "L1" && (
+                         {isFolder && tier === "F2" && (
                            <div className="p-1 rounded hover:bg-stone-100 transition-colors">
                              {isExpanded ? (
                                <ChevronDown className="w-4 h-4 text-foreground/50" />
@@ -415,7 +405,7 @@ export default function Home() {
                          )}
                          <div className={cn(
                            "px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border shadow-sm",
-                           tier === "L5" || tier === "L6" ? "border-morningstar-red/20 text-morningstar-red bg-morningstar-red/5" :
+                           tier === "F5" || tier === "F6" ? "border-morningstar-red/20 text-morningstar-red bg-morningstar-red/5" :
                            "border-stone-200 text-foreground/50 bg-white"
                          )}>
                            {file.status}
@@ -453,8 +443,8 @@ export default function Home() {
                      </div>
                    </div>
 
-                   {/* Expanded contents for L1 folders */}
-                   {isFolder && isExpanded && tier === "L1" && (
+                   {/* Expanded contents for F2 folders */}
+                   {isFolder && isExpanded && tier === "F2" && (
                      <div className="mt-2 ml-4 border-l-2 border-blue-200 pl-4 space-y-2">
                        {isLoading ? (
                          <div className="text-xs text-foreground/40 py-2">加载中...</div>
@@ -542,7 +532,7 @@ export default function Home() {
                     </div>
 
                     <div className="px-4 flex items-center justify-end w-32 border-l border-stone-100 mr-4">
-                      {isFolder && tier === "L1" && (
+                      {isFolder && tier === "F2" && (
                         <div className="mr-2 p-1 rounded hover:bg-stone-100 transition-colors">
                           {isExpanded ? (
                             <ChevronDown className="w-4 h-4 text-foreground/50" />
@@ -561,8 +551,8 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Expanded contents for L1 folders */}
-                  {isFolder && isExpanded && tier === "L1" && (
+                  {/* Expanded contents for F2 folders */}
+                  {isFolder && isExpanded && tier === "F2" && (
                     <div className="mt-1 ml-6 border-l-2 border-blue-200 pl-4 space-y-1">
                       {isLoading ? (
                         <div className="text-xs text-foreground/40 py-2 px-3">加载中...</div>

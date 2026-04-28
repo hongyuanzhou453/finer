@@ -4,7 +4,7 @@ const UPSTREAM_URL = "http://127.0.0.1:8000/api/files";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const tier = searchParams.get("tier") || "L2";
+  const tier = searchParams.get("tier") || "F1";
   
   try {
     const res = await fetch(`${UPSTREAM_URL}?tier=${tier}`, { cache: "no-store" });

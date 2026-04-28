@@ -37,12 +37,12 @@ interface InspectorPanelProps {
 }
 
 const provenanceSteps = [
-  { tier: "L0", label: "Intake", detail: "原始文件入库并建立来源锚点" },
-  { tier: "L2", label: "Library", detail: "归档与标准化元数据可检索" },
-  { tier: "L3", label: "Parsing", detail: "OCR / transcript / vision evidence" },
-  { tier: "L5", label: "Extraction", detail: "候选事件与 action chain 生成" },
-  { tier: "L6", label: "Review", detail: "人工校准与歧义裁决" },
-  { tier: "L8", label: "Backtest", detail: "可执行性与结果验证" },
+  { tier: "F0", label: "Intake", detail: "多源内容接入与原始文件归档" },
+  { tier: "F1", label: "Standardize", detail: "内容标准化与 ContentBlock 拆分" },
+  { tier: "F2", label: "Anchor", detail: "质量评估、实体解析与时间锚定" },
+  { tier: "F5", label: "Execute", detail: "Intent 提取 → Policy 映射 → TradeAction" },
+  { tier: "F6", label: "Review", detail: "人工复核与歧义裁决" },
+  { tier: "F8", label: "Backtest", detail: "策略回测与 KOL 评分" },
 ];
 
 function renderIconForType(type: string) {
@@ -67,10 +67,10 @@ function getFileColorClass(type: string) {
 }
 
 function buildEvidenceSummary(type: string, tier: string) {
-  if (tier === "L3") {
-    return "当前视图强调解析证据，应优先核查 OCR 区块、视觉转录和上下文摘要是否可用于后续抽取。";
+  if (tier === "F1") {
+    return "当前视图强调标准化证据，应优先核查 ContentBlock 拆分质量和原文保留是否可用于后续锚定。";
   }
-  if (tier === "L5" || tier === "L6") {
+  if (tier === "F5" || tier === "F6") {
     return "当前视图已进入事件候选或人工复核阶段，应核查字段完整性、action chain 结构和歧义来源。";
   }
   if (type === "mp3" || type === "wav") {
@@ -95,9 +95,9 @@ export function InspectorPanel({
   const activeStepIndex = provenanceSteps.findIndex((step) => step.tier === tier);
   const evidenceSummary = buildEvidenceSummary(selectedAsset?.type ?? "", tier);
 
-  // Fetch L1 entity contents when folder is selected
+  // Fetch F2 Anchor entity contents when folder is selected
   React.useEffect(() => {
-    if (tier === "L1" && selectedAsset?.type === "folder" && selectedAsset.contentId?.startsWith("enrichment:")) {
+    if (tier === "F2" && selectedAsset?.type === "folder" && selectedAsset.contentId?.startsWith("enrichment:")) {
       const entityName = selectedAsset.contentId.replace("enrichment:", "");
       setLoadingContents(true);
       fetch(`/api/files/enrichment/${encodeURIComponent(entityName)}`)
@@ -116,7 +116,12 @@ export function InspectorPanel({
   }, [tier, selectedAsset?.id, selectedAsset?.contentId]);
 
   // Compute best path to preview
-  let previewPath = selectedAsset?.evidencePath || selectedAsset?.sourcePath;
+  // For image assets, prefer sourcePath (actual image) over evidencePath (OCR .md text)
+  const imageTypes = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+  const isImageAsset = selectedAsset?.type ? imageTypes.has(selectedAsset.type) : false;
+  let previewPath = isImageAsset
+    ? (selectedAsset?.sourcePath || selectedAsset?.evidencePath)
+    : (selectedAsset?.evidencePath || selectedAsset?.sourcePath);
   let previewType = previewPath ? previewPath.split('.').pop()?.toLowerCase() : null;
 
   // Enforce Word doc fallback to MD
@@ -129,7 +134,7 @@ export function InspectorPanel({
 
   // For L1 folders, find preview path from entity contents
   const firstEntityContent = entityContents[0];
-  if (tier === "L1" && selectedAsset?.type === "folder" && firstEntityContent?.sourcePath) {
+  if (tier === "F2" && selectedAsset?.type === "folder" && firstEntityContent?.sourcePath) {
     previewPath = firstEntityContent.sourcePath;
     previewType = previewPath.split('.').pop()?.toLowerCase();
   }
@@ -218,8 +223,8 @@ export function InspectorPanel({
           </div>
         </section>
 
-        {/* L1 Entity Contents */}
-        {tier === "L1" && selectedAsset?.type === "folder" && (
+        {/* F2 Anchor Entity Contents */}
+        {tier === "F2" && selectedAsset?.type === "folder" && (
           <section className="space-y-4">
             <div className="flex items-center gap-2 text-[10px] text-foreground/40 font-bold uppercase tracking-widest">
               <FolderKanban className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -279,7 +284,7 @@ export function InspectorPanel({
                               : "border-[rgba(95,67,40,0.12)] bg-[rgba(99,76,55,0.04)] text-[var(--ink-soft)]"
                         }`}
                       >
-                        {step.tier.replace("L", "")}
+                        {step.tier.replace("F", "")}
                       </div>
                       {index < provenanceSteps.length - 1 && (
                         <div className="mt-1 h-8 w-px bg-[rgba(95,67,40,0.12)]" />

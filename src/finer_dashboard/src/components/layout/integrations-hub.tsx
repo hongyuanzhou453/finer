@@ -275,7 +275,7 @@ export function IntegrationsHub() {
                 (selectedPoolFiles.size === 0 || importing) ? "bg-stone-300" : "bg-[var(--accent-teal)] hover:opacity-90"
               )}
             >
-              {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Import to L0"}
+              {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Import to F0"}
             </button>
           </div>
           
