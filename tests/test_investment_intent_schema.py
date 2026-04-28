@@ -719,3 +719,111 @@ class TestEdgeCases:
         )
         assert intent.target_type == "sector"
         assert intent.target_symbol is None  # Sectors don't have symbols
+
+
+# =============================================================================
+# F3/F4 Boundary Tests
+# =============================================================================
+
+class TestF3F4Boundary:
+    """Tests verifying the F3 Intent does not contain F4 or F5 fields."""
+
+    def test_f3_intent_no_position_size_pct(self):
+        """F3 Intent MUST NOT contain position_size_pct — that is F5 territory."""
+        intent = NormalizedInvestmentIntent(
+            envelope_id="env-001",
+            target_type="stock",
+            target_name="Test",
+            direction="bullish",
+            actionability="explicit_action",
+            position_delta_hint="add",
+            conviction=0.8,
+            confidence=0.9,
+        )
+        data = intent.model_dump()
+        assert "position_size_pct" not in data
+
+    def test_f3_intent_no_target_price(self):
+        """F3 Intent MUST NOT contain target price fields — F5 territory."""
+        intent = NormalizedInvestmentIntent(
+            envelope_id="env-001",
+            target_type="stock",
+            target_name="Test",
+            direction="bullish",
+            actionability="opinion",
+            position_delta_hint="none",
+            conviction=0.7,
+            confidence=0.8,
+        )
+        data = intent.model_dump()
+        assert "target_price_low" not in data
+        assert "target_price_high" not in data
+
+    def test_f3_intent_no_stop_loss(self):
+        """F3 Intent MUST NOT contain stop_loss or take_profit — F4/F5 territory."""
+        intent = NormalizedInvestmentIntent(
+            envelope_id="env-001",
+            target_type="stock",
+            target_name="Test",
+            direction="bullish",
+            actionability="explicit_action",
+            position_delta_hint="hold",
+            conviction=0.6,
+            confidence=0.7,
+        )
+        data = intent.model_dump()
+        assert "stop_loss_pct" not in data
+        assert "take_profit_pct" not in data
+
+    def test_f3_intent_no_trigger_condition(self):
+        """F3 Intent MUST NOT contain trigger_condition — F5 territory."""
+        intent = NormalizedInvestmentIntent(
+            envelope_id="env-001",
+            target_type="stock",
+            target_name="Test",
+            direction="bullish",
+            actionability="explicit_action",
+            position_delta_hint="add",
+            conviction=0.8,
+            confidence=0.9,
+        )
+        data = intent.model_dump()
+        assert "trigger_condition" not in data
+        assert "entry_condition" not in data
+        assert "exit_condition" not in data
+
+    def test_f3_intent_has_evidence_not_execution(self):
+        """F3 Intent has evidence_span_ids but NOT action_chain."""
+        intent = NormalizedInvestmentIntent(
+            envelope_id="env-001",
+            target_type="stock",
+            target_name="Test",
+            direction="bullish",
+            actionability="explicit_action",
+            position_delta_hint="add",
+            conviction=0.8,
+            confidence=0.9,
+            evidence_span_ids=["span-001", "span-002"],
+        )
+        data = intent.model_dump()
+        # F3 has evidence traceability
+        assert "evidence_span_ids" in data
+        assert data["evidence_span_ids"] == ["span-001", "span-002"]
+        # F3 does NOT have action_chain
+        assert "action_chain" not in data
+
+    def test_f3_position_delta_hint_is_hint_not_pct(self):
+        """position_delta_hint is a semantic hint (open/add/reduce), not a percentage."""
+        intent = NormalizedInvestmentIntent(
+            envelope_id="env-001",
+            target_type="stock",
+            target_name="Test",
+            direction="bullish",
+            actionability="explicit_action",
+            position_delta_hint="add",
+            conviction=0.8,
+            confidence=0.9,
+        )
+        # position_delta_hint is a string enum, not a float
+        assert isinstance(intent.position_delta_hint, str)
+        assert intent.position_delta_hint in ("open", "add", "reduce", "hold", "exit", "none", "unknown")

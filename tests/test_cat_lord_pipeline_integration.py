@@ -152,7 +152,7 @@ class TestCatLordResultStructure:
 
     def test_result_extractor_version(self, result):
         """Extractor version is set."""
-        assert result.extractor_version == "minimal_v1"
+        assert result.extractor_version == "rule_based_v1"
 
     def test_result_timestamp(self, result):
         """Extraction timestamp is set."""

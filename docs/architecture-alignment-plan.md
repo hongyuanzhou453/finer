@@ -1,7 +1,8 @@
-# Finer 架构对齐规划 v2.0
+# Finer 架构对齐规划 v3.0
 
 > 创建: 2026-04-27 | 更新: 2026-04-28 (F0-F8 canonical 迁移)
 > 目标: 将 Finer 从"直接抽取 TradeAction 的原型系统"，对齐到 F0-F8 canonical pipeline
+> **声明**: F0-F8 是 Finer OS 唯一主架构。旧命名 L0-L8 和 V0-V6 已废弃（deprecated），仅在下文中标注为 legacy 供迁移参考。
 
 ---
 
@@ -54,15 +55,19 @@ F0 ingestion (飞书/B站/微信)
   → F8 backtest (pipeline placeholder)
 ```
 
+> **Legacy direct extractor note**: `extraction/trade_action_extractor.py` 的 `extract_from_text()` 方法属于 legacy/direct extraction path。可作为 baseline 或对照实验使用，但不得作为 canonical F5 输入路径。详见 `docs/specs/f-stage-contracts.md` Legacy Direct Extraction Path 章节。
+
 ### 2.2 目标路径（CANONICAL）
 
 ```
 F0 Intake
   → F1 Standardize (ContentEnvelope + ContentBlock)
   → F2 Anchor (QualityCard + TemporalAnchor + EntityAnchor + EvidenceSpan)
-  → F3 Intent (NormalizedInvestmentIntent — 四轴: direction/actionability/position_delta_hint/conviction)
-  → F4 Policy (5 层 policy: Global→Style→Risk→Persona→Correction)
+  → F3 Intent (NormalizedInvestmentIntent -- 四轴: direction/actionability/position_delta_hint/conviction)
+  → F4 Policy (5 层 policy: Global->Style->Risk->Persona->Correction)
+      **F4 is the only legal Intent-to-TradeAction policy mapping layer.**
   → F5 Execute (TradeAction +intent_id +policy_id +evidence_span_ids)
+      **F5 canonical TradeAction MUST include intent_id, policy_id, evidence_span_ids.**
   → F6 Review (RLHF + 人工复核)
   → F7 Timeline (KOLTimeline + ViewpointState + TargetOpinionGraph)
   → F8 Backtest (Portfolio 模拟 + KOL 评分)
@@ -328,7 +333,7 @@ Phase 5: 用 F8 回测结果做 F4 policy 评估
    - 实现 Global Base Policy（单层，不先做 5 层）
 
 4. **`fix(f8): connect pipeline orchestrator to BacktestEngine`**
-   - 修复 `pipeline/orchestrator.py` 中的 L8 placeholder
+   - 修复 `pipeline/orchestrator.py` 中的 F8 stage runner（legacy 代码使用 `_run_l8_backtest()`，已标记 deprecated）
    - 让 `_run_f8_backtest()` 真正调用 BacktestEngine
 
 5. **`test: F3→F4→F5 end-to-end integration`**

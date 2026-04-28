@@ -1,9 +1,9 @@
 # Finer OS 架构文档 v2.0
 
-> **版本**: 2.0.0
+> **版本**: 3.0.0
 > **最后更新**: 2026-04-28
-> **状态**: Canonical F0-F8 pipeline adopted; legacy L/V naming deprecated
-> **原则**: F0-F8 是本架构唯一主命名体系。旧 L0-L8 和 V0-V6 仅保留在 Legacy Mapping 章节供迁移参考。
+> **状态**: **F0-F8 是 Finer OS 唯一主架构。** 本文档是 F0-F8 流水线的可执行契约。旧命名 L0-L8 和 V0-V6 已废弃（deprecated），仅在下文第 16 章 Legacy Mapping 和 `docs/specs/f-stage-contracts.md` 中保留供迁移参考。
+> **原则**: 所有代码、文档、commit message、API 设计、Agent 任务边界必须以 F0-F8 为唯一命名体系。任何新引入 L0-L8 或 V0-V6 命名的 PR 必须被拒绝。
 
 ---
 
@@ -23,7 +23,8 @@
 12. [开发规范](#12-开发规范)
 13. [数据治理](#13-数据治理)
 14. [非功能性需求](#14-非功能性需求)
-15. [Legacy Mapping（旧命名对照）](#15-legacy-mapping旧命名对照)
+15. [Agent Execution Rules（Agent 执行规则）](#15-agent-execution-rulesagent-执行规则)
+16. [Legacy Mapping（旧命名对照）](#16-legacy-mapping旧命名对照)
 
 ---
 
@@ -288,6 +289,8 @@
 - confidence 硬编码（0.6–0.8），不做实际置信度评估
 - `extract_intents_from_envelope()` 存在但从未被 pipeline 调用
 
+**关键契约**: **F3 MUST NOT generate TradeAction.** F3 的职责止于意图表达。仓位比例、目标价格、止损止盈、触发条件等交易参数一律不得在 F3 出现。
+
 **禁止职责**:
 - ❌ 不生成仓位比例（position_size_pct）
 - ❌ 不生成目标价格（target_price_low, target_price_high）
@@ -300,7 +303,7 @@
 
 ### 3.5 F4: Policy（策略映射）
 
-**职责**: 将 Intent 转换为可执行的 TradeAction 参数。F4 是 Intent → TradeAction 的**唯一合法转换层**。同一句"加仓"在不同 KOL 风格下应产生不同的仓位/持仓期/动作强度。
+**职责**: 将 Intent 转换为可执行的 TradeAction 参数。**F4 is the only legal Intent-to-TradeAction policy mapping layer.** 同一句"加仓"在不同 KOL 风格下应产生不同的仓位/持仓期/动作强度。任何绕过 F4 直接从 Intent 或原始文本生成 TradeAction 的路径，均为 deprecated。
 
 **输入**: F3 `NormalizedInvestmentIntent[]`
 
@@ -363,10 +366,13 @@ class TradeAction(BaseModel):
     evidence_span_ids: List[str]      # F2 EvidenceSpan IDs
 ```
 
+**关键契约**: **F5 canonical TradeAction MUST include intent_id, policy_id, evidence_span_ids.** 这三个字段是 TradeAction 可审计性的必要条件。缺少任一字段的 TradeAction 不得进入 F6 Review 或 F8 Backtest。
+
 **禁止职责**:
 - ❌ 不直接从原始文本生成 TradeAction（必须经过 F3→F4→F5）
 - ❌ 不跳过 policy 层自行决定仓位/触发条件
 - ❌ 不生成没有 intent_id 的 TradeAction
+- ❌ 不生成没有 evidence_span_ids 的 TradeAction
 
 ---
 
@@ -443,7 +449,7 @@ class TradeAction(BaseModel):
 
 **当前状态**: `partial`
 - **BacktestEngine 完整实现**（止损/止盈/时间退出、Sharpe/Sortino/Calmar/MaxDrawdown/VaR）
-- **但 pipeline orchestrator 的 L8 是 placeholder**：`_run_l8_backtest()` 只写 JSON，不调用 BacktestEngine
+- **但 pipeline orchestrator 的 F8 stage runner 是 placeholder**（legacy 代码中名为 `_run_l8_backtest()`，标记为 deprecated）：只写 JSON，不调用 BacktestEngine
 - **价格数据默认使用 MockPriceProvider**：`_prepare_price_data()` 在没有真实价格时用随机模拟数据
 - 缺少 `effective_trade_at` 与 `timestamp` 的区分
 - KOL 评分结果依赖 mock 数据
@@ -830,7 +836,67 @@ F0 ContentRecord.content_id
 
 ---
 
-## 15. Legacy Mapping（旧命名对照）
+## 15. Agent Execution Rules（Agent 执行规则）
+
+以下规则适用于所有开发和检查 Agent。违反任一条即为架构违规，Code Review 必须拒绝。
+
+### 15.1 每个 Agent 必须声明 F-stage
+
+Agent 在开始任务时必须声明自己所处的 F-stage，且只能修改该 stage 的 owning files。
+
+| Agent | F-stage | 可修改文件 |
+|---|---|---|
+| Intake Agent | F0 | `ingestion/`, `api/routes/files.py`, `schemas/content.py` |
+| Standardize Agent | F1 | `parsing/`, `schemas/content_envelope.py` |
+| Anchor Agent | F2 | `enrichment/`, `aggregation/`, `entity_registry.py` |
+| Intent Agent | F3 | `extraction/intent_extractor.py`, `schemas/investment_intent.py` |
+| Policy Agent | F4 | `policy/`, `schemas/policy.py` |
+| Execute Agent | F5 | `extraction/trade_action_extractor.py`, `schemas/trade_action.py` |
+| Review Agent | F6 | `api/routes/rlhf.py`, `api/routes/review.py` |
+| Timeline Agent | F7 | `timeline/`, `api/routes/opinions.py`, `api/routes/kol.py` |
+| Backtest Agent | F8 | `backtest/`, `api/routes/backtest.py`, `pipeline/orchestrator.py` |
+
+### 15.2 每个 Agent 必须声明输入输出 Schema
+
+Agent 的输入和输出必须严格对应所属 F-stage 的 Allowed Input 和 Required Output Schema。详见 `docs/specs/f-stage-contracts.md`。
+
+### 15.3 每个 Agent 不得跨 Stage 写业务逻辑
+
+Agent 不得在所属 F-stage 的 owning files 中写入属于其他 F-stage 的业务逻辑:
+
+- F5 Execute Agent 不得在 `trade_action_extractor.py` 中实现 Intent 提取逻辑（那是 F3 的职责）
+- F3 Intent Agent 不得在 `intent_extractor.py` 中生成 TradeAction（那是 F5 的职责）
+- F4 Policy Agent 不得修改 Intent 的 direction（除非有 audit log）
+
+### 15.4 检查 Agent 必须验证是否绕过 F3/F4
+
+Code Review 和 CI 检查必须包含以下验证:
+
+1. F5 的 TradeAction 是否包含非空 intent_id（未绕过 F3）
+2. F5 的 TradeAction 是否包含非空 policy_id（未绕过 F4）
+3. 是否存在直接调用 `extract_from_text()` 而不经过 F3->F4 的代码路径
+4. F3 输出中是否包含 position_size_pct / target_price / trigger_condition（违规）
+5. F4 输出中是否修改了 F3 的 direction 而没有 audit log
+
+### 15.5 禁止跨 Stage 直接调用
+
+| F-stage | 可调用的下游 | 可调用的公共服务 |
+|---|---|---|
+| F0 | 无（只写存储） | `services/converter.py` |
+| F1 | 无 | `services/llm.py`, `services/perception.py` |
+| F2 | F1（只读） | `services/llm.py`, `services/finance_skills_client.py`, `entity_registry.py` |
+| F3 | F1, F2（只读） | `services/llm.py` |
+| F4 | F3（只读） | 规则引擎 |
+| F5 | F4（只读） | `services/llm.py`, `services/finance_skills_client.py` |
+| F6 | F3, F5（只读） | `services/` |
+| F7 | F3, F5, F6（只读） | `services/repository.py` |
+| F8 | F5（只读）+ 价格数据 | `backtest/engine.py`, `backtest/prices.py` |
+
+**禁止**: 跨 F-stage 直接调用（如 F5 直接调 F1）。F5 不经过 F3/F4 直接从原始文本生成 TradeAction 属于架构违规。
+
+---
+
+## 16. Legacy Mapping（旧命名对照）
 
 > **重要**: 旧命名 L0-L8 和 V0-V6 **仅供迁移参考**，不再作为主架构描述。所有新代码、文档、commit message 必须使用 F0-F8。
 

@@ -1,16 +1,21 @@
-"""Tests for Minimal V1 Intent Extractor.
+"""Tests for F3 Intent Extractor — Rule-based + LLM-based.
 
-Tests verify the rule-based intent extraction logic for architecture validation.
+Tests verify both the rule-based baseline extractor and the LLM-based
+extractor (using mock LLM calls) for architecture validation.
 """
 
+import json
 import pytest
 from datetime import datetime
+from typing import Optional
 
 from finer.schemas.content_envelope import ContentEnvelope, ContentBlock
 from finer.schemas.quality import QualityCard
 from finer.schemas.entity_anchor import EntityAnchor
 from finer.extraction.intent_extractor import (
     IntentExtractionResult,
+    RuleBasedIntentExtractor,
+    LLMIntentExtractor,
     extract_intents_from_envelope,
 )
 
@@ -92,7 +97,7 @@ class TestIntentExtractorBasics:
         result = extract_intents_from_envelope(envelope)
 
         assert isinstance(result, IntentExtractionResult)
-        assert result.extractor_version == "minimal_v1"
+        assert result.extractor_version == "rule_based_v1"
         assert isinstance(result.extraction_timestamp, datetime)
 
 
@@ -294,3 +299,296 @@ class TestMultipleIntents:
         # Second intent: bearish, explicit_action
         assert result.intents[1].direction == "bearish"
         assert result.intents[1].actionability == "explicit_action"
+
+
+# =============================================================================
+# Mock LLM helpers
+# =============================================================================
+
+def _make_mock_llm_fn(response_json: dict) -> callable:
+    """Create a mock LLM callable that returns a fixed JSON response."""
+    def mock_fn(prompt: str) -> str:
+        return json.dumps(response_json, ensure_ascii=False)
+    return mock_fn
+
+
+# =============================================================================
+# LLM Extractor Tests (with mock LLM)
+# =============================================================================
+
+class TestLLMExtractorBasics:
+    """Basic tests for LLMIntentExtractor with mock LLM."""
+
+    def test_llm_empty_result(self):
+        """LLM returns no intents."""
+        mock_llm = _make_mock_llm_fn({
+            "intents": [],
+            "overall_notes": ["No investment content detected"],
+        })
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["今天天气不错。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 0
+        assert result.extractor_version == "llm_v1"
+
+    def test_llm_null_response(self):
+        """LLM returns None (API failure)."""
+        mock_llm = lambda prompt: None
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["我看好宁德时代。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 0
+
+    def test_llm_invalid_json(self):
+        """LLM returns invalid JSON."""
+        mock_llm = lambda prompt: "not valid json at all"
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["我看好宁德时代。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 0
+        assert any("Failed to parse" in n for n in result.processing_notes)
+
+    def test_llm_basic_opinion(self):
+        """LLM correctly extracts opinion vs action."""
+        mock_llm = _make_mock_llm_fn({
+            "intents": [{
+                "target_name": "宁德时代",
+                "target_symbol": "300750.SZ",
+                "target_type": "stock",
+                "market": "CN",
+                "direction": "bullish",
+                "actionability": "opinion",
+                "position_delta_hint": "none",
+                "conviction": 0.7,
+                "confidence": 0.9,
+                "evidence_text": "看好",
+                "ambiguity_notes": [],
+                "processing_notes": [],
+            }],
+        })
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["我看好宁德时代。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 1
+        intent = result.intents[0]
+        assert intent.direction == "bullish"
+        assert intent.actionability == "opinion"
+        assert intent.position_delta_hint == "none"
+
+    def test_llm_explicit_action(self):
+        """LLM correctly identifies explicit action."""
+        mock_llm = _make_mock_llm_fn({
+            "intents": [{
+                "target_name": "宁德时代",
+                "target_symbol": "300750.SZ",
+                "target_type": "stock",
+                "market": "CN",
+                "direction": "bullish",
+                "actionability": "explicit_action",
+                "position_delta_hint": "add",
+                "conviction": 0.75,
+                "confidence": 0.9,
+                "evidence_text": "加仓",
+                "ambiguity_notes": [],
+                "processing_notes": [],
+            }],
+        })
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["我加仓宁德时代。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 1
+        intent = result.intents[0]
+        assert intent.actionability == "explicit_action"
+        assert intent.position_delta_hint == "add"
+
+    def test_llm_rejects_forbidden_fields(self):
+        """LLM output containing position_size is rejected."""
+        mock_llm = _make_mock_llm_fn({
+            "intents": [{
+                "target_name": "宁德时代",
+                "direction": "bullish",
+                "actionability": "explicit_action",
+                "position_delta_hint": "add",
+                "conviction": 0.8,
+                "confidence": 0.9,
+                "position_size_pct": 0.1,
+                "target_price": 500.0,
+            }],
+        })
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["加仓宁德时代。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 0
+        assert any("forbidden" in n for n in result.processing_notes)
+
+    def test_llm_sentiment_auxiliary(self):
+        """LLM includes sentiment_score as auxiliary, not primary."""
+        mock_llm = _make_mock_llm_fn({
+            "intents": [{
+                "target_name": "宁德时代",
+                "target_type": "stock",
+                "direction": "bullish",
+                "actionability": "explicit_action",
+                "position_delta_hint": "add",
+                "conviction": 0.75,
+                "confidence": 0.85,
+                "sentiment_score": 0.8,
+                "evidence_text": "加仓",
+                "ambiguity_notes": [],
+                "processing_notes": [],
+            }],
+        })
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["加仓宁德时代。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 1
+        intent = result.intents[0]
+        assert intent.actionability == "explicit_action"
+        assert intent.sentiment_score is not None
+        assert -1.0 <= intent.sentiment_score <= 1.0
+
+
+class TestLLMExtractorAmbiguity:
+    """Tests for ambiguity handling in LLM extractor."""
+
+    def test_hold_and_add_compound(self):
+        """Hold + add compound signal."""
+        mock_llm = _make_mock_llm_fn({
+            "intents": [{
+                "target_name": "腾讯",
+                "target_symbol": "0700.HK",
+                "target_type": "stock",
+                "market": "HK",
+                "direction": "bullish",
+                "actionability": "explicit_action",
+                "position_delta_hint": "add",
+                "conviction": 0.65,
+                "confidence": 0.75,
+                "evidence_text": "依然持有，今天稍微加仓一点",
+                "ambiguity_notes": ["hold_and_add_compound: maintaining hold while adding slightly"],
+                "processing_notes": [],
+            }],
+        })
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope([
+            "今天腾讯跟随恒生科技大跌3个点，到达480的点位，"
+            "目前我依然持有，今天稍微加仓一点，"
+            "短期下跌趋势，不影响腾讯的社交流量入口护城河",
+        ])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 1
+        intent = result.intents[0]
+        assert intent.position_delta_hint == "add"
+        assert intent.conviction < 0.8
+        # Must have compound ambiguity flag
+        assert any("hold_and_add" in f for f in intent.ambiguity_flags) or \
+               any("compound" in f.lower() for f in intent.ambiguity_flags)
+
+    def test_relative_time_unresolved(self):
+        """Relative time is flagged, not fabricated."""
+        mock_llm = _make_mock_llm_fn({
+            "intents": [{
+                "target_name": "光模块",
+                "target_type": "sector",
+                "target_symbol": None,
+                "direction": "bullish",
+                "actionability": "explicit_action",
+                "position_delta_hint": "add",
+                "conviction": 0.7,
+                "confidence": 0.75,
+                "evidence_text": "上周坚定抄底光模块",
+                "ambiguity_notes": ["relative_time_unresolved: '上周'"],
+                "processing_notes": [],
+            }],
+        })
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope([
+            "上周的时候，我们坚定抄底光模块，这周市场资金重新回归光模块",
+        ])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 1
+        intent = result.intents[0]
+        assert any("relative_time" in f for f in intent.ambiguity_flags) or \
+               any("temporal" in f.lower() for f in intent.ambiguity_flags)
+
+
+class TestLLMExtractorEdgeCases:
+    """Edge case tests for LLM extractor."""
+
+    def test_llm_with_code_fences(self):
+        """LLM wraps JSON in markdown code fences."""
+        raw_json = json.dumps({
+            "intents": [{
+                "target_name": "宁德时代",
+                "target_type": "stock",
+                "direction": "bullish",
+                "actionability": "opinion",
+                "position_delta_hint": "none",
+                "conviction": 0.6,
+                "confidence": 0.8,
+                "ambiguity_notes": [],
+                "processing_notes": [],
+            }],
+        }, ensure_ascii=False)
+        mock_llm = lambda prompt: f"```json\n{raw_json}\n```"
+
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["我看好宁德时代。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 1
+        assert result.intents[0].actionability == "opinion"
+
+    def test_llm_multiple_intents(self):
+        """LLM extracts multiple intents from one envelope."""
+        mock_llm = _make_mock_llm_fn({
+            "intents": [
+                {
+                    "target_name": "宁德时代",
+                    "target_type": "stock",
+                    "direction": "bullish",
+                    "actionability": "opinion",
+                    "position_delta_hint": "none",
+                    "conviction": 0.7,
+                    "confidence": 0.85,
+                    "ambiguity_notes": [],
+                    "processing_notes": [],
+                },
+                {
+                    "target_name": "腾讯",
+                    "target_type": "stock",
+                    "direction": "bullish",
+                    "actionability": "explicit_action",
+                    "position_delta_hint": "hold",
+                    "conviction": 0.65,
+                    "confidence": 0.8,
+                    "ambiguity_notes": [],
+                    "processing_notes": [],
+                },
+            ],
+        })
+        extractor = LLMIntentExtractor(llm_fn=mock_llm)
+        envelope = make_test_envelope(["看好宁德时代，继续持有腾讯。"])
+
+        result = extractor.extract(envelope)
+
+        assert len(result.intents) == 2

@@ -1,11 +1,12 @@
 """Finer Schema Module.
 
 This module defines the canonical data structures for the Finer pipeline:
-- V0/V0.5: Content envelope and quality schemas
-- L5: Event extraction schemas
-- L5+: Enriched event with market data
-- V1: Investment intent (pre-TradeAction)
-- L7+: Trade action output template
+- F0/F1: Content envelope and quality schemas
+- F2: Entity/Temporal/Evidence anchoring
+- F3: Investment intent (pre-TradeAction)
+- F4: Policy mapping (intent-to-action hints)
+- F5: Trade action output template
+- F6: RLHF feedback
 """
 
 # =============================================================================
@@ -79,7 +80,29 @@ from finer.schemas.investment_intent import (
 )
 
 # =============================================================================
-# L7+ Trade Action Schemas
+# F4 Policy Mapping Schemas
+# =============================================================================
+
+from finer.schemas.policy import (
+    # Literal types
+    ACTION_HINT_LITERAL,
+    POSITION_SIZING_HINT_LITERAL,
+    MAX_POSITION_HINT_LITERAL,
+    HOLDING_PERIOD_HINT_LITERAL,
+    CANONICAL_TRACE_STATUS_LITERAL,
+    DECISION_TYPE_LITERAL,
+    # Models
+    PolicyRiskConstraints,
+    PolicyLayerTrace,
+    PolicyDecision,
+    PolicyMappingResult,
+    PolicyMappedIntent,
+    PolicyContext,
+    PolicyMappingBatch,
+)
+
+# =============================================================================
+# F5 Trade Action Schemas
 # =============================================================================
 
 from finer.schemas.trade_action import (
@@ -145,7 +168,7 @@ __all__ = [
     "PriceValidation",
     "EnrichedEventWithActions",
     "EnrichedExtractionResult",
-    # From investment_intent.py (V1 intent layer)
+    # From investment_intent.py (F3 intent layer)
     "TARGET_TYPE_LITERAL",
     "DIRECTION_LITERAL",
     "ACTIONABILITY_LITERAL",
@@ -154,7 +177,21 @@ __all__ = [
     "TIME_HORIZON_LITERAL",
     "NormalizedInvestmentIntent",
     "IntentBatch",
-    # From trade_action.py (L7+ authoritative)
+    # From policy.py (F4 policy mapping)
+    "ACTION_HINT_LITERAL",
+    "POSITION_SIZING_HINT_LITERAL",
+    "MAX_POSITION_HINT_LITERAL",
+    "HOLDING_PERIOD_HINT_LITERAL",
+    "CANONICAL_TRACE_STATUS_LITERAL",
+    "DECISION_TYPE_LITERAL",
+    "PolicyRiskConstraints",
+    "PolicyLayerTrace",
+    "PolicyDecision",
+    "PolicyMappingResult",
+    "PolicyMappedIntent",
+    "PolicyContext",
+    "PolicyMappingBatch",
+    # From trade_action.py (F5 execution)
     "TradeDirection",
     "ActionType",
     "TriggerType",

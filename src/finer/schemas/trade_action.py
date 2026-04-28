@@ -447,6 +447,47 @@ class TradeAction(BaseModel):
     )
 
     # =========================================================================
+    # Upstream Trace (F3 → F4 → F5 canonical chain)
+    # =========================================================================
+
+    intent_id: Optional[str] = Field(
+        None,
+        description="Reference to F3 NormalizedInvestmentIntent.intent_id. "
+                    "Canonical TradeActions MUST have this set. "
+                    "Null indicates legacy/direct-extraction actions that bypassed F3."
+    )
+
+    policy_id: Optional[str] = Field(
+        None,
+        description="Reference to F4 PolicyMappingResult.policy_id. "
+                    "Canonical TradeActions MUST have this set. "
+                    "Null indicates legacy actions that bypassed F4."
+    )
+
+    evidence_span_ids: List[str] = Field(
+        default_factory=list,
+        description="Reference to F2 EvidenceSpan.evidence_span_id entries. "
+                    "Canonical TradeActions SHOULD have at least one evidence span. "
+                    "Empty list indicates no evidence traceability."
+    )
+
+    effective_trade_at: Optional[datetime] = Field(
+        None,
+        description="When the trade should take effect for backtesting purposes. "
+                    "Distinct from timestamp (when the action was generated). "
+                    "Set from F2 TemporalAnchor (anchor_type='effective_trade'). "
+                    "Required for F8 backtesting."
+    )
+
+    canonical_trace_status: str = Field(
+        "non_canonical",
+        description="Indicates whether the F3→F4→F5 trace chain is complete. "
+                    "'canonical': intent_id + policy_id both present and non-empty. "
+                    "'partial': at least one upstream ID present but not both. "
+                    "'non_canonical': no upstream IDs (legacy direct-extraction path)."
+    )
+
+    # =========================================================================
     # Confidence & Model Metadata
     # =========================================================================
 
@@ -578,6 +619,20 @@ class TradeAction(BaseModel):
                     except ValueError:
                         continue
         raise ValueError(f"Cannot parse timestamp: {v}")
+
+    @model_validator(mode='after')
+    def validate_canonical_trace(self) -> TradeAction:
+        """Auto-set canonical_trace_status based on upstream ID presence."""
+        has_intent = bool(self.intent_id)
+        has_policy = bool(self.policy_id)
+
+        if has_intent and has_policy:
+            self.canonical_trace_status = "canonical"
+        elif has_intent or has_policy:
+            self.canonical_trace_status = "partial"
+        else:
+            self.canonical_trace_status = "non_canonical"
+        return self
 
     @model_validator(mode='after')
     def validate_action_chain_sequence(self) -> TradeAction:

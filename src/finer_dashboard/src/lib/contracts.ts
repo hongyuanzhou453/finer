@@ -217,3 +217,143 @@ export type LineageStatsResponse = {
   active_pipeline_runs: number;
   completed_pipeline_runs: number;
 };
+
+// =============================================================================
+// F4 Policy Schema Types
+// =============================================================================
+
+export type PolicyRiskConstraints = {
+  max_position_hint: "none" | "small" | "medium" | "large";
+  requires_human_review: boolean;
+  risk_notes: string[];
+  max_concentration_pct?: number;
+  stop_loss_hint?: string;
+  time_decay_days?: number;
+  metadata: Record<string, unknown>;
+};
+
+export type PolicyLayerTrace = {
+  layer_name: string;
+  layer_version: string;
+  applied: boolean;
+  reason: string;
+  modifications: string[];
+  order_index: number;
+  metadata: Record<string, unknown>;
+};
+
+export type PolicyDecision = {
+  decision_id: string;
+  policy_id: string;
+  layer: string;
+  decision_type:
+    | "action_override"
+    | "sizing_adjust"
+    | "holding_adjust"
+    | "risk_bound"
+    | "confidence_adjust"
+    | "human_escalation"
+    | "no_op";
+  description: string;
+  rationale: string;
+  overrides_previous: boolean;
+  metadata: Record<string, unknown>;
+};
+
+export type PolicyMappingResult = {
+  policy_id: string;
+  intent_id: string;
+  creator_id?: string;
+  kol_id?: string;
+  policy_version: string;
+  policy_layers_applied: string[];
+  action_hint:
+    | "watch_only"
+    | "watch_or_no_trade"
+    | "avoid_or_watch_risk"
+    | "open_position"
+    | "add_position"
+    | "reduce_position"
+    | "hold_position"
+    | "close_position"
+    | "review_required";
+  position_sizing_hint:
+    | "none"
+    | "small"
+    | "medium"
+    | "large"
+    | "review_required";
+  holding_period_hint:
+    | "intraday"
+    | "short_term"
+    | "medium_term"
+    | "long_term"
+    | "review_required";
+  risk_constraints: PolicyRiskConstraints;
+  mapping_rationale: string;
+  layer_traces: PolicyLayerTrace[];
+  decisions: PolicyDecision[];
+  confidence: number;
+  original_intent_confidence?: number;
+  created_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type PolicyMappedIntent = {
+  mapped_id: string;
+  intent_id: string;
+  policy_id: string;
+  original_intent_summary: string;
+  action_hint:
+    | "watch_only"
+    | "watch_or_no_trade"
+    | "avoid_or_watch_risk"
+    | "open_position"
+    | "add_position"
+    | "reduce_position"
+    | "hold_position"
+    | "close_position"
+    | "review_required";
+  position_sizing_hint:
+    | "none"
+    | "small"
+    | "medium"
+    | "large"
+    | "review_required";
+  holding_period_hint:
+    | "intraday"
+    | "short_term"
+    | "medium_term"
+    | "long_term"
+    | "review_required";
+  risk_notes: string[];
+  mapping_confidence: number;
+  requires_human_review: boolean;
+  created_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type PolicyContext = {
+  kol_id: string;
+  style_archetype: string;
+  risk_preference: string;
+  persona_summary?: string;
+  active_corrections: string[];
+  metadata: Record<string, unknown>;
+};
+
+// =============================================================================
+// F5 TradeAction Upstream Trace Fields (partial — mirrors Python schema)
+// =============================================================================
+
+/** Canonical trace status for TradeAction F3→F4→F5 chain completeness. */
+export type CanonicalTraceStatus = "canonical" | "partial" | "non_canonical";
+
+/** Upstream trace fields on TradeAction (subset relevant to frontend). */
+export type TradeActionTrace = {
+  intent_id?: string;
+  policy_id?: string;
+  evidence_span_ids: string[];
+  effective_trade_at?: string;
+  canonical_trace_status: CanonicalTraceStatus;
+};

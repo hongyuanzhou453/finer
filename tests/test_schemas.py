@@ -671,3 +671,92 @@ class TestEdgeCases:
                 ticker="AAPL",
                 reddit_sentiment=1.5,
             )
+
+
+# =============================================================================
+# Canonical Trace Tests (F3 → F4 → F5)
+# =============================================================================
+
+class TestCanonicalTrace:
+    """Tests for F3 → F4 → F5 canonical trace chain in TradeAction."""
+
+    def test_trade_action_canonical_with_full_ids(self):
+        """TradeAction with intent_id + policy_id + evidence_span_ids is canonical."""
+        ta = TradeAction(
+            intent_id="intent-abc-123",
+            policy_id="policy-def-456",
+            evidence_span_ids=["span-001", "span-002"],
+            effective_trade_at=datetime(2026, 4, 24, 9, 30, 0),
+            source=SourceInfo(content_id="test", evidence_text="Canonical trace test"),
+            target=TargetInfo(ticker="NVDA"),
+            direction=TradeDirection.BULLISH,
+        )
+        assert ta.canonical_trace_status == "canonical"
+        assert ta.intent_id == "intent-abc-123"
+        assert ta.policy_id == "policy-def-456"
+        assert ta.evidence_span_ids == ["span-001", "span-002"]
+
+    def test_trade_action_non_canonical_without_ids(self):
+        """TradeAction without intent_id/policy_id is non-canonical (legacy path)."""
+        ta = TradeAction(
+            source=SourceInfo(content_id="test", evidence_text="Legacy extraction"),
+            target=TargetInfo(ticker="AAPL"),
+            direction=TradeDirection.BULLISH,
+        )
+        assert ta.canonical_trace_status == "non_canonical"
+        assert ta.intent_id is None
+        assert ta.policy_id is None
+
+    def test_trade_action_partial_trace(self):
+        """TradeAction with only one upstream ID is partial."""
+        ta = TradeAction(
+            intent_id="intent-only-001",
+            evidence_span_ids=["span-001"],
+            source=SourceInfo(content_id="test", evidence_text="Partial trace"),
+            target=TargetInfo(ticker="TSLA"),
+            direction=TradeDirection.BULLISH,
+        )
+        assert ta.canonical_trace_status == "partial"
+
+    def test_trade_action_effective_trade_at(self):
+        """TradeAction carries effective_trade_at distinct from timestamp."""
+        effective = datetime(2026, 3, 15, 9, 30, 0)
+        ta = TradeAction(
+            intent_id="intent-001",
+            policy_id="policy-001",
+            effective_trade_at=effective,
+            source=SourceInfo(content_id="test", evidence_text="Test"),
+            target=TargetInfo(ticker="GOOGL"),
+            direction=TradeDirection.BULLISH,
+        )
+        assert ta.effective_trade_at == effective
+        # effective_trade_at is a distinct field from timestamp
+        assert "effective_trade_at" in ta.model_dump()
+
+    def test_trade_action_serialization_with_trace(self):
+        """TradeAction serialization includes trace fields."""
+        ta = TradeAction(
+            intent_id="intent-serialize-001",
+            policy_id="policy-serialize-001",
+            evidence_span_ids=["span-001"],
+            source=SourceInfo(content_id="test", evidence_text="Test"),
+            target=TargetInfo(ticker="AAPL"),
+            direction=TradeDirection.BULLISH,
+        )
+        data = ta.model_dump(mode='json')
+        assert data["intent_id"] == "intent-serialize-001"
+        assert data["policy_id"] == "policy-serialize-001"
+        assert data["canonical_trace_status"] == "canonical"
+
+        # Round-trip via model_dump preserves enum types for strict=True
+        data_python = ta.model_dump()
+        restored = TradeAction.model_validate(data_python)
+        assert restored.intent_id == "intent-serialize-001"
+        assert restored.canonical_trace_status == "canonical"
+
+        # JSON round-trip via model_validate_json
+        import json
+        json_str = json.dumps(data, default=str)
+        restored_json = TradeAction.model_validate_json(json_str)
+        assert restored_json.intent_id == "intent-serialize-001"
+        assert restored_json.canonical_trace_status == "canonical"
