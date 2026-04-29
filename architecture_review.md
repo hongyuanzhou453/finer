@@ -1,5 +1,10 @@
 # Finer OS 架构文档审阅：系统构建优化建议
 
+> **⚠️ Historical — Superseded by F0-F8 canonical architecture.**
+> 本文档审阅的是 `ARCHITECTURE.md` v1.0.0（L-stage 架构），已不反映当前 F0-F8 pipeline。
+> 当前架构以 `AGENTS.md`、`docs/ARCHITECTURE.md`（v3.0.0, F0-F8）、`docs/specs/f-stage-contracts.md` 为准。
+> 本文档仅保留为 2026-04 历史审查记录。
+
 > 基于 `docs/ARCHITECTURE.md` (1213行, v1.0.0) 的深度审阅  
 > 对照实际代码逐项验证
 

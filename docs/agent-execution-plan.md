@@ -1,6 +1,11 @@
 # Finer Multi-Agent Execution Plan
 
-> 目标: 将 `docs/ARCHITECTURE.md` 和 `docs/architecture-alignment-plan.md` 转成可并行执行、可追踪、可验收的 Agent 任务包。当前阶段不追求完整模型训练，优先打通“超长猫大人 KOL 内容 -> V0 标准化 -> V0.5 时间/质量/实体锚定 -> V1 投资意图”的严格试验链路。
+> **⚠️ Historical / Superseded by F0-F8 contracts.**
+> 本文档基于旧 V0/V0.5/V1 架构编写，已不反映当前 canonical pipeline。
+> 当前架构以 `AGENTS.md`、`docs/ARCHITECTURE.md`（F0-F8）、`docs/specs/f-stage-contracts.md` 为准。
+> 本文档仅保留为历史参考，不应作为新 Agent 任务拆分的依据。
+
+> 目标: 将 `docs/ARCHITECTURE.md` 和 `docs/architecture-alignment-plan.md` 转成可并行执行、可追踪、可验收的 Agent 任务包。当前阶段不追求完整模型训练，优先打通”超长猫大人 KOL 内容 -> V0 标准化 -> V0.5 时间/质量/实体锚定 -> V1 投资意图”的严格试验链路。
 
 ## 1. 执行原则
 

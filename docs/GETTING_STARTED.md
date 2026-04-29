@@ -220,12 +220,12 @@ curl -X POST http://localhost:8000/api/integrations/import \
 ### 工作流 2: 内容处理与事件抽取
 
 ```bash
-# 1. F1 话题分割（标准化）
+# 1. 话题分割（enrichment/ 属 F2 Anchor，legacy API 路径名）
 curl -X POST http://localhost:8000/api/enrichment/split \
   -H "Content-Type: application/json" \
   -d '{"content_id": "test", "content": "聊天记录..."}'
 
-# 2. F2 实体抽取（锚定）
+# 2. 实体抽取（F2 Anchor）
 curl -X POST http://localhost:8000/api/enrichment/extract \
   -H "Content-Type: application/json" \
   -d '{"content_id": "test", "content": "..."}'

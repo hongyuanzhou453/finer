@@ -1,5 +1,10 @@
 # Finer 项目第一性原理分析：通往最终目标的缺口地图
 
+> **⚠️ Historical / Superseded.**
+> 本文档基于旧 L0-L8 架构编写，已不反映当前 canonical pipeline。
+> 当前架构以 `AGENTS.md`、`docs/ARCHITECTURE.md`（F0-F8）、`docs/specs/f-stage-contracts.md` 为准。
+> 本文档仅保留为历史参考。
+
 ## 最终目标重述
 
 > **将财经 KOL 的所有发布内容按时间线整理，并进行回测，验证如果对这个 KOL 进行跟随交易的收益率和市场表现。**
