@@ -81,6 +81,19 @@ class ExitReason(str, Enum):
     UNKNOWN = "unknown"
 
 
+class MarketSession(str, Enum):
+    """Market session at the time of intent publication.
+
+    Used by ExecutionTiming to record what market state existed when the
+    KOL published the content that triggered the trade action.
+    """
+    PRE_MARKET = "pre_market"
+    REGULAR = "regular"
+    AFTER_CLOSE = "after_close"
+    NON_TRADING_DAY = "non_trading_day"
+    UNKNOWN = "unknown"
+
+
 # =============================================================================
 # Nested Models
 # =============================================================================
@@ -376,6 +389,60 @@ class BacktestResult(BaseModel):
     )
 
 
+class ExecutionTiming(BaseModel):
+    """Structured timing information for a TradeAction.
+
+    Captures the full timing chain from KOL publication through system
+    decision to earliest executable time. Critical for:
+    - Backtest reproducibility (prevents look-ahead bias / future-function)
+    - Audit trail: when was the signal published vs when could it be traded
+    - Cross-market handling: different sessions and timezones
+    """
+    model_config = ConfigDict(strict=True)
+
+    intent_published_at: datetime = Field(
+        ...,
+        description="When the KOL published the source content (from F1 ContentEnvelope.published_at)"
+    )
+    intent_effective_at: Optional[datetime] = Field(
+        None,
+        description="When the KOL text indicates the trade should take effect "
+                    "(from F2 TemporalAnchor; None if relative time unresolved)"
+    )
+    action_decision_at: datetime = Field(
+        ...,
+        description="When the system generated this TradeAction (pipeline processing time)"
+    )
+    action_executable_at: datetime = Field(
+        ...,
+        description="Earliest time the action could be executed, computed from "
+                    "market calendar + policy timing rules"
+    )
+
+    market: str = Field(
+        ...,
+        description="Market identifier for calendar resolution (e.g., 'HK', 'CN', 'US')"
+    )
+    timezone: str = Field(
+        ...,
+        description="IANA timezone string (e.g., 'Asia/Hong_Kong', 'America/New_York')"
+    )
+    market_session_at_publish: MarketSession = Field(
+        MarketSession.UNKNOWN,
+        description="Market session state when the KOL content was published"
+    )
+    execution_delay_reason: Optional[str] = Field(
+        None,
+        description="Human-readable reason if action_executable_at > action_decision_at "
+                    "(e.g., 'published after market close, next open is Monday')"
+    )
+    timing_policy_id: str = Field(
+        ...,
+        description="Identifier of the timing policy used to compute action_executable_at "
+                    "(e.g., 'market-calendar-v1', 'policy-timing-follow-next-open')"
+    )
+
+
 # =============================================================================
 # Main TradeAction Model
 # =============================================================================
@@ -483,9 +550,17 @@ class TradeAction(BaseModel):
     canonical_trace_status: str = Field(
         "non_canonical",
         description="Indicates whether the F3→F4→F5 trace chain is complete. "
-                    "'canonical': intent_id + policy_id + len(evidence_span_ids) >= 1. "
-                    "'partial': at least one upstream ID present but evidence_span_ids empty or incomplete triple. "
+                    "'canonical': intent_id + policy_id + len(evidence_span_ids) >= 1 + execution_timing present. "
+                    "'partial': at least one upstream ID present but evidence_span_ids empty "
+                    "or execution_timing missing or incomplete triple. "
                     "'non_canonical': no intent_id AND no policy_id (legacy direct-extraction path)."
+    )
+
+    execution_timing: Optional[ExecutionTiming] = Field(
+        None,
+        description="Structured timing information for the trade action. "
+                    "Canonical TradeActions MUST have this set. "
+                    "Null indicates legacy actions or timing not yet computed."
     )
 
     # =========================================================================
@@ -623,18 +698,20 @@ class TradeAction(BaseModel):
 
     @model_validator(mode='after')
     def validate_canonical_trace(self) -> TradeAction:
-        """Auto-set canonical_trace_status based on upstream ID presence.
+        """Auto-set canonical_trace_status based on upstream ID presence and timing.
 
-        canonical  = intent_id present + policy_id present + at least 1 evidence_span_id
-        partial    = intent_id and/or policy_id present, but evidence_span_ids empty
-                      or only one upstream ID present
+        canonical     = intent_id present + policy_id present
+                        + at least 1 evidence_span_id + execution_timing present
+        partial       = intent_id and/or policy_id present, but evidence_span_ids empty
+                        or execution_timing missing, or only one upstream ID present
         non_canonical = no intent_id AND no policy_id (legacy direct-extraction)
         """
         has_intent = bool(self.intent_id)
         has_policy = bool(self.policy_id)
         has_evidence = len(self.evidence_span_ids) >= 1
+        has_timing = self.execution_timing is not None
 
-        if has_intent and has_policy and has_evidence:
+        if has_intent and has_policy and has_evidence and has_timing:
             self.canonical_trace_status = "canonical"
         elif has_intent or has_policy:
             self.canonical_trace_status = "partial"

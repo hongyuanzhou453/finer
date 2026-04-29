@@ -137,6 +137,17 @@ from finer.schemas.lineage import (
     PipelineRunInfo,
 )
 
+# =============================================================================
+# F1.5 Topic Assembly Schemas
+# =============================================================================
+
+from finer.schemas.topic_block import (
+    TopicType,
+    TOPIC_TYPE_LITERAL,
+    TopicBlock,
+    TopicAssemblyResult,
+)
+
 __all__ = [
     # From quality.py (V0/V0.5)
     "QualityCard",
@@ -214,4 +225,9 @@ __all__ = [
     "DataLineage",
     "VersionInfo",
     "PipelineRunInfo",
+    # From topic_block.py (F1.5 topic assembly)
+    "TopicType",
+    "TOPIC_TYPE_LITERAL",
+    "TopicBlock",
+    "TopicAssemblyResult",
 ]

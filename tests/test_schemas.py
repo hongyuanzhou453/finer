@@ -24,6 +24,8 @@ from finer.schemas.trade_action import (
     BacktestResult,
     TradeAction,
     TradeActionBatch,
+    ExecutionTiming,
+    MarketSession,
 )
 from finer.schemas.event import TradingAction, EventWithActions
 from finer.schemas.enriched_event import (
@@ -681,11 +683,21 @@ class TestCanonicalTrace:
     """Tests for F3 → F4 → F5 canonical trace chain in TradeAction."""
 
     def test_trade_action_canonical_with_full_ids(self):
-        """TradeAction with intent_id + policy_id + evidence_span_ids is canonical."""
+        """TradeAction with intent_id + policy_id + evidence_span_ids + execution_timing is canonical."""
+        now = datetime.now()
+        timing = ExecutionTiming(
+            intent_published_at=now,
+            action_decision_at=now,
+            action_executable_at=now,
+            market="US",
+            timezone="America/New_York",
+            timing_policy_id="market-calendar-v1",
+        )
         ta = TradeAction(
             intent_id="intent-abc-123",
             policy_id="policy-def-456",
             evidence_span_ids=["span-001", "span-002"],
+            execution_timing=timing,
             effective_trade_at=datetime(2026, 4, 24, 9, 30, 0),
             source=SourceInfo(content_id="test", evidence_text="Canonical trace test"),
             target=TargetInfo(ticker="NVDA"),
@@ -695,6 +707,7 @@ class TestCanonicalTrace:
         assert ta.intent_id == "intent-abc-123"
         assert ta.policy_id == "policy-def-456"
         assert ta.evidence_span_ids == ["span-001", "span-002"]
+        assert ta.execution_timing is not None
 
     def test_trade_action_non_canonical_without_ids(self):
         """TradeAction without intent_id/policy_id is non-canonical (legacy path)."""
@@ -735,10 +748,20 @@ class TestCanonicalTrace:
 
     def test_trade_action_serialization_with_trace(self):
         """TradeAction serialization includes trace fields."""
+        now = datetime.now()
+        timing = ExecutionTiming(
+            intent_published_at=now,
+            action_decision_at=now,
+            action_executable_at=now,
+            market="US",
+            timezone="America/New_York",
+            timing_policy_id="market-calendar-v1",
+        )
         ta = TradeAction(
             intent_id="intent-serialize-001",
             policy_id="policy-serialize-001",
             evidence_span_ids=["span-001"],
+            execution_timing=timing,
             source=SourceInfo(content_id="test", evidence_text="Test"),
             target=TargetInfo(ticker="AAPL"),
             direction=TradeDirection.BULLISH,
@@ -747,12 +770,15 @@ class TestCanonicalTrace:
         assert data["intent_id"] == "intent-serialize-001"
         assert data["policy_id"] == "policy-serialize-001"
         assert data["canonical_trace_status"] == "canonical"
+        assert data["execution_timing"] is not None
+        assert data["execution_timing"]["market"] == "US"
 
         # Round-trip via model_dump preserves enum types for strict=True
         data_python = ta.model_dump()
         restored = TradeAction.model_validate(data_python)
         assert restored.intent_id == "intent-serialize-001"
         assert restored.canonical_trace_status == "canonical"
+        assert restored.execution_timing is not None
 
         # JSON round-trip via model_validate_json
         import json
@@ -760,3 +786,277 @@ class TestCanonicalTrace:
         restored_json = TradeAction.model_validate_json(json_str)
         assert restored_json.intent_id == "intent-serialize-001"
         assert restored_json.canonical_trace_status == "canonical"
+        assert restored_json.execution_timing is not None
+
+
+# =============================================================================
+# MarketSession Tests
+# =============================================================================
+
+class TestMarketSession:
+    """Tests for MarketSession enum."""
+
+    def test_market_session_values(self):
+        """All expected MarketSession values exist."""
+        assert MarketSession.PRE_MARKET == "pre_market"
+        assert MarketSession.REGULAR == "regular"
+        assert MarketSession.AFTER_CLOSE == "after_close"
+        assert MarketSession.NON_TRADING_DAY == "non_trading_day"
+        assert MarketSession.UNKNOWN == "unknown"
+
+    def test_market_session_string_coercion(self):
+        """MarketSession can be created from string values."""
+        assert MarketSession("pre_market") == MarketSession.PRE_MARKET
+        assert MarketSession("regular") == MarketSession.REGULAR
+        assert MarketSession("after_close") == MarketSession.AFTER_CLOSE
+
+    def test_market_session_invalid_value(self):
+        """Invalid MarketSession string raises ValueError."""
+        with pytest.raises(ValueError):
+            MarketSession("invalid_session")
+
+
+# =============================================================================
+# ExecutionTiming Tests
+# =============================================================================
+
+class TestExecutionTiming:
+    """Tests for ExecutionTiming model."""
+
+    def test_execution_timing_creation(self):
+        """Test creating ExecutionTiming with all required fields."""
+        now = datetime.now()
+        timing = ExecutionTiming(
+            intent_published_at=now,
+            action_decision_at=now,
+            action_executable_at=now,
+            market="HK",
+            timezone="Asia/Hong_Kong",
+            market_session_at_publish=MarketSession.REGULAR,
+            timing_policy_id="market-calendar-v1",
+        )
+        assert timing.market == "HK"
+        assert timing.timezone == "Asia/Hong_Kong"
+        assert timing.market_session_at_publish == MarketSession.REGULAR
+        assert timing.timing_policy_id == "market-calendar-v1"
+        assert timing.execution_delay_reason is None
+        assert timing.intent_effective_at is None
+
+    def test_execution_timing_with_all_fields(self):
+        """Test ExecutionTiming with all optional fields set."""
+        now = datetime.now()
+        effective = datetime(2026, 4, 15, 9, 30, 0)
+        timing = ExecutionTiming(
+            intent_published_at=now,
+            intent_effective_at=effective,
+            action_decision_at=now,
+            action_executable_at=datetime(2026, 4, 16, 9, 30, 0),
+            market="US",
+            timezone="America/New_York",
+            market_session_at_publish=MarketSession.AFTER_CLOSE,
+            execution_delay_reason="Published after market close, next open is Monday",
+            timing_policy_id="policy-timing-follow-next-open",
+        )
+        assert timing.intent_effective_at == effective
+        assert timing.execution_delay_reason == "Published after market close, next open is Monday"
+        assert timing.market_session_at_publish == MarketSession.AFTER_CLOSE
+
+    def test_execution_timing_serialization(self):
+        """Test ExecutionTiming round-trip serialization."""
+        now = datetime.now()
+        timing = ExecutionTiming(
+            intent_published_at=now,
+            action_decision_at=now,
+            action_executable_at=now,
+            market="CN",
+            timezone="Asia/Shanghai",
+            market_session_at_publish=MarketSession.PRE_MARKET,
+            timing_policy_id="market-calendar-v1",
+        )
+        # Python dict round-trip
+        data = timing.model_dump()
+        restored = ExecutionTiming.model_validate(data)
+        assert restored.market == "CN"
+        assert restored.market_session_at_publish == MarketSession.PRE_MARKET
+
+        # JSON round-trip
+        import json
+        json_data = timing.model_dump(mode="json")
+        json_str = json.dumps(json_data, default=str)
+        restored_json = ExecutionTiming.model_validate_json(json_str)
+        assert restored_json.market == "CN"
+        assert restored_json.market_session_at_publish == MarketSession.PRE_MARKET
+
+    def test_execution_timing_missing_required_field(self):
+        """Test that missing required fields raise ValidationError."""
+        with pytest.raises(ValidationError):
+            ExecutionTiming(
+                # Missing intent_published_at
+                action_decision_at=datetime.now(),
+                action_executable_at=datetime.now(),
+                market="CN",
+                timezone="Asia/Shanghai",
+                timing_policy_id="market-calendar-v1",
+            )
+
+    def test_execution_timing_missing_market(self):
+        """Test that missing market raises ValidationError."""
+        with pytest.raises(ValidationError):
+            ExecutionTiming(
+                intent_published_at=datetime.now(),
+                action_decision_at=datetime.now(),
+                action_executable_at=datetime.now(),
+                # Missing market
+                timezone="Asia/Shanghai",
+                timing_policy_id="market-calendar-v1",
+            )
+
+    def test_execution_timing_missing_timing_policy_id(self):
+        """Test that missing timing_policy_id raises ValidationError."""
+        with pytest.raises(ValidationError):
+            ExecutionTiming(
+                intent_published_at=datetime.now(),
+                action_decision_at=datetime.now(),
+                action_executable_at=datetime.now(),
+                market="CN",
+                timezone="Asia/Shanghai",
+                # Missing timing_policy_id
+            )
+
+    def test_execution_timing_all_sessions(self):
+        """Test that all MarketSession values are accepted."""
+        now = datetime.now()
+        for session in MarketSession:
+            timing = ExecutionTiming(
+                intent_published_at=now,
+                action_decision_at=now,
+                action_executable_at=now,
+                market="CN",
+                timezone="Asia/Shanghai",
+                market_session_at_publish=session,
+                timing_policy_id="market-calendar-v1",
+            )
+            assert timing.market_session_at_publish == session
+
+
+# =============================================================================
+# TradeAction + ExecutionTiming Integration Tests
+# =============================================================================
+
+class TestTradeActionExecutionTiming:
+    """Tests for TradeAction with ExecutionTiming integration."""
+
+    def _make_timing(self, **kwargs) -> ExecutionTiming:
+        """Helper to create a test ExecutionTiming."""
+        now = datetime.now()
+        defaults = dict(
+            intent_published_at=now,
+            action_decision_at=now,
+            action_executable_at=now,
+            market="CN",
+            timezone="Asia/Shanghai",
+            market_session_at_publish=MarketSession.REGULAR,
+            timing_policy_id="market-calendar-v1",
+        )
+        defaults.update(kwargs)
+        return ExecutionTiming(**defaults)
+
+    def test_trade_action_without_timing_is_non_canonical(self):
+        """TradeAction without execution_timing cannot be canonical."""
+        ta = TradeAction(
+            intent_id="intent-001",
+            policy_id="policy-001",
+            evidence_span_ids=["span-001"],
+            # No execution_timing
+            source=SourceInfo(content_id="test", evidence_text="Test"),
+            target=TargetInfo(ticker="AAPL"),
+            direction=TradeDirection.BULLISH,
+        )
+        # Even with all three trace IDs, missing execution_timing → partial
+        assert ta.canonical_trace_status == "partial"
+        assert ta.execution_timing is None
+
+    def test_trade_action_with_timing_is_canonical(self):
+        """TradeAction with full trace + execution_timing is canonical."""
+        timing = self._make_timing()
+        ta = TradeAction(
+            intent_id="intent-001",
+            policy_id="policy-001",
+            evidence_span_ids=["span-001"],
+            execution_timing=timing,
+            source=SourceInfo(content_id="test", evidence_text="Test"),
+            target=TargetInfo(ticker="AAPL"),
+            direction=TradeDirection.BULLISH,
+        )
+        assert ta.canonical_trace_status == "canonical"
+        assert ta.execution_timing is not None
+        assert ta.execution_timing.market == "CN"
+
+    def test_legacy_trade_action_without_timing_still_works(self):
+        """Legacy non-canonical TradeAction without execution_timing is valid."""
+        ta = TradeAction(
+            source=SourceInfo(content_id="test", evidence_text="Legacy"),
+            target=TargetInfo(ticker="AAPL"),
+            direction=TradeDirection.BULLISH,
+        )
+        assert ta.canonical_trace_status == "non_canonical"
+        assert ta.execution_timing is None
+
+    def test_partial_trace_with_timing_is_partial(self):
+        """TradeAction with timing but incomplete trace is partial."""
+        timing = self._make_timing()
+        ta = TradeAction(
+            intent_id="intent-001",
+            # No policy_id
+            evidence_span_ids=["span-001"],
+            execution_timing=timing,
+            source=SourceInfo(content_id="test", evidence_text="Test"),
+            target=TargetInfo(ticker="AAPL"),
+            direction=TradeDirection.BULLISH,
+        )
+        assert ta.canonical_trace_status == "partial"
+
+    def test_timing_serialization_round_trip(self):
+        """TradeAction with ExecutionTiming survives JSON round-trip."""
+        import json
+        timing = self._make_timing(
+            market="HK",
+            timezone="Asia/Hong_Kong",
+            market_session_at_publish=MarketSession.AFTER_CLOSE,
+            execution_delay_reason="After hours",
+        )
+        ta = TradeAction(
+            intent_id="intent-001",
+            policy_id="policy-001",
+            evidence_span_ids=["span-001"],
+            execution_timing=timing,
+            source=SourceInfo(content_id="test", evidence_text="Test"),
+            target=TargetInfo(ticker="0700.HK"),
+            direction=TradeDirection.BULLISH,
+        )
+
+        # JSON round-trip
+        data = ta.model_dump(mode="json")
+        json_str = json.dumps(data, default=str)
+        restored = TradeAction.model_validate_json(json_str)
+
+        assert restored.execution_timing is not None
+        assert restored.execution_timing.market == "HK"
+        assert restored.execution_timing.market_session_at_publish == MarketSession.AFTER_CLOSE
+        assert restored.execution_timing.execution_delay_reason == "After hours"
+        assert restored.canonical_trace_status == "canonical"
+
+    def test_timing_with_none_effective_at(self):
+        """ExecutionTiming with intent_effective_at=None is valid (unresolved time)."""
+        timing = self._make_timing(intent_effective_at=None)
+        ta = TradeAction(
+            intent_id="intent-001",
+            policy_id="policy-001",
+            evidence_span_ids=["span-001"],
+            execution_timing=timing,
+            source=SourceInfo(content_id="test", evidence_text="Test"),
+            target=TargetInfo(ticker="AAPL"),
+            direction=TradeDirection.BULLISH,
+        )
+        assert ta.execution_timing.intent_effective_at is None
+        assert ta.canonical_trace_status == "canonical"

@@ -35,6 +35,7 @@ from finer.schemas.trade_action import (
     TradeDirection,
     ActionStep,
     ActionType,
+    ExecutionTiming,
 )
 
 from finer.schemas.investment_intent import (
@@ -139,12 +140,20 @@ def canonical_mapped_intent(canonical_policy_mapping) -> PolicyMappedIntent:
 
 @pytest.fixture
 def canonical_trade_action_for_trace() -> TradeAction:
-    """TradeAction with full canonical trace (intent_id + policy_id + evidence_span_ids)."""
+    """TradeAction with full canonical trace (intent_id + policy_id + evidence_span_ids + execution_timing)."""
     return TradeAction(
         trade_action_id="ta-canonical-001",
         intent_id="intent-12345678-1234-1234-1234-123456789012",
         policy_id="policy-abcdef01-abcd-abcd-abcd-abcdef012345",
         evidence_span_ids=["span-001", "span-002"],
+        execution_timing=ExecutionTiming(
+            intent_published_at=datetime(2026, 4, 24, 9, 0, 0),
+            action_decision_at=datetime(2026, 4, 24, 9, 15, 0),
+            action_executable_at=datetime(2026, 4, 24, 9, 30, 0),
+            market="CN",
+            timezone="Asia/Shanghai",
+            timing_policy_id="market-calendar-v1",
+        ),
         effective_trade_at=datetime(2026, 4, 24, 9, 30, 0),
         source=SourceInfo(
             creator_id="kol-001",
@@ -538,11 +547,19 @@ class TestCanonicalTrace:
         assert ta.canonical_trace_status == "canonical"
 
     def test_trade_action_carrying_upstream_ids(self):
-        """TradeAction can carry intent_id, policy_id, and evidence_span_ids."""
+        """TradeAction can carry intent_id, policy_id, evidence_span_ids, and execution_timing."""
         ta = TradeAction(
             intent_id="intent-test-abc",
             policy_id="policy-test-def",
             evidence_span_ids=["span-001", "span-002", "span-003"],
+            execution_timing=ExecutionTiming(
+                intent_published_at=datetime(2026, 3, 15, 9, 0, 0),
+                action_decision_at=datetime(2026, 3, 15, 9, 30, 0),
+                action_executable_at=datetime(2026, 3, 15, 10, 0, 0),
+                market="US",
+                timezone="America/New_York",
+                timing_policy_id="market-calendar-v1",
+            ),
             effective_trade_at=datetime(2026, 3, 15, 10, 0, 0),
             source=SourceInfo(content_id="test", evidence_text="Test evidence"),
             target=TargetInfo(ticker="NVDA"),
@@ -552,6 +569,7 @@ class TestCanonicalTrace:
         assert ta.policy_id == "policy-test-def"
         assert ta.evidence_span_ids == ["span-001", "span-002", "span-003"]
         assert ta.effective_trade_at is not None
+        assert ta.execution_timing is not None
         assert ta.canonical_trace_status == "canonical"
 
     def test_trade_action_partial_trace(self):
@@ -595,11 +613,21 @@ class TestCanonicalTrace:
 
     def test_canonical_trace_status_auto_set(self):
         """Verify canonical_trace_status is auto-set by model_validator."""
+        now = datetime.now()
+        timing = ExecutionTiming(
+            intent_published_at=now,
+            action_decision_at=now,
+            action_executable_at=now,
+            market="US",
+            timezone="America/New_York",
+            timing_policy_id="market-calendar-v1",
+        )
         # Setting intent_id manually, validator runs on creation
         ta = TradeAction(
             intent_id="intent-auto-001",
             policy_id="policy-auto-001",
             evidence_span_ids=["span-001"],
+            execution_timing=timing,
             source=SourceInfo(content_id="test", evidence_text="Test"),
             target=TargetInfo(ticker="TSLA"),
             direction=TradeDirection.BULLISH,
@@ -841,10 +869,19 @@ class TestFullChainF3F4F5:
         assert mapped.policy_id == policy.policy_id
 
         # F5: trade action with full trace
+        now = datetime.now()
         trade_action = TradeAction(
             intent_id=intent.intent_id,
             policy_id=policy.policy_id,
             evidence_span_ids=intent.evidence_span_ids,
+            execution_timing=ExecutionTiming(
+                intent_published_at=now,
+                action_decision_at=now,
+                action_executable_at=now,
+                market="CN",
+                timezone="Asia/Shanghai",
+                timing_policy_id="market-calendar-v1",
+            ),
             source=SourceInfo(
                 creator_id=intent.creator_id,
                 content_id=intent.envelope_id,
@@ -865,4 +902,5 @@ class TestFullChainF3F4F5:
         assert trade_action.intent_id == intent.intent_id
         assert trade_action.policy_id == policy.policy_id
         assert trade_action.canonical_trace_status == "canonical"
+        assert trade_action.execution_timing is not None
         assert len(trade_action.evidence_span_ids) >= 1

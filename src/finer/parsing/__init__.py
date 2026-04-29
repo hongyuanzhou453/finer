@@ -17,6 +17,10 @@ from finer.parsing.content_standardizer import (
     standardize_image_strategy,
 )
 
+from finer.parsing.topic_assembler import (
+    TopicAssembler,
+)
+
 __all__ = [
     # Content standardization
     "standardize_text_source",
@@ -24,4 +28,6 @@ __all__ = [
     "standardize_chat_transcript",
     "standardize_audio_transcript",
     "standardize_image_strategy",
+    # F1.5 Topic Assembly
+    "TopicAssembler",
 ]

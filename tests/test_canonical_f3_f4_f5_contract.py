@@ -56,6 +56,8 @@ from finer.schemas.trade_action import (
     ActionType,
     TriggerType,
     ValidationStatus,
+    ExecutionTiming,
+    MarketSession,
 )
 
 # =============================================================================
@@ -252,6 +254,26 @@ def make_mapped_intent(
     )
 
 
+def make_test_timing(
+    market: str = "CN",
+    timezone: str = "Asia/Shanghai",
+    session: MarketSession = MarketSession.REGULAR,
+    intent_effective_at: Optional[datetime] = None,
+) -> ExecutionTiming:
+    """Create a test ExecutionTiming with sensible defaults."""
+    now = datetime.now()
+    return ExecutionTiming(
+        intent_published_at=now,
+        intent_effective_at=intent_effective_at,
+        action_decision_at=now,
+        action_executable_at=now,
+        market=market,
+        timezone=timezone,
+        market_session_at_publish=session,
+        timing_policy_id="market-calendar-v1",
+    )
+
+
 def make_canonical_trade_action(
     intent_id: str,
     policy_id: str,
@@ -259,14 +281,18 @@ def make_canonical_trade_action(
     target_ticker: str = "300750.SZ",
     direction: TradeDirection = TradeDirection.BULLISH,
     effective_trade_at: Optional[datetime] = None,
+    execution_timing: Optional[ExecutionTiming] = None,
 ) -> TradeAction:
     """Build a canonical (F5) TradeAction with full trace."""
+    if execution_timing is None:
+        execution_timing = make_test_timing()
     return TradeAction(
         trade_action_id=_uid("ta-"),
         intent_id=intent_id,
         policy_id=policy_id,
         evidence_span_ids=evidence_span_ids,
         effective_trade_at=effective_trade_at,
+        execution_timing=execution_timing,
         source=SourceInfo(
             creator_id="kol-cat-lord",
             content_id=_uid("content-"),
@@ -716,6 +742,7 @@ class TestKOLSamples:
             intent_id=intent.intent_id,
             policy_id=policy.policy_id,
             evidence_span_ids=intent.evidence_span_ids,
+            execution_timing=make_test_timing(),
             source=SourceInfo(content_id="test", evidence_text="看好新能源"),
             target=TargetInfo(ticker="新能源", market="CN"),
             direction=TradeDirection.BULLISH,
@@ -820,6 +847,12 @@ class TestKOLSamples:
             intent_id=intent.intent_id,
             policy_id=_uid("policy-"),
             evidence_span_ids=intent.evidence_span_ids,
+            execution_timing=make_test_timing(
+                market="CN",
+                timezone="Asia/Shanghai",
+                session=MarketSession.REGULAR,
+                intent_effective_at=None,  # unresolved relative time
+            ),
             # effective_trade_at is None — cannot resolve relative time
             source=SourceInfo(content_id=_uid("content-"), evidence_text="抄底光模块"),
             target=TargetInfo(ticker="光模块", market="CN"),
@@ -864,6 +897,7 @@ class TestKOLSamples:
             intent_id=intent.intent_id,
             policy_id=_uid("policy-"),
             evidence_span_ids=intent.evidence_span_ids,
+            execution_timing=make_test_timing(intent_effective_at=None),
             # No effective_trade_at
             source=SourceInfo(content_id="test", evidence_text="Test"),
             target=TargetInfo(ticker="SECTOR"),
@@ -1083,6 +1117,9 @@ class TestCatLordFixtureIntegration:
                 intent_id=intent_id,
                 policy_id=policy.policy_id,
                 evidence_span_ids=i_data.get("evidence_span_ids", []),
+                execution_timing=make_test_timing(
+                    market=i_data.get("market") or "CN",
+                ),
                 source=SourceInfo(
                     content_id=i_data.get("envelope_id", "unknown"),
                     evidence_text=f"Intent: {i_data.get('target_name', 'unknown')}",
@@ -1389,6 +1426,7 @@ class TestBacktestReadiness:
             intent_id="intent-001",
             policy_id="policy-001",
             evidence_span_ids=["span-001"],
+            execution_timing=make_test_timing(intent_effective_at=None),
             # effective_trade_at intentionally None (relative time)
             source=SourceInfo(content_id="test", evidence_text="上周加仓"),
             target=TargetInfo(ticker="AAPL"),

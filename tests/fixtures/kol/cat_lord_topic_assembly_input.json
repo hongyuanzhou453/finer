@@ -1,0 +1,756 @@
+{
+  "envelope_id": "cat_lord_2026_04_29_long_chat",
+  "schema_version": "v0.5",
+  "source_type": "chat",
+  "source_uri": null,
+  "source_title": "猫大人长聊天 — 2026年4月29日",
+  "creator_id": "cat_lord_fire",
+  "creator_name": "猫大人FIRE",
+  "published_at": "2026-04-29T09:00:00+08:00",
+  "ingested_at": "2026-04-29T23:59:00+08:00",
+  "blocks": [
+    {
+      "block_id": "cl_ta_001",
+      "block_type": "chat_message",
+      "text": "大家早上好，今天行情不错，聊聊几个大家关心的标的",
+      "order": 0,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.95,
+        "semantic_completeness_score": 0.6,
+        "financial_relevance_score": 0.3,
+        "entity_resolution_score": 0.2,
+        "temporal_resolution_score": 0.5,
+        "evidence_traceability_score": 0.4,
+        "overall_score": 0.49,
+        "gate_status": "review",
+        "gate_reasons": ["financial_relevance_score below 0.5 threshold"]
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:00:00+08:00"
+      }
+    },
+    {
+      "block_id": "cl_ta_002",
+      "block_type": "chat_message",
+      "text": "先说泡泡玛特。最近labubu又爆了，东南亚市场持续放量。核心观点：IP运营能力是护城河，不是渠道。渠道可以复制，但IP孵化和运营的体系化能力很难追。",
+      "order": 1,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.92,
+        "semantic_completeness_score": 0.88,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.9,
+        "temporal_resolution_score": 0.8,
+        "evidence_traceability_score": 0.75,
+        "overall_score": 0.87,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:02:00+08:00",
+        "mentioned_entities": ["泡泡玛特", "labubu"]
+      }
+    },
+    {
+      "block_id": "cl_ta_003",
+      "block_type": "chat_message",
+      "text": "Q: 猫大泡泡玛特估值怎么看？\nA: 当前PE 35倍左右，不便宜。但如果看2026年预期，全年营收如果能到130亿+，对应PE降到25倍附近，还能接受。关键是同店增速能不能维持20%以上，如果掉到15%以下就要小心了。",
+      "order": 2,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.9,
+        "semantic_completeness_score": 0.92,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.95,
+        "temporal_resolution_score": 0.9,
+        "evidence_traceability_score": 0.85,
+        "overall_score": 0.91,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:05:00+08:00",
+        "mentioned_entities": ["泡泡玛特"],
+        "price_targets": {
+          "current_pe": 35,
+          "forward_pe": 25,
+          "revenue_forecast": 130,
+          "currency": "CNY"
+        }
+      }
+    },
+    {
+      "block_id": "cl_ta_004",
+      "block_type": "chat_message",
+      "text": "管理层给的海外指引很激进，东南亚+欧美要占到总营收30%以上。我觉得25%比较现实，但即便如此增速也够看了。短期看股价已经反映了不少预期，追高风险大。",
+      "order": 3,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.92,
+        "semantic_completeness_score": 0.85,
+        "financial_relevance_score": 0.9,
+        "entity_resolution_score": 0.7,
+        "temporal_resolution_score": 0.65,
+        "evidence_traceability_score": 0.6,
+        "overall_score": 0.77,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:07:00+08:00"
+      }
+    },
+    {
+      "block_id": "cl_ta_005",
+      "block_type": "chat_message",
+      "text": "接下来说说新能源。政策退坡之后行业分化会加剧，纯靠补贴活的车企会加速出清。智能化能力才是下半场的核心变量。传统车企转型慢的，基本没戏。",
+      "order": 4,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.93,
+        "semantic_completeness_score": 0.88,
+        "financial_relevance_score": 0.9,
+        "entity_resolution_score": 0.75,
+        "temporal_resolution_score": 0.7,
+        "evidence_traceability_score": 0.65,
+        "overall_score": 0.8,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:10:00+08:00",
+        "mentioned_entities": ["新能源"]
+      }
+    },
+    {
+      "block_id": "cl_ta_006",
+      "block_type": "chat_message",
+      "text": "Q: 新能源汽车现在还能买吗？\nA: 整体板块我不太建议追，但可以精选。比亚迪在海外有增量逻辑，短期回调可以关注。小米汽车势头不错但估值已经很贵了。",
+      "order": 5,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.9,
+        "semantic_completeness_score": 0.88,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.9,
+        "temporal_resolution_score": 0.75,
+        "evidence_traceability_score": 0.7,
+        "overall_score": 0.85,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:12:00+08:00",
+        "mentioned_entities": ["新能源汽车", "比亚迪", "小米汽车"]
+      }
+    },
+    {
+      "block_id": "cl_ta_007",
+      "block_type": "chat_message",
+      "text": "有些人问我怎么看特斯拉。特斯拉在中国的竞争力其实在下降，FSD进不来，价格战又打不过比亚迪。但美股那边还有机器人和AI的故事，所以估值体系不一样。A股的新能源产业链比特斯拉本身更值得关注。",
+      "order": 6,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.92,
+        "semantic_completeness_score": 0.9,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.92,
+        "temporal_resolution_score": 0.7,
+        "evidence_traceability_score": 0.75,
+        "overall_score": 0.86,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:15:00+08:00",
+        "mentioned_entities": ["特斯拉", "比亚迪", "新能源"]
+      }
+    },
+    {
+      "block_id": "cl_ta_008",
+      "block_type": "chat_message",
+      "text": "最近重读了巴菲特1957年到2025年的股东信，68年跨度，做了一些笔记跟大家分享。核心就一句话：买股票就是买公司的一部分，关注企业内在价值，而不是股价波动。",
+      "order": 7,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.95,
+        "semantic_completeness_score": 0.9,
+        "financial_relevance_score": 0.9,
+        "entity_resolution_score": 0.85,
+        "temporal_resolution_score": 0.9,
+        "evidence_traceability_score": 0.8,
+        "overall_score": 0.88,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:20:00+08:00",
+        "mentioned_entities": ["巴菲特"]
+      }
+    },
+    {
+      "block_id": "cl_ta_009",
+      "block_type": "chat_message",
+      "text": "巴菲特反复强调的能力圈原则：不投看不懂的东西。他错过了微软、谷歌，但丝毫不后悔。因为坚守能力圈让他避开了无数陷阱。我觉得这点特别值得当下A股投资者学习，太多人什么都想赚，最后什么都没赚到。",
+      "order": 8,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.93,
+        "semantic_completeness_score": 0.9,
+        "financial_relevance_score": 0.88,
+        "entity_resolution_score": 0.8,
+        "temporal_resolution_score": 0.65,
+        "evidence_traceability_score": 0.7,
+        "overall_score": 0.81,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:22:00+08:00"
+      }
+    },
+    {
+      "block_id": "cl_ta_010",
+      "block_type": "chat_message",
+      "text": "还有复利思维，长期持有优质企业让时间做朋友。频繁交易只会增加摩擦成本，大部分散户跑不赢指数就是因为交易太频繁。巴菲特从1965年持有伯克希尔到现在，年化收益接近20%，靠的就是复利的力量。",
+      "order": 9,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.92,
+        "semantic_completeness_score": 0.9,
+        "financial_relevance_score": 0.9,
+        "entity_resolution_score": 0.82,
+        "temporal_resolution_score": 0.85,
+        "evidence_traceability_score": 0.75,
+        "overall_score": 0.86,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:24:00+08:00"
+      }
+    },
+    {
+      "block_id": "cl_ta_011",
+      "block_type": "chat_message",
+      "text": "转一个不错的研报链接 https://research.example.com/2026/auto-industry-outlook 大家可以看看",
+      "order": 10,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.9,
+        "semantic_completeness_score": 0.4,
+        "financial_relevance_score": 0.5,
+        "entity_resolution_score": 0.3,
+        "temporal_resolution_score": 0.3,
+        "evidence_traceability_score": 0.2,
+        "overall_score": 0.43,
+        "gate_status": "review",
+        "gate_reasons": ["semantic_completeness_score below 0.5 threshold"]
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:26:00+08:00",
+        "content_type": "link"
+      }
+    },
+    {
+      "block_id": "cl_ta_012",
+      "block_type": "chat_message",
+      "text": "对了，老铺黄金最近跌了不少，说说我的看法。老铺黄金做的是高端古法黄金饰品，这个细分赛道很有意思。传统黄金饰品同质化严重，定价权弱，但老铺走的是文化+工艺路线，定价能力强，毛利率能到40%以上，在黄金行业里算非常优秀了。",
+      "order": 11,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.93,
+        "semantic_completeness_score": 0.92,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.95,
+        "temporal_resolution_score": 0.8,
+        "evidence_traceability_score": 0.8,
+        "overall_score": 0.89,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:30:00+08:00",
+        "mentioned_entities": ["老铺黄金"]
+      }
+    },
+    {
+      "block_id": "cl_ta_013",
+      "block_type": "chat_message",
+      "text": "Q: 老铺黄金一季报怎么样？\nA: 一季报很亮眼，营收增长65%，门店扩张也在加速。古法工艺的差异化壁垒比想象中深，竞争对手短期内很难追上。管理层执行力也不错，开店节奏控制得好。",
+      "order": 12,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.9,
+        "semantic_completeness_score": 0.9,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.95,
+        "temporal_resolution_score": 0.85,
+        "evidence_traceability_score": 0.8,
+        "overall_score": 0.89,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:33:00+08:00",
+        "mentioned_entities": ["老铺黄金"],
+        "financial_data": {
+          "revenue_growth_yoy": "65%",
+          "period": "Q1 2026"
+        }
+      }
+    },
+    {
+      "block_id": "cl_ta_014",
+      "block_type": "chat_message",
+      "text": "但当前PE 40倍确实不便宜了，需要等回调。我觉得480以下可以考虑建仓，现在追高风险太大。古法黄金赛道长期看好，年轻消费者越来越吃文化属性这套。",
+      "order": 13,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.92,
+        "semantic_completeness_score": 0.88,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.9,
+        "temporal_resolution_score": 0.7,
+        "evidence_traceability_score": 0.75,
+        "overall_score": 0.85,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:35:00+08:00",
+        "mentioned_entities": ["老铺黄金"]
+      }
+    },
+    {
+      "block_id": "cl_ta_015",
+      "block_type": "chat_message",
+      "text": "Q: 猫大你持仓能公开吗\nA: 不会公开持仓的，之前提到的都是观察标的不是建议。投资决策要自己做，我只是分享分析思路。",
+      "order": 14,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.95,
+        "semantic_completeness_score": 0.6,
+        "financial_relevance_score": 0.2,
+        "entity_resolution_score": 0.1,
+        "temporal_resolution_score": 0.3,
+        "evidence_traceability_score": 0.3,
+        "overall_score": 0.41,
+        "gate_status": "review",
+        "gate_reasons": ["financial_relevance_score below 0.5 threshold"]
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:38:00+08:00"
+      }
+    },
+    {
+      "block_id": "cl_ta_016",
+      "block_type": "chat_message",
+      "text": "说一个最近关注的——卫星化学。轻烃化工龙头，乙烷裂解路线成本优势明显。原料端跟美国签了长期乙烷供应协议，成本锁定做得好。C2产业链毛利率维持在25%以上，在化工行业里算很能打的了。",
+      "order": 15,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.93,
+        "semantic_completeness_score": 0.9,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.95,
+        "temporal_resolution_score": 0.75,
+        "evidence_traceability_score": 0.8,
+        "overall_score": 0.88,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:40:00+08:00",
+        "mentioned_entities": ["卫星化学"]
+      }
+    },
+    {
+      "block_id": "cl_ta_017",
+      "block_type": "chat_message",
+      "text": "新材料业务是加分项，贡献了大概30%的利润，未来这块增速会更快。估值方面当前12倍PE，2026年归母净利润预期60-65亿，目标价22-24元。化工行业能给到这个估值已经不错了，关键是确定性高。",
+      "order": 16,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.9,
+        "semantic_completeness_score": 0.92,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.92,
+        "temporal_resolution_score": 0.88,
+        "evidence_traceability_score": 0.85,
+        "overall_score": 0.9,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:42:00+08:00",
+        "mentioned_entities": ["卫星化学"],
+        "price_targets": {
+          "target_price_low": 22,
+          "target_price_high": 24,
+          "currency": "CNY",
+          "current_pe": 12,
+          "profit_forecast_low": 60,
+          "profit_forecast_high": 65
+        }
+      }
+    },
+    {
+      "block_id": "cl_ta_018",
+      "block_type": "chat_message",
+      "text": "今天先聊这些，下次再继续。有具体个股问题可以留言，我挑着回。",
+      "order": 17,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.95,
+        "semantic_completeness_score": 0.5,
+        "financial_relevance_score": 0.2,
+        "entity_resolution_score": 0.1,
+        "temporal_resolution_score": 0.3,
+        "evidence_traceability_score": 0.3,
+        "overall_score": 0.39,
+        "gate_status": "review",
+        "gate_reasons": ["financial_relevance_score below 0.5 threshold"]
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T09:45:00+08:00"
+      }
+    },
+    {
+      "block_id": "cl_ta_019",
+      "block_type": "chat_message",
+      "text": "补充一下卫星化学的风险点：乙烷价格波动是主要风险，如果美国乙烷供应紧张或者贸易摩擦升级，成本优势会被削弱。不过长期看，美国页岩气革命带来的乙烷过剩是结构性的，短期波动不影响长期逻辑。新材料业务增速如果能维持30%以上，未来估值有重估空间。",
+      "order": 18,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.92,
+        "semantic_completeness_score": 0.9,
+        "financial_relevance_score": 0.95,
+        "entity_resolution_score": 0.92,
+        "temporal_resolution_score": 0.75,
+        "evidence_traceability_score": 0.8,
+        "overall_score": 0.87,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T10:00:00+08:00",
+        "mentioned_entities": ["卫星化学"]
+      }
+    },
+    {
+      "block_id": "cl_ta_020",
+      "block_type": "chat_message",
+      "text": "Q: 猫大之前提过的标的能列一下吗\nA: 理想汽车、宝丰能源、阿特斯、腾讯音乐、泡泡玛特这些之前都分析过，观察标的不是建议。老铺黄金等回调，卫星化学确定性高。",
+      "order": 19,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.92,
+        "semantic_completeness_score": 0.75,
+        "financial_relevance_score": 0.7,
+        "entity_resolution_score": 0.85,
+        "temporal_resolution_score": 0.5,
+        "evidence_traceability_score": 0.5,
+        "overall_score": 0.7,
+        "gate_status": "pass",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T10:05:00+08:00",
+        "mentioned_entities": ["理想汽车", "宝丰能源", "阿特斯", "腾讯音乐", "泡泡玛特", "老铺黄金", "卫星化学"]
+      }
+    },
+    {
+      "block_id": "cl_ta_021",
+      "block_type": "chat_message",
+      "text": "Q: 猫大茅台怎么看\nA: 茅台没深入研究过，白酒行业我不太懂，不好评价。能力圈原则，不懂就不碰。",
+      "order": 20,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": "猫大人FIRE",
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.95,
+        "semantic_completeness_score": 0.65,
+        "financial_relevance_score": 0.5,
+        "entity_resolution_score": 0.5,
+        "temporal_resolution_score": 0.4,
+        "evidence_traceability_score": 0.4,
+        "overall_score": 0.57,
+        "gate_status": "review",
+        "gate_reasons": []
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "timestamp": "2026-04-29T10:08:00+08:00",
+        "mentioned_entities": ["茅台"]
+      }
+    },
+    {
+      "block_id": "cl_ta_022",
+      "block_type": "chat_message",
+      "text": "[系统消息] 猫大人FIRE 的直播间获得 1000 个点赞",
+      "order": 21,
+      "parent_block_id": null,
+      "page_index": null,
+      "bbox": null,
+      "speaker": null,
+      "start_time_sec": null,
+      "end_time_sec": null,
+      "quality_card": {
+        "readability_score": 0.8,
+        "semantic_completeness_score": 0.2,
+        "financial_relevance_score": 0.05,
+        "entity_resolution_score": 0.1,
+        "temporal_resolution_score": 0.3,
+        "evidence_traceability_score": 0.1,
+        "overall_score": 0.26,
+        "gate_status": "reject",
+        "gate_reasons": ["financial_relevance_score below 0.3 threshold"]
+      },
+      "evidence_spans": [],
+      "metadata": {
+        "content_type": "system_message"
+      }
+    }
+  ],
+  "quality_card": {
+    "readability_score": 0.92,
+    "semantic_completeness_score": 0.85,
+    "financial_relevance_score": 0.82,
+    "entity_resolution_score": 0.8,
+    "temporal_resolution_score": 0.68,
+    "evidence_traceability_score": 0.65,
+    "overall_score": 0.79,
+    "gate_status": "pass",
+    "gate_reasons": []
+  },
+  "temporal_anchors": [
+    {
+      "anchor_id": "ta_cl_001",
+      "anchor_type": "published_at",
+      "raw_text": "2026年4月29日",
+      "resolved_time": "2026-04-29T00:00:00+08:00",
+      "confidence": 1.0,
+      "resolution_strategy": "explicit_date",
+      "evidence_span_id": null
+    }
+  ],
+  "entity_anchors": [
+    {
+      "entity_anchor_id": "ea_cl_001",
+      "entity_type": "stock",
+      "raw_text": "泡泡玛特",
+      "resolved_name": "泡泡玛特",
+      "resolved_symbol": "9992.HK",
+      "market": "HK",
+      "confidence": 0.95,
+      "metadata": {
+        "mentioned_in_blocks": ["cl_ta_002", "cl_ta_003", "cl_ta_004"]
+      }
+    },
+    {
+      "entity_anchor_id": "ea_cl_002",
+      "entity_type": "sector",
+      "raw_text": "新能源汽车",
+      "resolved_name": "新能源汽车",
+      "resolved_symbol": null,
+      "market": null,
+      "confidence": 0.9,
+      "metadata": {
+        "mentioned_in_blocks": ["cl_ta_005", "cl_ta_006", "cl_ta_007"]
+      }
+    },
+    {
+      "entity_anchor_id": "ea_cl_003",
+      "entity_type": "person",
+      "raw_text": "巴菲特",
+      "resolved_name": "沃伦·巴菲特",
+      "resolved_symbol": null,
+      "market": null,
+      "confidence": 0.98,
+      "metadata": {
+        "mentioned_in_blocks": ["cl_ta_008", "cl_ta_009", "cl_ta_010"]
+      }
+    },
+    {
+      "entity_anchor_id": "ea_cl_004",
+      "entity_type": "stock",
+      "raw_text": "老铺黄金",
+      "resolved_name": "老铺黄金",
+      "resolved_symbol": null,
+      "market": "HK",
+      "confidence": 0.92,
+      "metadata": {
+        "mentioned_in_blocks": ["cl_ta_012", "cl_ta_013", "cl_ta_014"]
+      }
+    },
+    {
+      "entity_anchor_id": "ea_cl_005",
+      "entity_type": "stock",
+      "raw_text": "卫星化学",
+      "resolved_name": "卫星化学",
+      "resolved_symbol": "002648.SZ",
+      "market": "A",
+      "confidence": 0.95,
+      "metadata": {
+        "mentioned_in_blocks": ["cl_ta_016", "cl_ta_017", "cl_ta_019"]
+      }
+    },
+    {
+      "entity_anchor_id": "ea_cl_006",
+      "entity_type": "stock",
+      "raw_text": "比亚迪",
+      "resolved_name": "比亚迪",
+      "resolved_symbol": "002594.SZ",
+      "market": "A",
+      "confidence": 0.95,
+      "metadata": {
+        "mentioned_in_blocks": ["cl_ta_006", "cl_ta_007"]
+      }
+    },
+    {
+      "entity_anchor_id": "ea_cl_007",
+      "entity_type": "stock",
+      "raw_text": "特斯拉",
+      "resolved_name": "特斯拉",
+      "resolved_symbol": "TSLA",
+      "market": "US",
+      "confidence": 0.95,
+      "metadata": {
+        "mentioned_in_blocks": ["cl_ta_007"]
+      }
+    }
+  ],
+  "metadata": {
+    "source_platform": "feishu",
+    "content_format": "live_chat",
+    "total_messages": 22,
+    "qa_pairs": 6,
+    "total_char_count": 2850,
+    "estimated_reading_time_min": 12
+  }
+}
