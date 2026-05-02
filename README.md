@@ -82,8 +82,8 @@ Application-ready materials:
 
 ### 🧱 F0-F2 多源标准化
 - **F0 Intake** — 飞书/B站/微信/PDF 多源内容接入，统一写入 ContentRecord
-- **F1 Standardize** — ContentEnvelope / ContentBlock 将图片、聊天、文档、PDF、转录稿统一成可追踪内容块
-- **F1.5 Topic Assembly** — 将长聊天/长文档按标的、行业、宏观、投资哲学等主题组装为 TopicBlock
+- **F1 Standardize** — 将飞书聊天 markdown、图片 OCR/layout、文档/PDF 等转成 canonical ContentEnvelope / ContentBlock，并记录 standardization quality 与 provenance；音频转录契约预留
+- **F1.5 Topic Assembly** — 将 F1 已标准化 block 按标的、行业、宏观、投资哲学等语义主题组装为 TopicBlock；规则版只作为 baseline/fallback，主方向是 constrained LLM proposal + deterministic validator
 - **F2 Anchor** — QualityCard 六维质量评估 + TemporalAnchor 时间解析 + EvidenceSpan 证据跨度锚定
 
 ### 🎯 F3 Intent 抽取
@@ -135,7 +135,7 @@ Application-ready materials:
 | **核心语言** | Python 3.11+ / TypeScript | 后端逻辑 + 前端交互 |
 | **Web 框架** | FastAPI + Pydantic V2 | API 服务 + 数据校验 |
 | **前端框架** | Next.js 14 + TailwindCSS | Dashboard 工作台 |
-| **大模型** | Qwen-VL-Max / DeepSeek / OpenAI | 视觉解析 + 事件抽取 |
+| **大模型** | MiMo-V2.5 / DeepSeek / OpenAI | 视觉解析 + 事件抽取 |
 | **结构约束** | Instructor | Contract-first 强类型输出 |
 | **数据处理** | Data-Juicer / Polars | 数据清洗 + 回测引擎 |
 | **RLHF 平台** | 自研 Dashboard | 人工标注 + 偏好收集 |
@@ -176,6 +176,8 @@ vim configs/feishu.yaml
 
 # 设置环境变量
 export OPENAI_API_KEY="your-key"
+export MIMO_API_KEY="your-key"  # MiMo-V2.5，F1 图片/PDF OCR
+export MIMO_BASE_URL="https://token-plan-cn.xiaomimimo.com/v1"  # 仅 tp-* Token Plan key 需要
 export DASHSCOPE_API_KEY="your-key"  # 通义千问
 export FINANCE_SKILLS_API_KEY="your-key"  # 可选
 ```
@@ -222,9 +224,9 @@ flowchart LR
     ↓
 F0 Intake — 多源内容接入 (飞书/B站/微信/PDF)
     ↓
-F1 Standardize — 内容块标准化 (ContentEnvelope / ContentBlock)
+F1 Standardize — 内容块标准化 (ContentEnvelope / ContentBlock + standardization quality + provenance)
     ↓
-F1.5 Topic Assembly — 长聊天/长文档主题组装 (TopicBlock / TopicAssemblyResult)
+F1.5 Topic Assembly — 长聊天/长文档语义主题组装 (TopicBlock / TopicAssemblyResult)
     ↓
 F2 Anchor — 质量评估 + 时间锚 + 证据跨度 (QualityCard / TemporalAnchor / EvidenceSpan)
     ↓
@@ -247,7 +249,7 @@ FT Training Loop — SFT / DPO / RLHF 模型改进 (跨阶段闭环)
 |:---|:---|:---|:---|
 | **F0** | 接入层 | 多源数据导入 | `ingestion/feishu_poller.py` |
 | **F1** | 标准化层 | 内容容器、质量卡、证据链 | `schemas/content_envelope.py`, `schemas/quality.py` |
-| **F1.5** | 主题组装层 | 长聊天/长文档拆分为 TopicBlock | `schemas/topic_block.py`, `parsing/topic_assembler.py` |
+| **F1.5** | 主题组装层 | 长聊天/长文档拆分为 TopicBlock | `schemas/topic_block.py`, `parsing/topic_assembler.py`, `parsing/llm_topic_assembly_adapter.py` |
 | **F2** | 锚定层 | TemporalAnchor 时间解析、EvidenceSpan 锚定 | `schemas/temporal.py` |
 | **F3** | 意图层 | 投资意图抽取 (四轴输出) | `schemas/investment_intent.py`, `extraction/intent_extractor.py` |
 | **F4** | 策略层 | Policy 映射 (hint, 不生成 TradeAction) | `policy/policy_mapper.py`, `schemas/policy.py` |

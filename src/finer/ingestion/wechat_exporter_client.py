@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -18,6 +20,36 @@ from typing import Any, Optional
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+class _RateLimiter:
+    """Fixed-window rate limiter for exporter API calls.
+
+    Uses a sliding window of timestamps to enforce a maximum number
+    of requests per minute.
+    """
+
+    def __init__(self, requests_per_minute: int = 60):
+        self._max_requests = requests_per_minute
+        self._window = 60.0  # seconds
+        self._timestamps: deque[float] = deque()
+
+    async def acquire(self) -> None:
+        """Wait until a request slot is available."""
+        now = time.monotonic()
+        # Purge timestamps outside the window
+        while self._timestamps and self._timestamps[0] < now - self._window:
+            self._timestamps.popleft()
+
+        if len(self._timestamps) >= self._max_requests:
+            # Wait until the oldest timestamp expires
+            sleep_until = self._timestamps[0] + self._window
+            wait = sleep_until - now
+            if wait > 0:
+                logger.debug(f"Rate limiter: waiting {wait:.1f}s")
+                await asyncio.sleep(wait)
+
+        self._timestamps.append(time.monotonic())
 
 
 class ScanStatus(str, Enum):
@@ -111,16 +143,19 @@ class WeChatExporterClient:
         self,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = DEFAULT_TIMEOUT,
+        requests_per_minute: int = 60,
     ):
         """Initialize the client.
 
         Args:
             base_url: Base URL of the wechat-article-exporter service
             timeout: HTTP request timeout in seconds
+            requests_per_minute: Maximum requests per minute (rate limit)
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.auth_key: Optional[str] = None
+        self._rate_limiter = _RateLimiter(requests_per_minute)
 
         # Shared async client (created on first use)
         self._client: Optional[httpx.AsyncClient] = None
@@ -195,6 +230,7 @@ class WeChatExporterClient:
         sid = f"{int(time.time() * 1000)}{random.randint(0, 99)}"
 
         try:
+            await self._rate_limiter.acquire()
             response = await client.post(
                 f"/api/web/login/session/{sid}",
                 headers=self._get_headers(),
@@ -236,6 +272,7 @@ class WeChatExporterClient:
 
             # Step 1: Start login session
             sid = f"{int(time.time() * 1000)}{int(time.time() * 1000) % 100}"
+            await self._rate_limiter.acquire()
             session_response = await client.post(
                 f"/api/web/login/session/{sid}",
                 headers=self._get_headers(),
@@ -257,6 +294,7 @@ class WeChatExporterClient:
             if uuid_cookie:
                 headers["Cookie"] = f"uuid={uuid_cookie}"
 
+            await self._rate_limiter.acquire()
             response = await client.get(
                 f"/api/web/login/getqrcode?rnd={int(time.time() * 1000)}",
                 headers=headers,
@@ -293,6 +331,7 @@ class WeChatExporterClient:
         client = await self._ensure_client()
 
         try:
+            await self._rate_limiter.acquire()
             response = await client.get(
                 "/api/web/login/scan",
                 headers=self._get_headers(),
@@ -396,6 +435,7 @@ class WeChatExporterClient:
         client = await self._ensure_client()
 
         try:
+            await self._rate_limiter.acquire()
             response = await client.post(
                 "/api/web/login/bizlogin",
                 headers=self._get_headers(),
@@ -446,6 +486,7 @@ class WeChatExporterClient:
         client = await self._ensure_client()
 
         try:
+            await self._rate_limiter.acquire()
             response = await client.get(
                 "/api/web/mp/searchbiz",
                 params={"keyword": keyword},
@@ -511,6 +552,7 @@ class WeChatExporterClient:
         size = min(size, 10)
 
         try:
+            await self._rate_limiter.acquire()
             response = await client.get(
                 "/api/web/mp/appmsgpublish",
                 params={
@@ -640,6 +682,7 @@ class WeChatExporterClient:
         client = await self._ensure_client()
 
         try:
+            await self._rate_limiter.acquire()
             response = await client.post(
                 "/api/web/mp/export",
                 params={"url": article_url, "format": format},
@@ -684,6 +727,7 @@ class WeChatExporterClient:
         client = await self._ensure_client()
 
         try:
+            await self._rate_limiter.acquire()
             response = await client.get(
                 "/api/web/mp/appmsg",
                 params={

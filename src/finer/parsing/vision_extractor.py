@@ -1,24 +1,41 @@
 import os
 import logging
+import base64
+import mimetypes
 from pathlib import Path
-from http import HTTPStatus
-import dashscope
+
+from finer.llm.client import LLMClient
+from finer.model_config import get_vision_registry
 from finer.schemas.content import ContentRecord
 from finer.schemas.segment import SegmentRecord
 
 class VisionExtractor:
     """
-    Extracts text and layout structure from Images using Qwen-VL API.
+    Legacy image extractor that emits SegmentRecord blocks.
+
+    New F1 code should use ImageOCRLayoutStandardizer. This compatibility
+    extractor still exists for older ingestion flows, but it uses the same
+    MiMo-V2.5 vision registry as canonical F1 OCR.
     """
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.environ.get("DASHSCOPE_API_KEY")
+        self.api_key = api_key or os.environ.get("MIMO_API_KEY")
         if not self.api_key:
-            raise ValueError("DASHSCOPE_API_KEY is not set.")
-        dashscope.api_key = self.api_key
+            raise ValueError("MIMO_API_KEY is not set.")
+        registry = get_vision_registry()
+        model_config = registry.models[0]
+        self.client = LLMClient(
+            api_key=self.api_key,
+            base_url=model_config.base_url,
+            model=model_config.name,
+            max_tokens=model_config.max_tokens,
+            api_key_header=model_config.api_key_header,
+            api_key_scheme=model_config.api_key_scheme,
+            max_tokens_field=model_config.max_tokens_field,
+        )
 
     def extract_image(self, content_record: ContentRecord) -> list[SegmentRecord]:
         """
-        Calls Qwen-VL-Max to extract text from a single image and parse it into manageable segments.
+        Calls MiMo-V2.5 to extract text from a single image and parse it into manageable segments.
         """
         source_path = Path(content_record.source_path)
         if not source_path.exists():
@@ -32,25 +49,16 @@ class VisionExtractor:
             "注意：只需返回Markdown本身，不要附加额外问候语。"
         )
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"image": f"file://{source_path.absolute()}"},
-                    {"text": prompt}
-                ]
-            }
-        ]
-
-        logging.info(f"Sending {source_path.name} to Qwen-VL-Max...")
-        response = dashscope.MultiModalConversation.call(
-            model='qwen-vl-max',
-            messages=messages
+        logging.info("Sending %s to MiMo-V2.5 vision OCR...", source_path.name)
+        image_b64 = base64.b64encode(source_path.read_bytes()).decode("ascii")
+        mime_type = mimetypes.guess_type(str(source_path))[0] or "image/png"
+        text_result = self.client.chat_with_images(
+            text=prompt,
+            image_base64=image_b64,
+            mime_type=mime_type,
         )
 
-        if response.status_code == HTTPStatus.OK:
-            text_result = response.output.choices[0].message.content[0]['text']
-            
+        if text_result:
             # Better chunking: track Markdown headers for structural context
             lines = text_result.split("\n")
             segments = []
@@ -99,5 +107,5 @@ class VisionExtractor:
 
             return segments
         else:
-            logging.error(f"DashScope Qwen-VL Error: {response.code} - {response.message}")
+            logging.error("MiMo-V2.5 vision OCR returned no text for %s", source_path.name)
             return []

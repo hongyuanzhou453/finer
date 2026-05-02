@@ -223,7 +223,7 @@ def sync_chat(
 
     vision_desc = None
     if vision_cfg.get("enabled"):
-        vision_desc = VisionDescriptor(model=vision_cfg.get("model", "qwen-vl-plus"))
+        vision_desc = VisionDescriptor(model=vision_cfg.get("model", "mimo-v2.5"))
 
     # Initialize summary generator
     summary_gen = None

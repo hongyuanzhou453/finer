@@ -1033,18 +1033,22 @@ class UnifiedWeChatAdapter:
         return await self._direct_adapter.create_login_session()
 
     async def _login_via_exporter(self) -> WeChatSession:
-        """Login via wechat-article-exporter service."""
+        """Login via wechat-article-exporter service.
+
+        get_qrcode() returns raw image bytes (JPEG/PNG).
+        """
         client = self._get_exporter_client()
         if not client:
             raise RuntimeError("Exporter client not available")
 
-        # Get QR code from exporter
-        qr_result = await client.get_qrcode()
+        qr_bytes = await client.get_qrcode()
+        qr_base64 = base64.b64encode(qr_bytes).decode("utf-8")
+        qr_url = f"data:image/png;base64,{qr_base64}"
         return WeChatSession(
             session_id=secrets.token_hex(16),
             status=WeChatLoginStatus.PENDING,
-            qr_url=qr_result.get("qr_url", ""),
-            qr_base64=qr_result.get("qr_base64", ""),
+            qr_url=qr_url,
+            qr_base64=qr_base64,
         )
 
     async def check_login_status(self, session_id: str) -> WeChatSession:
@@ -1060,7 +1064,7 @@ class UnifiedWeChatAdapter:
         if session_id in self._direct_adapter.auth_client.sessions:
             return await self._direct_adapter.check_login_status(session_id)
 
-        # Try exporter
+        # Try exporter — poll_scan_status returns ScanResult, not dict
         if self._get_exporter_client():
             try:
                 result = await self._exporter_client.poll_scan_status()
@@ -1068,9 +1072,17 @@ class UnifiedWeChatAdapter:
                     session_id=session_id,
                     status=WeChatLoginStatus.PENDING,
                 )
-                if result.get("status") == "confirmed":
+                from finer.ingestion.wechat_exporter_client import ScanStatus
+                if result.status == ScanStatus.CONFIRMED:
                     session.status = WeChatLoginStatus.CONFIRMED
-                    session.account_name = result.get("nickname", "")
+                    session.account_name = getattr(result, "nickname", "")
+                elif result.status == ScanStatus.SCANNED:
+                    session.status = WeChatLoginStatus.SCANNED
+                elif result.status == ScanStatus.EXPIRED:
+                    session.status = WeChatLoginStatus.EXPIRED
+                elif result.status == ScanStatus.ERROR:
+                    session.status = WeChatLoginStatus.FAILED
+                    session.error_msg = result.error_message or ""
                 return session
             except Exception as e:
                 logger.warning(f"Exporter status check failed: {e}")
@@ -1094,12 +1106,12 @@ class UnifiedWeChatAdapter:
 
         if self.config.prefer_exporter and self._get_exporter_client():
             try:
-                accounts, _ = await self._exporter_client.search_account(keyword)
+                accounts = await self._exporter_client.search_account(keyword)
                 return [
                     {
-                        "account_id": acc.get("fakeid", ""),
-                        "account_name": acc.get("nickname", ""),
-                        "avatar_url": acc.get("round_head_img", ""),
+                        "account_id": acc.fakeid,
+                        "account_name": acc.nickname,
+                        "avatar_url": acc.round_head_img,
                     }
                     for acc in accounts
                 ]
@@ -1133,20 +1145,20 @@ class UnifiedWeChatAdapter:
 
         if self.config.prefer_exporter and self._get_exporter_client():
             try:
-                articles, _, _ = await self._exporter_client.get_articles(
-                    account_id, begin=page * page_size, keyword=query
+                result = await self._exporter_client.get_articles(
+                    account_id, begin=page * page_size, size=page_size
                 )
                 return [
                     WeChatArticle(
-                        article_id=str(a.get("aid", "")),
-                        title=a.get("title", ""),
-                        author=a.get("author_name", ""),
-                        digest=a.get("digest", ""),
-                        content_url=a.get("link", ""),
-                        cover_url=a.get("cover", ""),
-                        publish_time=datetime.fromtimestamp(a.get("create_time", 0)),
+                        article_id=str(a.aid),
+                        title=a.title,
+                        author=a.author,
+                        digest=a.digest,
+                        content_url=a.link,
+                        cover_url=a.cover,
+                        publish_time=datetime.fromtimestamp(a.create_time) if a.create_time else None,
                     )
-                    for a in articles
+                    for a in result.articles
                 ]
             except Exception as e:
                 logger.warning(f"Exporter list articles failed: {e}")
@@ -1196,13 +1208,16 @@ class UnifiedWeChatAdapter:
         article: WeChatArticle,
         include_images: bool,
     ) -> Path:
-        """Sync article via exporter service."""
+        """Sync article via exporter service.
+
+        export_article() returns a string (markdown content), not a dict.
+        """
         client = self._get_exporter_client()
         if not client:
             raise RuntimeError("Exporter client not available")
 
-        # Export article via exporter
-        result = await client.export_article(article.content_url, format="markdown")
+        # Export article via exporter — returns markdown string
+        content = await client.export_article(article.content_url, format="markdown")
 
         # Save to local path
         output_dir = Path(self.config.output_dir) / account_id
@@ -1212,7 +1227,7 @@ class UnifiedWeChatAdapter:
         safe_title = re.sub(r'[<>:"/\\|?*]', "", article.title)[:50]
         output_path = output_dir / f"{safe_title}.md"
 
-        output_path.write_text(result.get("content", ""), encoding="utf-8")
+        output_path.write_text(content, encoding="utf-8")
         logger.info(f"Synced article via exporter: {output_path}")
 
         return output_path

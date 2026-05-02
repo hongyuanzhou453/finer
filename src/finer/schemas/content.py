@@ -19,7 +19,12 @@ class ContentRecord(BaseModel):
         "livestream_audio",
         "wechat_article",
         "wechat_video",
-        "manual_upload"
+        "manual_upload",
+        # F0 real data types (from production manifests)
+        "chat_transcript",
+        "chat_export",
+        "unclassified",
+        "research_report",
     ] = Field(..., description="Type of the content")
     
     published_at: datetime = Field(..., description="Time when the content was published")

@@ -211,12 +211,22 @@ class TopicAssembler:
         result = assembler.assemble(envelope)
     """
 
-    def __init__(self, extra_rules: Optional[List[TopicRule]] = None) -> None:
+    def __init__(
+        self,
+        extra_rules: Optional[List[TopicRule]] = None,
+        use_llm: bool = False,
+        llm_adapter: Optional[object] = None,
+    ) -> None:
         """Initialize the assembler.
 
         Args:
             extra_rules: Additional topic rules to append to the defaults.
+            use_llm: Route assembly through the constrained F1.5 LLM adapter.
+            llm_adapter: Optional adapter with an assemble(ContentEnvelope) method.
         """
+        self.use_llm = use_llm
+        self.llm_adapter = llm_adapter
+
         rules = list(TOPIC_RULES)
         if extra_rules:
             rules.extend(extra_rules)
@@ -249,6 +259,15 @@ class TopicAssembler:
         Returns:
             TopicAssemblyResult with topic_blocks and unassigned_block_ids.
         """
+        if self.use_llm:
+            adapter = self.llm_adapter
+            if adapter is None:
+                from finer.parsing.llm_topic_assembly_adapter import (
+                    LLMTopicAssemblyAdapter,
+                )
+                adapter = LLMTopicAssemblyAdapter()
+            return adapter.assemble(envelope)
+
         blocks = sorted(envelope.blocks, key=lambda b: b.order)
 
         # Step 1: Assign each block to a topic (or None)

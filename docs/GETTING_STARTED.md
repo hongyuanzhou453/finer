@@ -20,6 +20,7 @@
 ### 外部服务
 
 - **LLM API** - 至少一个：
+  - MiMo API Key（F1 图片/PDF OCR 主力）
   - OpenAI API Key
   - DeepSeek API Key
   - 通义千问（DashScope）API Key
@@ -69,6 +70,11 @@ cd ../..
 
 ```bash
 # LLM 配置（至少配置一个）
+export MIMO_API_KEY="..."      # MiMo-V2.5，F1 图片/PDF OCR
+# Token Plan key（tp-*）必须配置对应 token-plan base URL；标准 API key 可省略
+export MIMO_BASE_URL="https://token-plan-cn.xiaomimimo.com/v1"
+# 可选：单独指定 vision base URL（优先于 MIMO_BASE_URL）
+export MIMO_VISION_BASE_URL="..."
 export OPENAI_API_KEY="sk-..."
 export DEEPSEEK_API_KEY="..."
 export DASHSCOPE_API_KEY="..."  # 通义千问
@@ -300,14 +306,26 @@ lark-cli auth login
 ### Q: 视觉解析失败？
 
 ```bash
-# 检查 DashScope API Key
-echo $DASHSCOPE_API_KEY
+# 检查 MiMo API Key 是否已配置；不要把真实 key 打到日志里
+test -n "$MIMO_API_KEY" && echo "MIMO_API_KEY configured"
+
+# Token Plan key（tp-*）需要使用订阅页对应的 token-plan base URL
+export MIMO_BASE_URL="${MIMO_BASE_URL:-https://token-plan-cn.xiaomimimo.com/v1}"
 
 # 检查模型是否可用
-curl -X POST https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation \
-  -H "Authorization: Bearer $DASHSCOPE_API_KEY" \
+curl -X POST "${MIMO_BASE_URL:-https://api.xiaomimimo.com/v1}/chat/completions" \
+  -H "api-key: $MIMO_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "qwen-vl-max", "input": {...}}'
+  -d '{"model":"mimo-v2.5","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example-files.cnbj1.mi-fds.com/example-files/image/image_example.png"}},{"type":"text","text":"请描述图片内容"}]}],"max_completion_tokens":1024}'
+```
+
+### Q: 如何运行 MiMo 实际 OCR 测试？
+
+```bash
+# 需要真实 API Key，默认跳过
+FINER_ENABLE_LIVE_MIMO=1 MIMO_API_KEY="your-key" \
+  MIMO_BASE_URL="https://token-plan-cn.xiaomimimo.com/v1" \
+  python -m pytest tests/test_live_mimo_multimodal.py -v
 ```
 
 ### Q: 缓存不生效？

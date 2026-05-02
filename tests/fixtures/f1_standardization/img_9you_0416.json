@@ -1,0 +1,42 @@
+{
+  "fixture_id": "img_9you_0416",
+  "description": "飞书图片：9you 沟通群截图，2026-04-16 13:27，OCR 文本未提取（API key 缺失）",
+  "source_type": "image",
+  "file_type": "png",
+  "raw_path": "data/raw/9you/unclassified/20260416_1327_img_v3_0210q_f7faffe9-73de-4aee-bd02-b0b7a4a9c1bg.png",
+  "source_record_id": "9you_unclassified_cf250d103d8c",
+  "creator_id": "ou_ba157042c2a9726fb00a9a1018b360af",
+  "creator_name": "9you",
+  "expected_adapter": "ImageOCRLayoutStandardizer",
+  "expected_profile": "image_ocr_layout_v1",
+  "published_at": "2026-04-16T13:27:00",
+  "metadata": {
+    "file_size_bytes": 250896,
+    "feishu_chat_id": "oc_29eb19dc7e439a09d6d1b16295356f29",
+    "feishu_message_id": "om_x100b51337c536088b3d9e401d50d0a5",
+    "vision_transcript_available": false,
+    "vision_transcript_error": "DASHSCOPE_API_KEY not configured"
+  },
+  "assertions": {
+    "blocks_non_empty": true,
+    "order_index_sequential": true,
+    "every_block_has_quality": true,
+    "every_block_has_provenance": true,
+    "passes_canonical_validator": true,
+    "required_block_types": ["ocr_unreadable", "section_title"],
+    "optional_block_types": ["table_region", "chart_region", "ocr_unreadable"],
+    "source_type_must_be": "image",
+    "block_type_must_not_be_legacy": true,
+    "quality_must_be_block_quality": true,
+    "source_record_id_match": true,
+    "standardization_profile_match": true,
+    "raw_path_match": true,
+    "bbox_populated_when_layout_available": true
+  },
+  "engineering_risks": [
+    "OCR 文本未提取（vision_transcript 为 API 错误），adapter 需决定：跳过还是产出 ocr_unreadable block",
+    "无 layout 数据时 bbox 不可用，需验证 BlockQuality.extraction_confidence 降级",
+    "图片可能包含金融图表（table_region/chart_region），OCR 单独不够，需 layout 分析",
+    "251KB PNG，可能含多区域内容，单 block 还是多 block 取决于 adapter 实现"
+  ]
+}

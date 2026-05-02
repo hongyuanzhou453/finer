@@ -1,7 +1,7 @@
 """Unified LLM client package.
 
 Usage:
-    from finer.llm import LLMClient
+    from finer.llm import LLMClient, DeepSeekClient
 
     # Explicit configuration
     client = LLMClient(api_key="...", base_url="...", model="qwen-plus")
@@ -23,5 +23,21 @@ Usage:
 """
 
 from finer.llm.client import LLMClient
+from finer.llm.deepseek_client import (
+    DeepSeekAPIError,
+    DeepSeekClient,
+    DeepSeekClientError,
+    DeepSeekConfigurationError,
+    DeepSeekEmptyResponseError,
+    DeepSeekJSONError,
+)
 
-__all__ = ["LLMClient"]
+__all__ = [
+    "LLMClient",
+    "DeepSeekAPIError",
+    "DeepSeekClient",
+    "DeepSeekClientError",
+    "DeepSeekConfigurationError",
+    "DeepSeekEmptyResponseError",
+    "DeepSeekJSONError",
+]

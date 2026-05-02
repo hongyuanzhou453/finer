@@ -1,10 +1,10 @@
-"""Model Config — Multi-model configuration with automatic fallback.
+"""Model Config — model configuration with registry-based selection.
 
-Supports multiple vision and text models with automatic switching
-when quota is exhausted.
+Text tasks may use fallback registries. Vision/OCR is intentionally pinned to
+MiMo-V2.5 so F1 image/PDF standardization has a single auditable provider.
 
 Text tasks: GLM-5.1 via SVIPS proxy (primary)
-Vision tasks: Qwen-VL-Plus via Dashscope (primary, most stable)
+Vision tasks: MiMo-V2.5 via Xiaomi MiMo API Open Platform
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ class ModelProvider(Enum):
     OPENAI = "openai"
     ZHIPU = "zhipu"  # GLM native
     DEEPSEEK = "deepseek"
+    MIMO = "mimo"  # Xiaomi MiMo API Open Platform
 
 
 @dataclass
@@ -39,6 +40,9 @@ class ModelConfig:
     max_tokens: int = 1024
     enabled: bool = True
     priority: int = 0  # Lower = higher priority
+    api_key_header: str = "Authorization"
+    api_key_scheme: Optional[str] = "Bearer"
+    max_tokens_field: str = "max_tokens"
 
 
 @dataclass
@@ -73,32 +77,27 @@ class BaseModelRegistry:
 
 @dataclass
 class VisionModelRegistry(BaseModelRegistry):
-    """Registry of vision models with automatic fallback."""
+    """Registry of vision/OCR models.
+
+    The user has chosen MiMo-V2.5 as the only vision model. Do not add
+    provider fallback here unless the F1 OCR architecture is explicitly reset.
+    """
 
     models: List[ModelConfig] = field(default_factory=lambda: [
         ModelConfig(
-            name="qwen-vl-plus",
-            provider=ModelProvider.DASHSCOPE,
-            api_key_env="DASHSCOPE_API_KEY",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            max_tokens=2048,
-            priority=0,
-        ),
-        ModelConfig(
-            name="GLM-5.1",
-            provider=ModelProvider.GLM_SVIPS,
-            api_key_env="GLM_API_KEY",
-            base_url="https://api.svips.org/v1",
+            name="mimo-v2.5",
+            provider=ModelProvider.MIMO,
+            api_key_env="MIMO_API_KEY",
+            base_url=(
+                os.getenv("MIMO_VISION_BASE_URL")
+                or os.getenv("MIMO_BASE_URL")
+                or "https://api.xiaomimimo.com/v1"
+            ),
             max_tokens=4096,
-            priority=1,
-        ),
-        ModelConfig(
-            name="qwen-vl-max",
-            provider=ModelProvider.DASHSCOPE,
-            api_key_env="DASHSCOPE_API_KEY",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            max_tokens=2048,
-            priority=2,
+            priority=0,
+            api_key_header="api-key",
+            api_key_scheme=None,
+            max_tokens_field="max_completion_tokens",
         ),
     ])
 
@@ -109,12 +108,20 @@ class TextModelRegistry(BaseModelRegistry):
 
     models: List[ModelConfig] = field(default_factory=lambda: [
         ModelConfig(
+            name=os.getenv("FINER_LLM_MODEL", "deepseek-v4-pro"),
+            provider=ModelProvider.DEEPSEEK,
+            api_key_env=os.getenv("FINER_LLM_API_KEY_ENV", "DEEPSEEK_API_KEY"),
+            base_url=os.getenv("FINER_LLM_BASE_URL", "https://api.deepseek.com"),
+            max_tokens=8192,
+            priority=0,
+        ),
+        ModelConfig(
             name="qwen-plus",
             provider=ModelProvider.DASHSCOPE,
             api_key_env="DASHSCOPE_API_KEY",
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             max_tokens=4096,
-            priority=0,
+            priority=1,
         ),
         ModelConfig(
             name="GLM-5.1",
@@ -122,7 +129,7 @@ class TextModelRegistry(BaseModelRegistry):
             api_key_env="GLM_API_KEY",
             base_url="https://api.svips.org/v1",
             max_tokens=4096,
-            priority=1,
+            priority=2,
         ),
     ])
 

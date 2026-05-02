@@ -34,6 +34,9 @@ class LLMClient:
         max_tokens: int = 4096,
         timeout: float = 60.0,
         registry: Optional[Any] = None,
+        api_key_header: str = "Authorization",
+        api_key_scheme: Optional[str] = "Bearer",
+        max_tokens_field: str = "max_tokens",
     ):
         self._api_key = api_key
         self._base_url = base_url.rstrip("/") if base_url else None
@@ -41,6 +44,10 @@ class LLMClient:
         self.max_tokens = max_tokens
         self.timeout = timeout
         self._registry = registry
+        self._api_key_header = api_key_header
+        self._api_key_scheme = api_key_scheme
+        self._max_tokens_field = max_tokens_field
+        self.last_error: Optional[str] = None
 
     # -------------------------------------------------------------------------
     # Factory methods
@@ -63,6 +70,9 @@ class LLMClient:
             model=model_config.name,
             max_tokens=getattr(model_config, "max_tokens", 4096),
             registry=registry,
+            api_key_header=getattr(model_config, "api_key_header", "Authorization"),
+            api_key_scheme=getattr(model_config, "api_key_scheme", "Bearer"),
+            max_tokens_field=getattr(model_config, "max_tokens_field", "max_tokens"),
             **kwargs,
         )
 
@@ -87,6 +97,9 @@ class LLMClient:
                 "api_key": self._api_key,
                 "base_url": self._base_url,
                 "model": self._model,
+                "api_key_header": self._api_key_header,
+                "api_key_scheme": self._api_key_scheme,
+                "max_tokens_field": self._max_tokens_field,
             }
 
         # Registry-based fallback
@@ -105,6 +118,9 @@ class LLMClient:
                 "api_key": api_key,
                 "base_url": model_config.base_url,
                 "model": model_config.name,
+                "api_key_header": getattr(model_config, "api_key_header", "Authorization"),
+                "api_key_scheme": getattr(model_config, "api_key_scheme", "Bearer"),
+                "max_tokens_field": getattr(model_config, "max_tokens_field", "max_tokens"),
             }
 
         logger.error("LLMClient not configured: provide api_key/base_url/model or registry")
@@ -117,6 +133,15 @@ class LLMClient:
         ):
             self._registry.mark_failed(model, error_msg)
 
+    @staticmethod
+    def _auth_header(config: Dict[str, Any]) -> Dict[str, str]:
+        """Build provider-specific API key headers."""
+        header_name = config.get("api_key_header") or "Authorization"
+        scheme = config.get("api_key_scheme")
+        api_key = config["api_key"]
+        value = f"{scheme} {api_key}" if scheme else api_key
+        return {header_name: value}
+
     # -------------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------------
@@ -126,6 +151,8 @@ class LLMClient:
         messages: List[Dict[str, Any]],
         max_tokens: Optional[int] = None,
         temperature: float = 0.3,
+        response_format: Optional[Dict[str, Any]] = None,
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         """Send a chat completion request with full message dicts."""
         config = self._resolve_config()
@@ -134,16 +161,20 @@ class LLMClient:
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {config['api_key']}",
             "User-Agent": "curl/8.0",
         }
+        headers.update(self._auth_header(config))
 
         data = {
             "model": config["model"],
             "messages": messages,
-            "max_tokens": max_tokens or self.max_tokens,
             "temperature": temperature,
         }
+        data[config.get("max_tokens_field", "max_tokens")] = max_tokens or self.max_tokens
+        if response_format is not None:
+            data["response_format"] = response_format
+        if extra_body:
+            data.update(extra_body)
 
         try:
             with httpx.Client(timeout=self.timeout, http2=False) as client:
@@ -155,14 +186,34 @@ class LLMClient:
 
                 if response.status_code == 200:
                     result = response.json()
-                    return result["choices"][0]["message"]["content"]
+                    content = result["choices"][0]["message"]["content"]
+                    if not content or not content.strip():
+                        self.last_error = "empty_model_response"
+                        logger.warning("LLM returned empty response")
+                        return None
+                    self.last_error = None
+                    return content
                 else:
                     error_msg = response.text[:200]
+                    status = response.status_code
                     self._handle_error(config["model"], error_msg)
-                    logger.error(f"LLM API error: {response.status_code} - {error_msg}")
+                    if status in (401, 403):
+                        self.last_error = f"auth_failed ({status})"
+                    elif status == 429:
+                        self.last_error = "rate_limited"
+                    elif status >= 500:
+                        self.last_error = f"server_error ({status})"
+                    else:
+                        self.last_error = f"http_error ({status})"
+                    logger.error(f"LLM API error: {status} - {error_msg}")
                     return None
 
+        except httpx.TimeoutException:
+            self.last_error = "timeout"
+            logger.error(f"LLM request timed out after {self.timeout}s")
+            return None
         except Exception as e:
+            self.last_error = f"request_failed ({type(e).__name__})"
             logger.error(f"LLM request failed: {e}")
             return None
 

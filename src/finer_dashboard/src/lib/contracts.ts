@@ -14,7 +14,7 @@ export type ReviewDirection =
   | "watchlist"
   | "risk_warning";
 
-export type SourceType = "feishu" | "notebooklm" | "local" | "unknown";
+export type SourceType = "feishu" | "notebooklm" | "local" | "wechat" | "bilibili" | "unknown";
 
 export type ReviewAction = {
   id: string;
@@ -356,4 +356,63 @@ export type TradeActionTrace = {
   evidence_span_ids: string[];
   effective_trade_at?: string;
   canonical_trace_status: CanonicalTraceStatus;
+};
+
+// =============================================================================
+// WeChat Integration Types
+// =============================================================================
+
+export type WeChatLoginStatus =
+  | "created"
+  | "qr_ready"
+  | "waiting_scan"
+  | "scanned"
+  | "confirmed"
+  | "expired"
+  | "failed";
+
+export type WeChatLoginSession = {
+  session_id: string;
+  qr_data_uri: string;
+  status: WeChatLoginStatus;
+  expires_in: number;
+};
+
+export type WeChatAccount = {
+  account_id: string;
+  account_name: string;
+  avatar_url?: string;
+  last_sync?: string;
+  article_count: number;
+  is_valid: boolean;
+};
+
+export type WeChatArticle = {
+  article_id: string;
+  title: string;
+  author?: string;
+  digest?: string;
+  publish_time?: string;
+  content_url?: string;
+  cover_url?: string;
+  read_count: number;
+  like_count: number;
+  status: "pending" | "syncing" | "completed" | "failed";
+};
+
+export type WeChatSyncResult = {
+  account_id: string;
+  synced_count: number;
+  failed_count: number;
+  articles: string[];
+  content_record_ids: string[];
+  errors: string[];
+  l0_triggered: boolean;
+};
+
+export type ExporterHealth = {
+  available: boolean;
+  url: string;
+  latency_ms?: number;
+  error?: string;
 };

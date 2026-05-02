@@ -1,0 +1,48 @@
+{
+  "fixture_id": "chat_maodaren_0312",
+  "description": "飞书聊天记录：猫大人会员内容体验同步群，2026-03-12 至 2026-04-20，1079条消息",
+  "source_type": "feishu_chat",
+  "file_type": "md",
+  "raw_path": "data/raw/maodaren/transcripts/chat_history_20260312_1434_to_20260420_1919.md",
+  "source_record_id": "maodaren_chat_transcript_f4f7b389102e",
+  "creator_id": "ou_4b89fb1c91dee0c54ae4a2bb1643aaa9",
+  "creator_name": "maodaren",
+  "expected_adapter": "FeishuChatMarkdownStandardizer",
+  "expected_profile": "feishu_chat_markdown_v1",
+  "published_at": "2026-04-20T20:47:44",
+  "metadata": {
+    "chat_id": "oc_6ff7bde4c69b7ca19f3a2f7fda426885",
+    "chat_name": "猫大人会员内容体验同步-4.27截止",
+    "total_messages": 1079,
+    "message_types": {
+      "text": 957,
+      "post": 100,
+      "merge_forward": 22
+    },
+    "failed_forwards": 22,
+    "image_references": 26
+  },
+  "assertions": {
+    "blocks_non_empty": true,
+    "order_index_sequential": true,
+    "every_block_has_quality": true,
+    "every_block_has_provenance": true,
+    "passes_canonical_validator": true,
+    "required_block_types": ["chat_message", "attachment_ref", "system_event"],
+    "source_type_must_be": "feishu_chat",
+    "block_type_must_not_be_legacy": true,
+    "quality_must_be_block_quality": true,
+    "source_record_id_match": true,
+    "standardization_profile_match": true,
+    "raw_path_match": true,
+    "speaker_parsed": true,
+    "timestamp_parsed": true
+  },
+  "engineering_risks": [
+    "merge_forward fetch failed 消息应映射为 attachment_ref，不能丢失或伪装为正文",
+    "post 类型消息含内嵌 [Image: ...] 标记，需拆分为 attachment_ref 或保留为 metadata",
+    "Q/A 格式消息（Q:...A:...）是单条消息还是需拆分为两条 block，影响下游 F2 锚定",
+    "1079 条消息产出大量 block，需验证 order_index 连续性和 envelope_id 一致性",
+    "消息时间跨度 40 天，timestamp 解析需处理 +08:00 时区"
+  ]
+}

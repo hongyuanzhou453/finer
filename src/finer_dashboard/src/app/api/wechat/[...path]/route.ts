@@ -24,14 +24,28 @@ export async function POST(request: Request) {
   const path = pathname.replace("/api/wechat", "");
 
   try {
-    const body = await request.json();
-    const res = await fetch(`${UPSTREAM_URL}${path}?${searchParams.toString()}`, {
+    let body: string | undefined;
+    const contentType = request.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      try {
+        const parsed = await request.json();
+        body = JSON.stringify(parsed);
+      } catch {
+        // Empty body or invalid JSON — send no body
+      }
+    }
+
+    const fetchInit: RequestInit = {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        ...(body ? { "Content-Type": "application/json" } : {}),
       },
-      body: JSON.stringify(body),
-    });
+    };
+    if (body) {
+      fetchInit.body = body;
+    }
+
+    const res = await fetch(`${UPSTREAM_URL}${path}?${searchParams.toString()}`, fetchInit);
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (error) {

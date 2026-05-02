@@ -1,7 +1,7 @@
-"""Vision Utils — analyze images using multi-model with caching.
+"""Vision Utils — analyze images using the configured vision model with caching.
 
 Provides a bridge to convert image content into searchable text
-for NotebookLM ingestion. Supports model fallback and caching.
+for NotebookLM ingestion. Finer OS currently pins vision/OCR to MiMo-V2.5.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 import httpx
 
-from finer.model_config import get_vision_registry, ModelProvider
+from finer.model_config import get_vision_registry
 
 logger = logging.getLogger(__name__)
 
@@ -120,12 +120,12 @@ def init_vision_cache(root: Path):
 
 
 class VisionDescriptor:
-    """Generates text descriptions for images with model fallback and caching."""
+    """Generates text descriptions for images with MiMo-V2.5 and caching."""
 
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "qwen-vl-plus",
+        model: str = "mimo-v2.5",
         root: Path | None = None,
     ):
         self.registry = get_vision_registry()
@@ -138,9 +138,8 @@ class VisionDescriptor:
         elif _vision_cache:
             self.cache = _vision_cache
 
-        # Try to get API key from args or environment
-        # Priority: DASHSCOPE_API_KEY (Qwen primary) then GLM_API_KEY (fallback)
-        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY") or os.getenv("GLM_API_KEY")
+        # MiMo official examples use MIMO_API_KEY and the api-key HTTP header.
+        self.api_key = api_key or os.getenv("MIMO_API_KEY")
 
     def _encode_image(self, image_path: Path) -> str:
         """Encode image to base64 string."""
@@ -164,17 +163,26 @@ class VisionDescriptor:
         if not image_path.exists():
             return f"Error: File not found at {image_path}"
 
-        # Try each available model
         registry = get_vision_registry()
 
         while True:
-            model_config = registry.get_available_model()
+            if self.api_key:
+                model_config = next(
+                    (
+                        model
+                        for model in sorted(registry.models, key=lambda m: m.priority)
+                        if model.enabled and model.name not in registry.failed_models
+                    ),
+                    None,
+                )
+            else:
+                model_config = registry.get_available_model()
             if not model_config:
                 return "Error: No available vision models. Please check API keys."
 
             try:
                 # Get API key for this model
-                api_key = os.getenv(model_config.api_key_env)
+                api_key = self.api_key or os.getenv(model_config.api_key_env)
                 if not api_key:
                     registry.mark_failed(model_config.name, "No API key")
                     continue
@@ -191,9 +199,14 @@ class VisionDescriptor:
                 # Use httpx with curl User-Agent for proxy compatibility
                 headers = {
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
                     "User-Agent": "curl/8.0",
                 }
+                header_value = (
+                    f"{model_config.api_key_scheme} {api_key}"
+                    if model_config.api_key_scheme
+                    else api_key
+                )
+                headers[model_config.api_key_header] = header_value
 
                 data = {
                     "model": model_config.name,
@@ -211,8 +224,8 @@ class VisionDescriptor:
                             ],
                         }
                     ],
-                    "max_tokens": model_config.max_tokens,
                 }
+                data[model_config.max_tokens_field] = model_config.max_tokens
 
                 with httpx.Client(timeout=60.0, http2=False) as client:
                     response = client.post(

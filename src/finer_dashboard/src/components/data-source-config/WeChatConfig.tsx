@@ -1,35 +1,25 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { QrCode, RefreshCw, Trash2, FileText, Loader2, CheckCircle2, ExternalLink } from "lucide-react";
+import { QrCode, RefreshCw, Trash2, FileText, Loader2, CheckCircle2, ExternalLink, AlertCircle } from "lucide-react";
 import { QRCodeDisplay } from "./QRCodeDisplay";
 import { SyncStatus, SyncStatusType } from "./SyncStatus";
 import { cn } from "@/lib/utils";
+import type { WeChatAccount, WeChatArticle, WeChatLoginStatus } from "@/lib/contracts";
 
-type WeChatAccount = {
-  id: string;
-  nickname: string;
-  avatar_url: string;
-  login_time: string;
-  is_active: boolean;
-};
-
-type WeChatArticle = {
-  title: string;
-  author: string;
-  publish_time: string;
-  cover_url: string;
-  url: string;
-  digest: string;
-};
+type Tab = "login" | "accounts" | "articles";
 
 export function WeChatConfig() {
+  const [activeTab, setActiveTab] = useState<Tab>("login");
+
   // Login state
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [qrDataUri, setQrDataUri] = useState<string | null>(null);
+  const [loginStatus, setLoginStatus] = useState<WeChatLoginStatus | null>(null);
   const [expiresIn, setExpiresIn] = useState<number>(0);
   const [loginSessionId, setLoginSessionId] = useState<string | null>(null);
   const [pollingLogin, setPollingLogin] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   // Accounts state
   const [accounts, setAccounts] = useState<WeChatAccount[]>([]);
@@ -44,29 +34,34 @@ export function WeChatConfig() {
   const [syncStatus, setSyncStatus] = useState<SyncStatusType>("idle");
   const [syncMessage, setSyncMessage] = useState<string>("");
   const [syncProgress, setSyncProgress] = useState<number>(0);
-  const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
+
+  // Exporter health
+  const [exporterAvailable, setExporterAvailable] = useState<boolean | null>(null);
 
   // Load accounts on mount
   useEffect(() => {
     loadAccounts();
+    checkExporterHealth();
   }, []);
+
+  const checkExporterHealth = async () => {
+    try {
+      const res = await fetch("/api/wechat/exporter/health");
+      const data = await res.json();
+      setExporterAvailable(data.available);
+    } catch {
+      setExporterAvailable(false);
+    }
+  };
 
   const loadAccounts = async () => {
     setLoadingAccounts(true);
     try {
       const res = await fetch("/api/wechat/accounts");
       const data = await res.json();
-      // 映射后端字段到前端期望的字段
-      const mapped = (Array.isArray(data) ? data : []).map((acc: any) => ({
-        id: acc.account_id,
-        nickname: acc.account_name,
-        avatar_url: "",
-        login_time: acc.last_sync || "未同步",
-        is_active: acc.is_valid,
-      }));
-      setAccounts(mapped);
-      if (mapped.length > 0 && !selectedAccountId) {
-        setSelectedAccountId(mapped[0].id);
+      setAccounts(Array.isArray(data) ? data : []);
+      if (data.length > 0 && !selectedAccountId) {
+        setSelectedAccountId(data[0].account_id);
       }
     } catch (err) {
       console.error("Failed to load accounts:", err);
@@ -75,22 +70,29 @@ export function WeChatConfig() {
     }
   };
 
-  // Start login process
   const handleStartLogin = async () => {
     setIsLoggingIn(true);
-    setQrCodeUrl(null);
+    setQrDataUri(null);
+    setLoginError(null);
+    setLoginStatus(null);
     try {
       const res = await fetch("/api/wechat/login", { method: "POST" });
       const data = await res.json();
-      // 后端返回 qr_url，前端期望 qr_code_url
-      if (data.qr_url) {
-        setQrCodeUrl(data.qr_url);
-        setExpiresIn(data.expires_in || 300);
-        setLoginSessionId(data.session_id);
-        setPollingLogin(true);
+
+      if (!res.ok) {
+        setLoginError(data.detail || "无法连接导出服务");
+        setLoginStatus("failed");
+        return;
       }
+
+      setQrDataUri(data.qr_data_uri || data.qr_url || null);
+      setExpiresIn(data.expires_in || 300);
+      setLoginSessionId(data.session_id);
+      setLoginStatus(data.status || "qr_ready");
+      setPollingLogin(true);
     } catch (err) {
-      console.error("Failed to start login:", err);
+      setLoginError("请求失败，请检查导出服务是否运行");
+      setLoginStatus("failed");
     } finally {
       setIsLoggingIn(false);
     }
@@ -102,26 +104,28 @@ export function WeChatConfig() {
 
     const interval = setInterval(async () => {
       try {
-        // 使用路径参数而非查询参数
-        const res = await fetch(`/api/wechat/login/status/${loginSessionId}`);
+        const res = await fetch(`/api/wechat/login/${loginSessionId}/status`);
         const data = await res.json();
+        setLoginStatus(data.status);
 
         if (data.status === "confirmed") {
           setPollingLogin(false);
-          setQrCodeUrl(null);
+          setQrDataUri(null);
           setLoginSessionId(null);
-          setSyncMessage("登录成功！");
+          setSyncMessage("登录成功");
+          setActiveTab("accounts");
           await loadAccounts();
-        } else if (data.status === "expired" || data.status === "failed") {
+        } else if (data.status === "expired") {
           setPollingLogin(false);
-          setQrCodeUrl(null);
-          setLoginSessionId(null);
-          setSyncMessage(data.error_msg || "登录失败，请重试");
+          setLoginError("二维码已过期，请重新获取");
+        } else if (data.status === "failed") {
+          setPollingLogin(false);
+          setLoginError(data.error_msg || "登录失败");
         }
       } catch (err) {
         console.error("Failed to poll login status:", err);
       }
-    }, 2000);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, [pollingLogin, loginSessionId]);
@@ -129,37 +133,21 @@ export function WeChatConfig() {
   // Countdown timer
   useEffect(() => {
     if (!pollingLogin || expiresIn <= 0) return;
-
-    const timer = setTimeout(() => {
-      setExpiresIn((prev) => prev - 1);
-    }, 1000);
-
+    const timer = setTimeout(() => setExpiresIn((prev) => prev - 1), 1000);
     return () => clearTimeout(timer);
   }, [pollingLogin, expiresIn]);
 
   // Load articles when account is selected
   useEffect(() => {
-    if (selectedAccountId) {
-      loadArticles(selectedAccountId);
-    }
+    if (selectedAccountId) loadArticles(selectedAccountId);
   }, [selectedAccountId]);
 
   const loadArticles = async (accountId: string) => {
     setLoadingArticles(true);
     try {
-      // 使用路径参数而非查询参数
       const res = await fetch(`/api/wechat/articles/${accountId}`);
       const data = await res.json();
-      // 映射后端字段到前端期望的字段
-      const mapped = (data.articles || []).map((art: any) => ({
-        title: art.title,
-        author: art.author || "",
-        publish_time: art.publish_time || "",
-        cover_url: "",
-        url: art.content_url || "",
-        digest: art.digest || "",
-      }));
-      setArticles(mapped);
+      setArticles(data.articles || []);
     } catch (err) {
       console.error("Failed to load articles:", err);
     } finally {
@@ -167,295 +155,361 @@ export function WeChatConfig() {
     }
   };
 
-  // Toggle article selection
-  const toggleArticle = (url: string) => {
-    const next = new Set(selectedArticles);
-    if (next.has(url)) {
-      next.delete(url);
-    } else {
-      next.add(url);
-    }
-    setSelectedArticles(next);
-  };
-
-  // Sync selected articles
-  const handleSyncArticles = async () => {
-    if (!selectedAccountId || selectedArticles.size === 0) return;
-
+  const handleSyncAll = async () => {
+    if (!selectedAccountId) return;
     setSyncStatus("syncing");
     setSyncProgress(0);
-    setSyncMessage(`正在同步 ${selectedArticles.size} 篇文章...`);
+    setSyncMessage("正在同步文章...");
 
     try {
-      // 使用路径参数
       const res = await fetch(`/api/wechat/sync/${selectedAccountId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          max_articles: null,
-          include_images: false,
-          trigger_l0: true,
-        }),
       });
-
       const data = await res.json();
-
-      // Simulate progress updates
-      for (let i = 0; i <= 100; i += 20) {
-        await new Promise((r) => setTimeout(r, 200));
-        setSyncProgress(i);
-      }
 
       if (res.ok) {
         setSyncStatus("success");
-        setSyncMessage(`成功同步 ${data.synced_count || selectedArticles.size} 篇文章`);
-        setSelectedArticles(new Set());
+        setSyncMessage(
+          `同步完成：${data.synced_count} 篇成功` +
+          (data.failed_count > 0 ? `，${data.failed_count} 篇失败` : "")
+        );
+        setSyncProgress(100);
+        await loadArticles(selectedAccountId);
       } else {
         setSyncStatus("error");
         setSyncMessage(data.detail || "同步失败");
       }
     } catch (err) {
-      console.error("Sync failed:", err);
       setSyncStatus("error");
       setSyncMessage("同步失败，请重试");
     }
   };
 
-  // Remove account
   const handleRemoveAccount = async (accountId: string) => {
     try {
       await fetch(`/api/wechat/accounts/${accountId}`, { method: "DELETE" });
       await loadAccounts();
-      if (selectedAccountId === accountId) {
-        setSelectedAccountId(null);
-      }
+      if (selectedAccountId === accountId) setSelectedAccountId(null);
     } catch (err) {
       console.error("Failed to remove account:", err);
     }
   };
 
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "login", label: "扫码登录" },
+    { key: "accounts", label: "账号管理" },
+    { key: "articles", label: "文章列表" },
+  ];
+
   return (
-    <div className="space-y-8">
-      {/* Login Section */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--ink-soft)]">
-            扫码登录
-          </h2>
+    <div className="space-y-6">
+      {/* Exporter Status */}
+      {exporterAvailable === false && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-stone-50 border border-stone-200 text-sm text-stone-600">
+          <AlertCircle className="w-4 h-4 text-stone-400 flex-shrink-0" />
+          <span>导出服务不可用 — 请确认 wechat-article-exporter 已启动</span>
           <button
-            onClick={handleStartLogin}
-            disabled={isLoggingIn || pollingLogin}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white rounded-sm transition-all",
-              isLoggingIn || pollingLogin
-                ? "bg-stone-300 cursor-not-allowed"
-                : "bg-morningstar-red hover:bg-morningstar-red/90"
-            )}
+            onClick={checkExporterHealth}
+            className="ml-auto text-xs underline text-stone-500 hover:text-stone-800"
           >
-            {isLoggingIn ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <QrCode className="w-4 h-4" />
-            )}
-            {pollingLogin ? "等待扫码..." : "获取二维码"}
+            重试
           </button>
         </div>
+      )}
 
-        <div className="max-w-sm">
+      {/* Metric Grid */}
+      <div className="grid grid-cols-4 border-b border-stone-200 pb-4">
+        <MetricCell label="已登录账号" value={String(accounts.length)} />
+        <MetricCell
+          label="文章总数"
+          value={String(accounts.reduce((sum, a) => sum + a.article_count, 0))}
+        />
+        <MetricCell
+          label="最近同步"
+          value={
+            accounts
+              .filter((a) => a.last_sync)
+              .sort((a, b) => (b.last_sync || "").localeCompare(a.last_sync || ""))[0]
+              ?.last_sync?.slice(0, 10) || "—"
+          }
+        />
+        <MetricCell
+          label="导出服务"
+          value={exporterAvailable ? "在线" : "离线"}
+          valueColor={exporterAvailable ? "text-stone-900" : "text-[--finer-red]"}
+        />
+      </div>
+
+      {/* Underline Tabs */}
+      <div className="border-b border-stone-200">
+        <nav className="flex gap-8">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "relative pb-3 text-sm transition-colors",
+                activeTab === tab.key
+                  ? "text-stone-900 font-semibold"
+                  : "text-stone-500 hover:text-stone-700"
+              )}
+            >
+              {tab.label}
+              {activeTab === tab.key && (
+                <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-stone-900" />
+              )}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "login" && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-stone-900">微信扫码登录</h3>
+            <button
+              onClick={handleStartLogin}
+              disabled={isLoggingIn || pollingLogin}
+              className={cn(
+                "px-4 py-2 text-xs font-semibold border transition-all",
+                isLoggingIn || pollingLogin
+                  ? "border-stone-200 text-stone-400 cursor-not-allowed"
+                  : "border-stone-900 text-stone-900 hover:bg-stone-900 hover:text-white"
+              )}
+            >
+              {isLoggingIn ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  生成中...
+                </span>
+              ) : pollingLogin ? (
+                "等待扫码..."
+              ) : (
+                "获取二维码"
+              )}
+            </button>
+          </div>
+
           <QRCodeDisplay
-            qrCodeUrl={qrCodeUrl}
+            qrDataUri={qrDataUri}
             isLoading={isLoggingIn}
+            status={loginStatus}
             expiresIn={expiresIn}
+            error={loginError}
+            onRefresh={handleStartLogin}
           />
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* Logged Accounts */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--ink-soft)]">
-          已登录账号 ({accounts.length})
-        </h2>
-
-        {loadingAccounts ? (
-          <div className="flex items-center justify-center p-8 bg-white border border-stone-200 rounded-sm">
-            <Loader2 className="w-6 h-6 animate-spin text-stone-400" />
-          </div>
-        ) : accounts.length === 0 ? (
-          <div className="p-8 bg-stone-50 border border-dashed border-stone-200 rounded-sm text-center">
-            <p className="text-sm text-foreground/40">暂无已登录的微信公众号账号</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {accounts.map((account) => (
-              <div
-                key={account.id}
-                className={cn(
-                  "flex items-center gap-4 p-4 border rounded-sm transition-all cursor-pointer",
-                  selectedAccountId === account.id
-                    ? "border-morningstar-red/30 bg-morningstar-red/5 ring-1 ring-morningstar-red/10"
-                    : "bg-white border-stone-200 hover:border-morningstar-red/20"
-                )}
-                onClick={() => setSelectedAccountId(account.id)}
-              >
-                {/* Avatar */}
-                <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden">
-                  {account.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={account.avatar_url}
-                      alt={account.nickname}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-stone-400 font-bold">
-                      {account.nickname.charAt(0)}
-                    </div>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold truncate">{account.nickname}</p>
-                  <p className="text-[10px] text-foreground/50 mt-0.5">
-                    登录时间: {account.login_time}
-                  </p>
-                </div>
-
-                {/* Status & Actions */}
-                <div className="flex items-center gap-2">
-                  {account.is_active && (
-                    <span className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-600 text-[10px] font-bold rounded-full">
-                      <CheckCircle2 className="w-3 h-3" />
-                      活跃
-                    </span>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveAccount(account.id);
+      {activeTab === "accounts" && (
+        <section className="space-y-4">
+          {loadingAccounts ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="w-5 h-5 animate-spin text-stone-400" />
+            </div>
+          ) : accounts.length === 0 ? (
+            <div className="p-8 text-center text-sm text-stone-400 border border-dashed border-stone-200">
+              暂无已登录账号
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-stone-200 text-left">
+                  <th className="pb-2 font-semibold text-stone-900">账号</th>
+                  <th className="pb-2 font-semibold text-stone-900">文章数</th>
+                  <th className="pb-2 font-semibold text-stone-900">最近同步</th>
+                  <th className="pb-2 font-semibold text-stone-900">状态</th>
+                  <th className="pb-2 w-12"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((acc) => (
+                  <tr
+                    key={acc.account_id}
+                    onClick={() => {
+                      setSelectedAccountId(acc.account_id);
+                      setActiveTab("articles");
                     }}
-                    className="p-1.5 hover:bg-red-50 hover:text-morningstar-red rounded transition-colors"
+                    className={cn(
+                      "border-b border-stone-100 cursor-pointer hover:bg-stone-50 transition-colors",
+                      selectedAccountId === acc.account_id && "bg-stone-50"
+                    )}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <td className="py-3 font-medium text-stone-900">
+                      {acc.account_name}
+                    </td>
+                    <td className="py-3 text-stone-600 tabular-nums">
+                      {acc.article_count}
+                    </td>
+                    <td className="py-3 text-stone-500">
+                      {acc.last_sync?.slice(0, 10) || "—"}
+                    </td>
+                    <td className="py-3">
+                      {acc.is_valid ? (
+                        <span className="text-xs text-stone-600">活跃</span>
+                      ) : (
+                        <span className="text-xs text-[--finer-red]">失效</span>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveAccount(acc.account_id);
+                        }}
+                        className="p-1 text-stone-400 hover:text-[--finer-red] transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
+
+      {activeTab === "articles" && (
+        <section className="space-y-4">
+          {!selectedAccountId ? (
+            <div className="p-8 text-center text-sm text-stone-400 border border-dashed border-stone-200">
+              请先选择账号
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-stone-900">
+                  {accounts.find((a) => a.account_id === selectedAccountId)?.account_name || "文章"}
+                  <span className="ml-2 text-stone-400 font-normal">({articles.length})</span>
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => loadArticles(selectedAccountId)}
+                    disabled={loadingArticles}
+                    className="p-1.5 text-stone-500 hover:text-stone-800 transition-colors"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", loadingArticles && "animate-spin")} />
+                  </button>
+                  <button
+                    onClick={handleSyncAll}
+                    disabled={syncStatus === "syncing"}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold border transition-all",
+                      syncStatus === "syncing"
+                        ? "border-stone-200 text-stone-400 cursor-not-allowed"
+                        : "border-stone-900 text-stone-900 hover:bg-stone-900 hover:text-white"
+                    )}
+                  >
+                    {syncStatus === "syncing" ? "同步中..." : "同步全部"}
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
 
-      {/* Articles List */}
-      {selectedAccountId && (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--ink-soft)]">
-              文章列表 ({articles.length})
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => loadArticles(selectedAccountId)}
-                disabled={loadingArticles}
-                className="p-2 hover:bg-stone-100 rounded transition-colors"
-              >
-                <RefreshCw
-                  className={cn(
-                    "w-4 h-4",
-                    loadingArticles && "animate-spin"
-                  )}
+              {syncStatus !== "idle" && (
+                <SyncStatus
+                  status={syncStatus}
+                  message={syncMessage}
+                  progress={syncProgress}
                 />
-              </button>
-              <button
-                onClick={handleSyncArticles}
-                disabled={selectedArticles.size === 0 || syncStatus === "syncing"}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white rounded-sm transition-all",
-                  selectedArticles.size === 0 || syncStatus === "syncing"
-                    ? "bg-stone-300 cursor-not-allowed"
-                    : "bg-[var(--accent-teal)] hover:opacity-90"
-                )}
-              >
-                同步选中 ({selectedArticles.size})
-              </button>
-            </div>
-          </div>
+              )}
 
-          {/* Sync Status */}
-          {syncStatus !== "idle" && (
-            <SyncStatus
-              status={syncStatus}
-              message={syncMessage}
-              progress={syncProgress}
-            />
-          )}
-
-          {loadingArticles ? (
-            <div className="flex items-center justify-center p-8 bg-white border border-stone-200 rounded-sm">
-              <Loader2 className="w-6 h-6 animate-spin text-stone-400" />
-            </div>
-          ) : articles.length === 0 ? (
-            <div className="p-8 bg-stone-50 border border-dashed border-stone-200 rounded-sm text-center">
-              <p className="text-sm text-foreground/40">暂无文章数据</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {articles.map((article, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => toggleArticle(article.url)}
-                  className={cn(
-                    "flex gap-4 p-4 border rounded-sm cursor-pointer transition-all",
-                    selectedArticles.has(article.url)
-                      ? "border-morningstar-red/30 bg-morningstar-red/5 ring-1 ring-morningstar-red/10"
-                      : "bg-white border-stone-200 hover:border-morningstar-red/20"
-                  )}
-                >
-                  {/* Cover */}
-                  {article.cover_url && (
-                    <div className="w-24 h-16 rounded-sm overflow-hidden flex-shrink-0 bg-stone-100">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={article.cover_url}
-                        alt={article.title}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold line-clamp-2">{article.title}</p>
-                    <p className="text-xs text-foreground/50 mt-1">
-                      {article.author} · {article.publish_time}
-                    </p>
-                    {article.digest && (
-                      <p className="text-xs text-foreground/40 mt-1 line-clamp-1">
-                        {article.digest}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Selection & Link */}
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={article.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="p-1.5 hover:bg-stone-100 rounded transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4 text-foreground/50" />
-                    </a>
-                    {selectedArticles.has(article.url) && (
-                      <CheckCircle2 className="w-5 h-5 text-morningstar-red" />
-                    )}
-                  </div>
+              {loadingArticles ? (
+                <div className="flex items-center justify-center p-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-stone-400" />
                 </div>
-              ))}
-            </div>
+              ) : articles.length === 0 ? (
+                <div className="p-8 text-center text-sm text-stone-400 border border-dashed border-stone-200">
+                  暂无文章
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-stone-200 text-left">
+                      <th className="pb-2 font-semibold text-stone-900">标题</th>
+                      <th className="pb-2 font-semibold text-stone-900">作者</th>
+                      <th className="pb-2 font-semibold text-stone-900">发布时间</th>
+                      <th className="pb-2 font-semibold text-stone-900">状态</th>
+                      <th className="pb-2 w-12"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {articles.map((art) => (
+                      <tr
+                        key={art.article_id}
+                        className="border-b border-stone-100 hover:bg-stone-50 transition-colors"
+                      >
+                        <td className="py-3 max-w-xs truncate text-stone-900">
+                          {art.title}
+                        </td>
+                        <td className="py-3 text-stone-500">
+                          {art.author || "—"}
+                        </td>
+                        <td className="py-3 text-stone-500 tabular-nums">
+                          {art.publish_time?.slice(0, 10) || "—"}
+                        </td>
+                        <td className="py-3">
+                          <ArticleStatusBadge status={art.status} />
+                        </td>
+                        <td className="py-3">
+                          {art.content_url && (
+                            <a
+                              href={art.content_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1 text-stone-400 hover:text-stone-700 transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
           )}
         </section>
       )}
     </div>
+  );
+}
+
+function MetricCell({
+  label,
+  value,
+  valueColor = "text-stone-900",
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <div className="px-4 py-2">
+      <p className="text-xs text-stone-500 mb-1">{label}</p>
+      <p className={cn("text-lg font-semibold tabular-nums", valueColor)}>{value}</p>
+    </div>
+  );
+}
+
+function ArticleStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    completed: "text-stone-700",
+    pending: "text-stone-400",
+    syncing: "text-stone-500",
+    failed: "text-[--finer-red]",
+  };
+  const labels: Record<string, string> = {
+    completed: "已同步",
+    pending: "待同步",
+    syncing: "同步中",
+    failed: "失败",
+  };
+  return (
+    <span className={cn("text-xs", styles[status] || "text-stone-400")}>
+      {labels[status] || status}
+    </span>
   );
 }

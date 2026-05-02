@@ -9,6 +9,9 @@
 }
 
 :root {
+  --font-ui-sans: "Inter", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial;
+  --font-ui-mono: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo;
+  --font-display-serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "STSong";
   --background: #f3efe7;
   --foreground: #181512;
   --card-bg: rgba(255, 252, 247, 0.86);

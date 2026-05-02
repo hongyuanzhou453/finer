@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 class LoginStatus(str, Enum):
-    """Login session status."""
-    PENDING = "pending"
+    """Login session status — maps to session store LoginState."""
+    CREATED = "created"
+    QR_READY = "qr_ready"
+    WAITING_SCAN = "waiting_scan"
     SCANNED = "scanned"
     CONFIRMED = "confirmed"
     EXPIRED = "expired"
@@ -91,10 +93,11 @@ class LoginSessionResponse(BaseModel):
     model_config = ConfigDict(strict=True)
 
     session_id: str = Field(..., description="Session ID for status polling")
-    qr_url: str = Field(..., description="QR code URL or data URI")
-    qr_base64: Optional[str] = Field(None, description="QR code as base64")
+    qr_data_uri: str = Field(default="", description="Browser-displayable data URI for QR code")
+    qr_url: str = Field(default="", description="QR code URL or data URI (legacy)")
+    qr_base64: Optional[str] = Field(None, description="QR code as base64 (legacy)")
     expires_in: int = Field(300, description="QR code validity in seconds")
-    status: LoginStatus = Field(LoginStatus.PENDING)
+    status: LoginStatus = Field(LoginStatus.CREATED)
     source: WeChatSourceType = Field(
         default=WeChatSourceType.HYBRID,
         description="Which integration source was used",
@@ -183,11 +186,23 @@ class SyncResultResponse(BaseModel):
 
     account_id: str
     synced_count: int
+    failed_count: int = 0
     articles: List[str] = Field(default_factory=list, description="Paths to synced articles")
+    content_record_ids: List[str] = Field(default_factory=list, description="F0 ContentRecord IDs")
     errors: List[str] = Field(default_factory=list)
     l0_triggered: bool = False
     sync_time: datetime = Field(default_factory=datetime.now)
     source_type: WeChatSourceType = WeChatSourceType.HYBRID
+
+
+class ExporterHealthResponse(BaseModel):
+    """Exporter service health check result."""
+    model_config = ConfigDict(strict=True)
+
+    available: bool
+    url: str
+    latency_ms: Optional[float] = None
+    error: Optional[str] = None
 
 
 class WeChatStatusResponse(BaseModel):

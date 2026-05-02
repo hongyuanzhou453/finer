@@ -1,0 +1,42 @@
+{
+  "fixture_id": "img_9you_0409",
+  "description": "飞书图片：9you 沟通群截图，2026-04-09 21:11，OCR 文本未提取",
+  "source_type": "image",
+  "file_type": "png",
+  "raw_path": "data/raw/9you/unclassified/20260409_2111_img_v3_0210j_25771c3c-359e-49e1-8edd-00f2e5e0c5bg.png",
+  "source_record_id": "9you_unclassified_a170733a5295",
+  "creator_id": "ou_ba157042c2a9726fb00a9a1018b360af",
+  "creator_name": "9you",
+  "expected_adapter": "ImageOCRLayoutStandardizer",
+  "expected_profile": "image_ocr_layout_v1",
+  "published_at": "2026-04-09T21:11:00",
+  "metadata": {
+    "file_size_bytes": 470326,
+    "feishu_chat_id": "oc_29eb19dc7e439a09d6d1b16295356f29",
+    "feishu_message_id": "om_x100b524e17b35098c2afd7bdffa9853",
+    "vision_transcript_available": false,
+    "vision_transcript_error": "DASHSCOPE_API_KEY not configured"
+  },
+  "assertions": {
+    "blocks_non_empty": true,
+    "order_index_sequential": true,
+    "every_block_has_quality": true,
+    "every_block_has_provenance": true,
+    "passes_canonical_validator": true,
+    "required_block_types": ["ocr_unreadable", "section_title"],
+    "optional_block_types": ["table_region", "chart_region", "ocr_unreadable"],
+    "source_type_must_be": "image",
+    "block_type_must_not_be_legacy": true,
+    "quality_must_be_block_quality": true,
+    "source_record_id_match": true,
+    "standardization_profile_match": true,
+    "raw_path_match": true,
+    "bbox_populated_when_layout_available": true
+  },
+  "engineering_risks": [
+    "470KB 图片比 04-16 样本大，可能含更复杂布局（多区域/多图表）",
+    "OCR 文本未提取，与 04-16 样本相同的 API key 问题",
+    "无 context_text，adapter 无法利用消息上下文辅助分类",
+    "与 img_9you_0416 共享同一 chat_id，需验证 adapter 对同群不同图片的处理一致性"
+  ]
+}

@@ -1,6 +1,6 @@
 # F-Stage Contracts -- 每阶段可执行契约
 
-> 版本: 2.0.0 | 创建: 2026-04-28 | 更新: 2026-04-28
+> 版本: 2.1.0 | 创建: 2026-04-28 | 更新: 2026-04-30
 > 状态: **F0-F8 是 Finer OS 唯一主架构。** 旧命名 L0-L8 和 V0-V6 已废弃（deprecated），仅在下文 [Legacy Mapping](#legacy-mapping) 章节和 `docs/ARCHITECTURE.md` 第 15 节保留供迁移参考。
 > 用途: 定义每个 F-stage 的精确输入/输出/Schema/禁止职责/验收清单。作为 Agent 任务边界、Code Review 和 CI 检查的权威参考。
 
@@ -88,87 +88,112 @@ ContentRecord(
 
 ## F1: Standardize（标准化）
 
-- **Purpose**: 将异构原始内容统一为 `ContentEnvelope` -> `ContentBlock` 结构。每种来源类型有不同的 block 化策略。
-- **Maturity Status**: `beta`
-- **Allowed Input**: F0 `ContentRecord` + F0 原始文件（图片/聊天记录/PDF/音频/文档）
-- **Required Output**: `ContentEnvelope` 包含 `ContentBlock[]`（13 种 block 类型，7 种来源类型）
+- **Purpose**: 将 F0 原始内容标准化为唯一 canonical `ContentEnvelope` + ordered `ContentBlock[]`，解决结构边界、提取质量、来源追溯问题。
+- **Maturity Status**: `alpha`（契约重置中；旧 V0/L3/SegmentRecord 路径待迁移）
+- **Allowed Input**: F0 `ContentRecord` + F0 原始文件（飞书聊天 markdown、图片、PDF/文档、微信文章；音频转录预留）
+- **Required Output**: `ContentEnvelope` 包含 canonical `ContentBlock[]`。详见 `docs/specs/f1-standardization-contract.md`。
 
-### 输出 Schema
+### 输出 Schema 摘要
 
 ```python
 ContentEnvelope(
     envelope_id: str,
-    source_id: str,            # -> F0 ContentRecord.content_id
-    source_type: Literal[      # 7 种
-        "feishu_chat", "feishu_doc", "image", "pdf",
-        "audio_transcript", "video_transcript", "wechat_article", "manual"
+    source_record_id: str,       # -> F0 ContentRecord.content_id
+    source_type: Literal[
+        "feishu_chat", "feishu_doc", "wechat_article", "image",
+        "pdf", "audio_transcript", "video_transcript", "manual_text",
     ],
     creator_id: Optional[str],
     creator_name: Optional[str],
+    title: Optional[str],
     published_at: Optional[datetime],
-    collected_at: datetime,
+    collected_at: Optional[datetime],
     source_uri: Optional[str],
     raw_path: Optional[str],
-    blocks: List[ContentBlock], # 至少 1 个
-    lineage: DataLineage,       # 来源追溯
+    blocks: List[ContentBlock],
+    standardization_profile: str,
     metadata: dict,
 )
 
 ContentBlock(
     block_id: str,
     envelope_id: str,
-    block_type: Literal[        # 13 种
-        "chat_message", "paragraph", "image_text", "table_region",
-        "chart_region", "audio_segment", "video_segment", "quote",
-        "link_reference", "section_title", "ocr_unreadable",
-        "code_block", "attachment_ref"
+    block_type: Literal[
+        "chat_message", "paragraph", "section_title", "image_text",
+        "table_region", "chart_region", "audio_segment", "video_segment",
+        "quote", "link_reference", "attachment_ref", "ocr_unreadable",
+        "system_event",
     ],
-    text: str,                  # 块内文本（可空，如图表区）
-    order_index: int,           # 在 envelope 内的顺序
-    speaker: Optional[str],     # 聊天消息的说话人
-    page_index: Optional[int],  # PDF 页码
-    image_region: Optional[dict],  # {x, y, w, h} 图片区域坐标
-    start_time_sec: Optional[float],  # 音频起始秒
-    end_time_sec: Optional[float],    # 音频结束秒
+    text: str,
+    order_index: int,
+    speaker: Optional[str],
+    timestamp: Optional[datetime],
+    page_index: Optional[int],
+    bbox: Optional[BoundingBox],
+    start_time_sec: Optional[float],
+    end_time_sec: Optional[float],
     parent_block_id: Optional[str],
-    thread_id: Optional[str],   # 聊天线程 ID
+    thread_id: Optional[str],
+    quality: BlockQuality,
+    provenance: BlockProvenance,
     metadata: dict,
 )
 ```
+
+### F1 标准化质量
+
+F1 的质量评估是 **standardization quality**，不是 F2 的投资相关性或实体锚定质量。
+
+```python
+BlockQuality(
+    readability: float,
+    extraction_confidence: float,
+    structural_confidence: float,
+    completeness: float,
+    noise_score: float,
+    quality_flags: List[str],
+)
+```
+
+评分必须优先由确定性特征计算：乱码比例、HTML 残留、parser 命中、timestamp/speaker 解析、OCR/ASR 原始置信度、layout/bbox 完整度、空转发/缺附件/系统消息识别等。LLM 可辅助图片图表描述，但不能作为唯一质量评分来源。
 
 ### Owning Files
 
 - `schemas/content_envelope.py`
 - `parsing/content_standardizer.py`
 - `parsing/vision_extractor.py`
-- `parsing/audio_extractor.py`
-- `parsing/funasr_client.py`
-- `parsing/mimo_asr_client.py`
+- `parsing/standardization_quality_scorer.py`（待创建）
+- `parsing/feishu_chat_markdown_standardizer.py`（待创建或并入 `content_standardizer.py`）
+- `parsing/image_ocr_layout_standardizer.py`（待创建或并入 `vision_extractor.py`）
+- `parsing/audio_extractor.py`（音频预留；本轮不实现 canonical adapter）
+- `docs/specs/f1-standardization-contract.md`
 
 ### Forbidden Responsibilities
 
-- 不做质量评估（F2）
+- 不做 topic assembly（F1.5）
 - 不做投资意图判断（F3）
-- 不做实体链接（F2）
-- 不做时间解析（F2）
-- 不丢弃低质量块（只标记，由 F2 门控决定）
+- 不生成 `NormalizedInvestmentIntent`
+- 不生成 `TradeAction`
+- 不解析 canonical `EntityAnchor` ID（F2）
+- 不静默丢弃低质量或噪声块，只能标记质量和噪声
 
 ### Acceptance Checklist
 
-- [ ] 图片->ContentBlock: 标题/段落/表格/图表区域分别成块
-- [ ] 图片 block 保留 image_region 坐标
-- [ ] 飞书聊天->ContentBlock: 按消息/说话人/时间拆分
-- [ ] 飞书聊天保留 thread_id / speaker
-- [ ] 音频转录->ContentBlock: 按语义段落+时间戳拆分
-- [ ] PDF->ContentBlock: 保留标题层级和表格结构
-- [ ] 所有 ContentBlock 可追溯到原始文件
+- [ ] 飞书聊天 markdown -> `chat_message` / `attachment_ref` / `system_event`
+- [ ] 飞书聊天 block 保留 `speaker`、`timestamp`、`message_type`、Q/A 格式标记
+- [ ] 图片 OCR/layout -> `section_title` / `image_text` / `table_region` / `chart_region` / `ocr_unreadable`
+- [ ] 图片 block 在 layout 可用时保留 `bbox`
+- [ ] 所有 block 有 deterministic `BlockQuality`
+- [ ] 所有 block 有 `BlockProvenance`
+- [ ] 音频 `audio_segment` 在契约中保留，但本轮实现不强制
+- [ ] 旧 `SegmentRecord` 不再作为 F1 canonical output，只能作为迁移输入
 
 ---
 
 ## F1.5: Topic Assembly（主题组装）
 
-- **Purpose**: 将长聊天、长文档、音频转录稿等 multi-topic 内容从原子 `ContentBlock[]` 组装成按标的、行业、宏观、投资哲学等主题划分的 `TopicBlock[]`。F1.5 是 F1/F2 之间的 mandatory sub-stage，不改变 F0-F8 顶层架构。
-- **Maturity Status**: `placeholder`（契约已定义，schema 和 assembler 待实现）
+- **Purpose**: 将 F1 已标准化的 `ContentBlock[]` 组装成按标的、行业、宏观、投资哲学等语义主题划分的 `TopicBlock[]`。F1.5 只处理语义边界，不再解析 markdown header、OCR 布局、HTML 或 ASR 结构。
+- **Maturity Status**: `alpha`（`TopicBlock` schema、规则 baseline、Cat Lord golden fixture、LLM constrained adapter 已存在；canonical pipeline 集成未完成）
 - **Allowed Input**: F1 `ContentEnvelope` + `ContentBlock[]`
 - **Required Output**: `TopicAssemblyResult` + `TopicBlock[]`
 
@@ -187,8 +212,8 @@ TopicBlock(
         "portfolio_update", "news_forward", "other"
     ],
 
-    primary_entity_ids: List[str],
-    secondary_entity_ids: List[str],
+    primary_entity_ids: List[str],   # current schema; should migrate to entity mentions/hints before F2
+    secondary_entity_ids: List[str], # current schema; should migrate to entity mentions/hints before F2
 
     start_block_index: int,
     end_block_index: int,
@@ -214,9 +239,11 @@ TopicAssemblyResult(
 
 ### Owning Files
 
-- **(待创建)** `schemas/topic_block.py`
-- **(待创建)** `parsing/topic_assembler.py`
-- `parsing/content_standardizer.py` -- 仅提供 F1 原子 block 输入，不执行主题组装
+- `schemas/topic_block.py`
+- `parsing/topic_assembler.py`
+- `parsing/llm_topic_assembly_adapter.py`
+- `tests/fixtures/kol/cat_lord_topic_assembly_input.json`
+- `tests/fixtures/kol/cat_lord_topic_assembly_expected.json`
 
 ### Forbidden Responsibilities
 
@@ -226,6 +253,14 @@ TopicAssemblyResult(
 - 不丢弃原始 ContentBlock
 - 不修改原始文本证据，只通过 `source_block_ids` 引用
 - 不替代 F2 的实体、时间、质量、证据锚定
+- 不解析 F1 原始格式细节（markdown heading、HTML wrapper、OCR bbox、ASR timestamp）
+
+### Architecture Decision
+
+- 规则版 `TopicAssembler` 只作为 fast path / fallback / regression baseline。
+- 主方向是 constrained LLM topic proposal + deterministic validator：LLM 只能返回 existing `source_block_ids` 分组和 topic 元信息，系统端重建 `raw_text` 并校验 missing/fabricated/duplicated block IDs。
+- 运行时不得自动把 LLM 发现的新 topic 写入生产规则库。规则库更新必须通过离线候选、回归测试和人工/CI 准入。
+- F1.5 位于 F2 之前，不应长期输出正式 `EntityAnchor` ID。后续 schema 应迁移到 `primary_entity_mentions` / `entity_resolution_hints`，由 F2 解析为 canonical anchors。
 
 ### Acceptance Checklist
 
@@ -235,6 +270,7 @@ TopicAssemblyResult(
 - [ ] `start_block_index` / `end_block_index` 与 source block 顺序一致
 - [ ] 无法归类的 block 进入 `unassigned_block_ids`
 - [ ] TopicBlock 不输出 direction / actionability / position_delta_hint / TradeAction
+- [ ] 非连续但语义连续的 source blocks 允许合并，并通过 `ambiguity_flags=["non_contiguous_blocks"]` 标记
 
 ---
 
@@ -813,8 +849,8 @@ Agent 在开始任务时必须声明自己所处的 F-stage，且只能修改该
 | Agent | F-stage | 可修改文件 | 可读文件 |
 |---|---|---|---|
 | Intake Agent | F0 | `ingestion/`, `api/routes/files.py`, `schemas/content.py` | 无 |
-| Standardize Agent | F1 | `parsing/content_standardizer.py`, `parsing/vision_extractor.py`, `parsing/audio_extractor.py` | `schemas/content_envelope.py`, F0 输出 |
-| Topic Assembly Agent | F1.5 | `parsing/topic_assembler.py`, `schemas/topic_block.py` | `schemas/content_envelope.py`, F1 输出 |
+| Standardize Agent | F1 | `schemas/content_envelope.py`, `parsing/content_standardizer.py`, `parsing/vision_extractor.py`, `parsing/standardization_quality_scorer.py`, `parsing/feishu_chat_markdown_standardizer.py`, `parsing/image_ocr_layout_standardizer.py`, `docs/specs/f1-standardization-contract.md` | F0 输出 |
+| Topic Assembly Agent | F1.5 | `parsing/topic_assembler.py`, `parsing/llm_topic_assembly_adapter.py`, `schemas/topic_block.py` | `schemas/content_envelope.py`, F1 输出 |
 | Anchor Agent | F2 | `enrichment/`, `aggregation/`, `entity_registry.py` | `schemas/content_envelope.py`, `schemas/topic_block.py`, F1.5 输出 |
 | Intent Agent | F3 | `extraction/intent_extractor.py`, `schemas/investment_intent.py` | F1.5/F2 输出 |
 | Policy Agent | F4 | `policy/`, `schemas/policy.py` | `schemas/investment_intent.py`, F3 输出 |
@@ -890,4 +926,4 @@ Code Review 和 CI 检查必须包含以下验证:
 
 ---
 
-*版本: 2.0.0 | 更新: 2026-04-28 | F0-F8 Canonical Pipeline | L0-L8 / V0-V6 deprecated*
+*版本: 2.1.0 | 更新: 2026-04-30 | F0-F8 Canonical Pipeline | L0-L8 / V0-V6 deprecated*

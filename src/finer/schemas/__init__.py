@@ -10,6 +10,14 @@ This module defines the canonical data structures for the Finer pipeline:
 """
 
 # =============================================================================
+# F0 Content Record
+# =============================================================================
+
+from finer.schemas.content import (
+    ContentRecord,
+)
+
+# =============================================================================
 # V0/V0.5 Content Envelope Schemas
 # =============================================================================
 
@@ -34,6 +42,9 @@ from finer.schemas.entity_anchor import (
 )
 
 from finer.schemas.content_envelope import (
+    BoundingBox,
+    BlockQuality,
+    BlockProvenance,
     ContentEnvelope,
     ContentBlock,
     BLOCK_TYPE_LITERAL,
@@ -149,6 +160,8 @@ from finer.schemas.topic_block import (
 )
 
 __all__ = [
+    # From content.py (F0)
+    "ContentRecord",
     # From quality.py (V0/V0.5)
     "QualityCard",
     "GATE_STATUS_LITERAL",
@@ -161,7 +174,10 @@ __all__ = [
     # From entity_anchor.py (V0/V0.5)
     "EntityAnchor",
     "ENTITY_TYPE_LITERAL",
-    # From content_envelope.py (F1/F2)
+    # From content_envelope.py (F1 canonical)
+    "BoundingBox",
+    "BlockQuality",
+    "BlockProvenance",
     "ContentEnvelope",
     "ContentBlock",
     "BLOCK_TYPE_LITERAL",

@@ -1,15 +1,17 @@
 """WeChat API Routes — REST endpoints for WeChat integration.
 
 Provides endpoints for:
-- QR code login
+- QR code login with state machine
 - Account management
 - Article listing and syncing
-- Integration with F0 Intake pipeline
+- F0 ContentRecord integration
+- Exporter health check
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, Query
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 import logging
 
 from finer.schemas.wechat import (
@@ -18,201 +20,173 @@ from finer.schemas.wechat import (
     AccountResponse,
     ArticleResponse,
     ArticleListResponse,
-    ArticleListRequest,
-    SyncRequest,
     SyncResultResponse,
     WeChatStatusResponse,
+    ExporterHealthResponse,
     WeChatUnifiedConfig,
     WeChatSourceType,
     LoginStatus,
     ArticleSyncStatus,
 )
-from finer.ingestion.wechat_adapter import get_wechat_adapter, WeChatAdapter, get_unified_wechat_adapter, UnifiedWeChatAdapter
+from finer.services.wechat_session_store import (
+    WeChatSessionStore,
+    LoginState,
+)
+from finer.ingestion.wechat_exporter_client import WeChatExporterClient
+from finer.ingestion.wechat_adapter import get_unified_wechat_adapter
 from finer.paths import REPO_ROOT
 from finer.config import load_wechat_service_config
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["wechat"])
+
+# --- Singletons (module-level, persists across requests) ---
+
+_session_store = WeChatSessionStore(default_ttl=300)
+_exporter_client: WeChatExporterClient | None = None
 
 
-def _get_adapter() -> WeChatAdapter:
-    """Get WeChat adapter instance."""
-    return get_wechat_adapter(REPO_ROOT)
+def _get_exporter_client() -> WeChatExporterClient:
+    """Get or create the exporter client singleton.
+
+    If a confirmed login session exists, sync the auth_key to the client
+    so that article operations use the same authenticated session.
+    """
+    global _exporter_client
+    if _exporter_client is None:
+        config = load_wechat_service_config(REPO_ROOT)
+        _exporter_client = WeChatExporterClient(base_url=config.exporter_url)
+
+    # Sync auth_key from confirmed session if client doesn't have one
+    if not _exporter_client.auth_key:
+        for s in _session_store.get_confirmed_sessions():
+            if s.exporter_session_id:
+                _exporter_client.auth_key = s.exporter_session_id
+                break
+    return _exporter_client
 
 
-def _get_unified_adapter() -> UnifiedWeChatAdapter:
-    """Get unified WeChat adapter instance."""
+def _get_adapter_config() -> WeChatUnifiedConfig:
+    """Load WeChat config for the unified adapter."""
     config = load_wechat_service_config(REPO_ROOT)
-    return get_unified_wechat_adapter(
-        REPO_ROOT,
-        WeChatUnifiedConfig(
-            source_type=WeChatSourceType(config.source_type),
-            exporter_url=config.exporter_url,
-            prefer_exporter=config.prefer_exporter,
-            cache_credentials=config.cache_credentials,
-        )
+    return WeChatUnifiedConfig(
+        source_type=WeChatSourceType(config.source_type),
+        exporter_url=config.exporter_url,
+        prefer_exporter=config.prefer_exporter,
+        cache_credentials=config.cache_credentials,
     )
 
 
 # --- Login Endpoints ---
 
 @router.post("/login", response_model=LoginSessionResponse)
-async def create_login_session(
-    use_exporter: bool = Query(default=True, description="Use wechat-article-exporter service if available"),
-):
+async def create_login_session():
     """Create a new login session with QR code.
 
-    Returns a session ID and QR code URL. User should scan the QR code
-    with WeChat app to complete login.
-
-    Poll `/login/status` to check when login is confirmed.
-
-    Args:
-        use_exporter: Try to use wechat-article-exporter service first
+    Returns a session_id and QR data URI. Frontend should poll
+    /login/{session_id}/status until state is confirmed or expired.
     """
-    import base64
-    import secrets
-
-    # Try exporter service first if enabled
-    if use_exporter:
-        try:
-            from finer.ingestion.wechat_exporter_client import WeChatExporterClient
-            config = load_wechat_service_config(REPO_ROOT)
-            client = WeChatExporterClient(base_url=config.exporter_url)
-
-            # Get QR code as PNG bytes
-            qr_bytes = await client.get_qrcode()
-            qr_base64 = base64.b64encode(qr_bytes).decode("utf-8")
-            qr_url = f"data:image/png;base64,{qr_base64}"
-
-            session_id = secrets.token_urlsafe(16)
-
-            session = LoginSessionResponse(
-                session_id=session_id,
-                qr_url=qr_url,
-                qr_base64=qr_base64,
-                expires_in=300,
-                status=LoginStatus.PENDING,
-            )
-            logger.info(f"Created login session via exporter: {session_id}")
-            return session
-        except Exception as e:
-            logger.warning(f"Exporter login failed, falling back to direct: {e}")
-
-    # Fallback to direct adapter
-    adapter = _get_adapter()
+    session = _session_store.create_session()
 
     try:
-        session = await adapter.create_login_session()
+        client = _get_exporter_client()
+        qr_bytes = await client.get_qrcode()
 
-        # If we got a URL but no base64, try to fetch the image
-        if session.qr_url and not session.qr_base64:
-            if session.qr_url.startswith("data:"):
-                # Already a data URL
-                pass
-            else:
-                # Try to fetch the QR code image
-                try:
-                    import httpx
-                    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                        resp = await client.get(
-                            session.qr_url,
-                            headers={
-                                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                                "Accept": "image/*",
-                            }
-                        )
-                        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-                            session.qr_base64 = base64.b64encode(resp.content).decode("utf-8")
-                            session.qr_url = f"data:image/png;base64,{session.qr_base64}"
-                except Exception as e:
-                    logger.warning(f"Failed to fetch QR image: {e}")
+        session.qr_image_bytes = qr_bytes
+        qr_data_uri = session.build_qr_data_uri()
+
+        _session_store.transition(session.session_id, LoginState.QR_READY)
 
         return LoginSessionResponse(
             session_id=session.session_id,
-            qr_url=session.qr_url,
-            qr_base64=session.qr_base64,
-            expires_in=300,
-            status=LoginStatus(session.status.value),
+            qr_data_uri=qr_data_uri,
+            qr_url=qr_data_uri,
+            expires_in=session.ttl_seconds,
+            status=LoginStatus.QR_READY,
+            source=WeChatSourceType.EXPORTER_SERVICE,
         )
     except Exception as e:
         logger.error(f"Failed to create login session: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create login session: {e}")
+        _session_store.transition(session.session_id, LoginState.FAILED, str(e))
+        raise HTTPException(status_code=502, detail=f"Exporter unavailable: {e}")
 
 
-@router.post("/login/exporter")
-async def create_login_via_exporter():
-    """Create login session via wechat-article-exporter service.
+@router.get("/login/{session_id}/qr")
+async def get_qr_code(session_id: str):
+    """Get QR code data URI for a session."""
+    session = _session_store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    This endpoint uses the external wechat-article-exporter Nuxt.js service
-    which has better QR code generation support.
+    qr_data_uri = session.build_qr_data_uri()
+    if not qr_data_uri:
+        raise HTTPException(status_code=404, detail="QR code not available for this session")
 
-    Requires wechat-article-exporter to be running at WECHAT_EXPORTER_URL.
-    """
-    try:
-        from finer.ingestion.wechat_exporter_client import WeChatExporterClient
-        from finer.config import load_wechat_service_config
-
-        config = load_wechat_service_config(REPO_ROOT)
-        client = WeChatExporterClient(base_url=config.exporter_url)
-
-        # Get QR code from exporter
-        qr_bytes = await client.get_qrcode()
-        import base64
-        qr_base64 = base64.b64encode(qr_bytes).decode("utf-8")
-        qr_url = f"data:image/png;base64,{qr_base64}"
-
-        import secrets
-        session_id = secrets.token_urlsafe(16)
-
-        return LoginSessionResponse(
-            session_id=session_id,
-            qr_url=qr_url,
-            qr_base64=qr_base64,
-            expires_in=300,
-            status=LoginStatus.PENDING,
-        )
-    except ImportError:
-        raise HTTPException(status_code=500, detail="wechat_exporter_client not available")
-    except Exception as e:
-        logger.error(f"Failed to create login via exporter: {e}")
-        raise HTTPException(status_code=500, detail=f"Exporter login failed: {e}")
+    return {"session_id": session_id, "qr_data_uri": qr_data_uri}
 
 
-@router.get("/login/status/{session_id}", response_model=LoginStatusResponse)
+@router.get("/login/{session_id}/status", response_model=LoginStatusResponse)
 async def check_login_status(session_id: str):
-    """Check login status for a session.
+    """Poll login status for a session.
 
-    Poll this endpoint to detect when QR code is scanned and confirmed.
+    Frontend should call this every 2-3 seconds until status is
+    confirmed, expired, or failed.
     """
-    adapter = _get_adapter()
+    session = _session_store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    try:
-        session = await adapter.check_login_status(session_id)
-
+    # If already terminal, return immediately
+    if session.is_terminal:
         return LoginStatusResponse(
             session_id=session.session_id,
-            status=LoginStatus(session.status.value),
-            account_id=session.account_id if session.status == LoginStatus.CONFIRMED else None,
-            account_name=session.account_name if session.status == LoginStatus.CONFIRMED else None,
-            error_msg=session.error_msg if session.status in (LoginStatus.FAILED, LoginStatus.EXPIRED) else None,
+            status=LoginStatus(session.state.value),
+            account_id=session.account_id,
+            account_name=session.account_name,
+            error_msg=session.login_error,
         )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+
+    # Poll the exporter for scan status
+    try:
+        client = _get_exporter_client()
+        from finer.ingestion.wechat_exporter_client import ScanStatus
+
+        result = await client.poll_scan_status()
+
+        if result.status == ScanStatus.CONFIRMED:
+            _session_store.transition(session_id, LoginState.CONFIRMED)
+            session.account_name = getattr(result, "nickname", "") or session.account_name
+            # Store auth_key for article operations
+            if _exporter_client and _exporter_client.auth_key:
+                session.exporter_session_id = _exporter_client.auth_key
+        elif result.status == ScanStatus.SCANNED:
+            _session_store.transition(session_id, LoginState.SCANNED)
+        elif result.status == ScanStatus.EXPIRED:
+            _session_store.transition(session_id, LoginState.EXPIRED, "QR code expired")
+        elif result.status == ScanStatus.ERROR:
+            _session_store.transition(session_id, LoginState.FAILED, result.error_message or "Unknown error")
+
     except Exception as e:
-        logger.error(f"Failed to check login status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to check status: {e}")
+        logger.warning(f"Failed to poll scan status: {e}")
+        # Don't fail the endpoint — just return current state
+
+    return LoginStatusResponse(
+        session_id=session.session_id,
+        status=LoginStatus(session.state.value),
+        account_id=session.account_id if session.state == LoginState.CONFIRMED else None,
+        account_name=session.account_name if session.state == LoginState.CONFIRMED else None,
+        error_msg=session.login_error if session.state in (LoginState.FAILED, LoginState.EXPIRED) else None,
+    )
 
 
 # --- Account Endpoints ---
 
 @router.get("/accounts", response_model=List[AccountResponse])
 async def list_accounts():
-    """List all logged-in WeChat accounts."""
-    adapter = _get_adapter()
-
-    accounts = adapter.get_accounts()
+    """List all cached WeChat accounts."""
+    adapter = get_unified_wechat_adapter(REPO_ROOT, _get_adapter_config())
+    accounts = await adapter.list_accounts()
 
     return [
         AccountResponse(
@@ -226,36 +200,6 @@ async def list_accounts():
     ]
 
 
-@router.get("/accounts/{account_id}", response_model=AccountResponse)
-async def get_account(account_id: str):
-    """Get a specific WeChat account."""
-    adapter = _get_adapter()
-
-    account = adapter.get_account(account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
-
-    return AccountResponse(
-        account_id=account.account_id,
-        account_name=account.account_name,
-        last_sync=account.last_sync,
-        article_count=account.article_count,
-        is_valid=account.is_valid,
-    )
-
-
-@router.delete("/accounts/{account_id}")
-async def remove_account(account_id: str):
-    """Remove a logged-in account."""
-    adapter = _get_adapter()
-
-    success = adapter.remove_account(account_id)
-    if not success:
-        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
-
-    return {"status": "ok", "message": f"Account {account_id} removed"}
-
-
 # --- Article Endpoints ---
 
 @router.get("/articles/{account_id}", response_model=ArticleListResponse)
@@ -263,181 +207,221 @@ async def list_articles(
     account_id: str,
     page: int = 0,
     page_size: int = 10,
-    query: Optional[str] = None,
+    query: str | None = None,
 ):
     """List articles from a WeChat account.
 
-    Requires the account to be logged in.
+    Uses the shared authenticated exporter client so that articles
+    are fetched with the login session's credentials.
     """
-    adapter = _get_adapter()
+    client = _get_exporter_client()
 
     try:
-        articles = await adapter.list_articles(account_id, page, page_size, query)
+        result = await client.get_articles(account_id, begin=page * page_size, size=min(page_size, 10))
+        articles = [
+            ArticleResponse(
+                article_id=str(a.aid),
+                title=a.title,
+                author=a.author,
+                digest=a.digest,
+                publish_time=datetime.fromtimestamp(a.create_time) if a.create_time else None,
+                content_url=a.link,
+                read_count=a.read_num,
+                like_count=a.like_num,
+                status=ArticleSyncStatus.PENDING,
+            )
+            for a in result.articles
+        ]
 
         return ArticleListResponse(
             account_id=account_id,
-            articles=[
-                ArticleResponse(
-                    article_id=art.article_id,
-                    title=art.title,
-                    author=art.author,
-                    digest=art.digest,
-                    publish_time=art.publish_time,
-                    read_count=art.read_count,
-                    like_count=art.like_count,
-                    content_url=art.content_url,
-                    status=ArticleSyncStatus(art.status.value),
-                )
-                for art in articles
-            ],
-            total=len(articles),
+            articles=articles,
+            total=result.total,
             page=page,
             page_size=page_size,
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to list articles: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list articles: {e}")
+        raise HTTPException(status_code=502, detail=f"Failed to list articles: {e}")
 
+
+# --- Sync Endpoint ---
 
 @router.post("/sync/{account_id}", response_model=SyncResultResponse)
 async def sync_articles(
     account_id: str,
-    max_articles: Optional[int] = None,
+    max_articles: int | None = None,
     include_images: bool = False,
-    trigger_l0: bool = True,
-    background_tasks: BackgroundTasks = None,
 ):
-    """Sync articles from a WeChat account to local storage.
+    """Sync articles from a WeChat account.
 
-    Articles are saved to `data/raw/wechat/{account_id}/` as Markdown files.
-
-    Args:
-        account_id: Account to sync
-        max_articles: Maximum articles to sync (None for all)
-        include_images: Download images locally
-        trigger_l0: Trigger F0 ingestion pipeline after sync
+    Saves raw artifacts and builds F0 ContentRecords.
+    Uses incremental sync — only fetches articles not yet synced.
     """
-    adapter = _get_adapter()
+    from finer.services.wechat_artifact_store import WeChatArtifactStore
+    from finer.services.wechat_content_record_builder import build_content_record
 
-    # Check account exists
-    account = adapter.get_account(account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
+    client = _get_exporter_client()
+    artifact_store = WeChatArtifactStore(REPO_ROOT)
+
+    # Resolve account display name: try confirmed session, then account search
+    account_name = account_id
+    for s in _session_store.get_confirmed_sessions():
+        if s.account_name:
+            account_name = s.account_name
+            break
+    # If still a raw id, try searching the account via exporter
+    if account_name == account_id:
+        try:
+            search_results = await client.search_account(account_id)
+            if search_results:
+                account_name = search_results[0].nickname
+        except Exception:
+            pass  # fallback to account_id
 
     try:
-        # Sync articles
-        synced_paths = await adapter.sync_all_articles(
-            account_id,
-            max_articles=max_articles,
-            include_images=include_images,
-        )
+        # Load incremental sync state
+        synced_ids = artifact_store.load_sync_state(account_id)
 
-        # Trigger F0 pipeline if requested
-        l0_triggered = False
-        if trigger_l0 and synced_paths:
-            # F0 pipeline integration would go here
-            # Currently placeholder - files are saved to data/raw/wechat/{account_id}/
-            # They can be imported via the integrations hub
-            l0_triggered = False
-            logger.info(f"Synced {len(synced_paths)} articles to {adapter.output_dir}")
+        # Paginate through all articles (get_articles caps size at 10)
+        all_articles = []
+        begin = 0
+        page_size = 10
+        while True:
+            result = await client.get_articles(account_id, begin=begin, size=page_size)
+            all_articles.extend(result.articles)
+            if not result.has_more:
+                break
+            begin += page_size
+            if max_articles and len(all_articles) >= max_articles:
+                break
+
+        synced_count = 0
+        failed_count = 0
+        errors: list[str] = []
+        content_record_ids: list[str] = []
+        article_paths: list[str] = []
+
+        for article in all_articles:
+            article_id = str(article.aid)
+            if article_id in synced_ids:
+                continue
+            if max_articles and synced_count >= max_articles:
+                break
+
+            try:
+                # Fetch raw content via exporter
+                content = await client.export_article(
+                    article.link, format="markdown"
+                )
+
+                # Save artifacts
+                saved = artifact_store.save_article_artifacts(
+                    account_id=account_id,
+                    article_id=article_id,
+                    html=b"",  # exporter returns markdown, not raw html
+                    markdown=content,
+                )
+
+                # Build ContentRecord
+                record = build_content_record(
+                    article=article,
+                    account_id=account_id,
+                    account_name=account_name,
+                    artifacts=saved,
+                    exporter_session_id=_exporter_client.auth_key or "",
+                )
+
+                # Persist ContentRecord
+                f0_dir = REPO_ROOT / "data" / "F0_intake" / "wechat" / account_id
+                f0_dir.mkdir(parents=True, exist_ok=True)
+                record_path = f0_dir / f"{record.content_id}.json"
+                record_path.write_text(
+                    record.model_dump_json(indent=2),
+                    encoding="utf-8",
+                )
+
+                content_record_ids.append(record.content_id)
+                article_paths.append(str(saved.raw_md_path))
+                synced_count += 1
+
+                # Update incremental sync state
+                synced_ids.add(article_id)
+
+            except Exception as e:
+                failed_count += 1
+                errors.append(f"Article {article_id}: {e}")
+                logger.error(f"Failed to sync article {article_id}: {e}")
+
+        # Persist updated sync state
+        artifact_store.save_sync_state(account_id, synced_ids)
 
         return SyncResultResponse(
             account_id=account_id,
-            synced_count=len(synced_paths),
-            articles=[str(p) for p in synced_paths],
-            errors=[],
-            l0_triggered=l0_triggered,
+            synced_count=synced_count,
+            failed_count=failed_count,
+            articles=article_paths,
+            content_record_ids=content_record_ids,
+            errors=errors,
+            l0_triggered=synced_count > 0,
         )
 
     except Exception as e:
-        logger.error(f"Failed to sync articles: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to sync articles: {e}")
+        logger.error(f"Sync failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Sync failed: {e}")
 
 
-@router.post("/sync-single", response_model=SyncResultResponse)
-async def sync_single_article(
-    account_id: str,
-    article_id: str,
-    include_images: bool = False,
-):
-    """Sync a single article from a WeChat account."""
-    adapter = _get_adapter()
+# --- Exporter Health ---
+
+@router.get("/exporter/health", response_model=ExporterHealthResponse)
+async def exporter_health():
+    """Check wechat-article-exporter service health."""
+    import time as _time
+
+    config = load_wechat_service_config(REPO_ROOT)
+    url = config.exporter_url
 
     try:
-        # Get article list first
-        articles = await adapter.list_articles(account_id, page=0, page_size=50)
-
-        # Find the specific article
-        article = next((a for a in articles if a.article_id == article_id), None)
-        if not article:
-            raise HTTPException(status_code=404, detail=f"Article {article_id} not found")
-
-        # Sync the article
-        path = await adapter.sync_article(account_id, article, include_images)
-
-        return SyncResultResponse(
-            account_id=account_id,
-            synced_count=1,
-            articles=[str(path)],
-            errors=[],
-            l0_triggered=False,
-        )
-
-    except HTTPException:
-        raise
+        import httpx
+        start = _time.time()
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{url}/api/web/login/scan")
+            latency = (_time.time() - start) * 1000
+            return ExporterHealthResponse(
+                available=resp.status_code in (200, 401, 404),
+                url=url,
+                latency_ms=round(latency, 1),
+            )
     except Exception as e:
-        logger.error(f"Failed to sync article: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to sync article: {e}")
+        return ExporterHealthResponse(
+            available=False,
+            url=url,
+            error=str(e),
+        )
 
 
 # --- Status Endpoint ---
 
 @router.get("/status", response_model=WeChatStatusResponse)
 async def get_wechat_status():
-    """Get WeChat integration status."""
-    adapter = _get_adapter()
+    """Get overall WeChat integration status."""
+    config = load_wechat_service_config(REPO_ROOT)
+    adapter = get_unified_wechat_adapter(REPO_ROOT, _get_adapter_config())
 
-    accounts = adapter.get_accounts()
+    accounts = await adapter.list_accounts()
     total_articles = sum(acc.article_count for acc in accounts)
     last_sync = max(
         (acc.last_sync for acc in accounts if acc.last_sync),
-        default=None
+        default=None,
     )
 
     return WeChatStatusResponse(
         enabled=True,
+        source_type=WeChatSourceType(config.source_type),
+        exporter_url=config.exporter_url,
         accounts_count=len(accounts),
         total_articles_synced=total_articles,
         last_sync=last_sync,
-        cache_dir=str(adapter.cache_dir),
-        output_dir=str(adapter.output_dir),
+        cache_dir=str(REPO_ROOT / "data" / "cache" / "wechat"),
+        output_dir=str(REPO_ROOT / "data" / "raw" / "wechat"),
     )
-
-
-# --- Utility Endpoints ---
-
-@router.post("/refresh/{account_id}")
-async def refresh_account_token(account_id: str):
-    """Refresh authentication token for an account.
-
-    If the account's token has expired, this will initiate a new login session.
-    """
-    adapter = _get_adapter()
-
-    account = adapter.get_account(account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
-
-    # Check if token is still valid by trying to list articles
-    try:
-        articles = await adapter.list_articles(account_id, page=0, page_size=1)
-        return {"status": "ok", "message": "Token is valid", "account_id": account_id}
-    except Exception:
-        # Token is invalid - need to re-login
-        return {
-            "status": "relogin_required",
-            "message": "Token expired, please re-login",
-            "account_id": account_id,
-        }

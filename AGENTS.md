@@ -17,8 +17,8 @@ F0 INTAKE → F1 STANDARDIZE → F1.5 TOPIC ASSEMBLY → F2 ANCHOR → F3 INTENT
 | Stage | 名称 | 核心 Schema | 状态 |
 |-------|------|------------|------|
 | F0 | Intake | ContentRecord | implemented |
-| F1 | Standardize | ContentEnvelope, ContentBlock | partial |
-| F1.5 | Topic Assembly | TopicBlock, TopicAssemblyResult | contract-only |
+| F1 | Standardize | ContentEnvelope, ContentBlock, BlockQuality, BlockProvenance | alpha contract reset |
+| F1.5 | Topic Assembly | TopicBlock, TopicAssemblyResult | alpha |
 | F2 | Anchor | QualityCard, TemporalAnchor, EntityAnchor, EvidenceSpan | partial |
 | F3 | Intent | NormalizedInvestmentIntent | partial |
 | F4 | Policy | PolicyMappingResult, PolicyMappedIntent | partial |
@@ -32,7 +32,9 @@ F0 INTAKE → F1 STANDARDIZE → F1.5 TOPIC ASSEMBLY → F2 ANCHOR → F3 INTENT
 
 **F3 → F4 → F5 未闭环。** 当前 `trade_action_extractor.py` 仍从原始文本直接生成 TradeAction，绕过 F3 Intent 和 F4 Policy。F5 TradeAction schema 已补齐 `intent_id` / `policy_id` / `evidence_span_ids` 字段及 `canonical_trace_status` 校验器，但 canonical F3→F4→F5 pipeline constructor 尚未完成，legacy extractor 仍输出 `non_canonical` TradeAction。
 
-**F1.5 Topic Assembly 仍是 contract-only。** 长聊天、长文档、音频转录稿等 multi-topic 内容目前还不能稳定拆成以标的/行业/宏观主题为单位的 `TopicBlock`。后续进入 F2/F3 前必须先补齐该子阶段，避免整篇复杂文件直接进入 Intent 抽取。
+**F1 Standardize 契约正在重置。** 旧 V0 block type、legacy `SegmentRecord`、L3 perception 路径与 canonical F1 混杂，导致 F1.5 被迫承担 markdown 解析、HTML 清理、OCR/ASR 后处理等非语义分段职责。最新规范要求 F1 只输出 canonical `ContentEnvelope + ContentBlock[]`，并为每个 block 提供 standardization quality 与 provenance。详见 `docs/specs/f1-standardization-contract.md`。
+
+**F1.5 已不再是 contract-only，但未接入 canonical pipeline。** `schemas/topic_block.py`、`parsing/topic_assembler.py`、Cat Lord golden fixture、LLM constrained adapter 已存在。规则版只作为 fast path / fallback / regression baseline；主方向是 constrained LLM topic proposal + deterministic validator。F1.5 不再解析 F1 原始格式细节，只做语义 topic assembly。
 
 ## Agent 执行规则
 
@@ -48,9 +50,11 @@ F0 INTAKE → F1 STANDARDIZE → F1.5 TOPIC ASSEMBLY → F2 ANCHOR → F3 INTENT
 | 文件 | F-stage | 说明 |
 |------|---------|------|
 | `ingestion/` | F0 | 多源接入 |
-| `parsing/` | F1 | 内容标准化 |
-| `parsing/topic_assembler.py` | F1.5 | 长篇复杂内容的主题块组装（待实现） |
-| `schemas/topic_block.py` | F1.5 | TopicBlock / TopicAssemblyResult（待实现） |
+| `parsing/` | F1 | 内容标准化；新代码必须输出 canonical ContentEnvelope/ContentBlock |
+| `docs/specs/f1-standardization-contract.md` | F1 | F1 最新标准化契约 |
+| `parsing/topic_assembler.py` | F1.5 | 长篇复杂内容的主题块组装（规则 baseline + LLM 路由） |
+| `parsing/llm_topic_assembly_adapter.py` | F1.5 | Constrained LLM topic proposal adapter |
+| `schemas/topic_block.py` | F1.5 | TopicBlock / TopicAssemblyResult |
 | `enrichment/` | F2 | 实体/质量/时间锚定 |
 | `extraction/intent_extractor.py` | F3 | Intent 提取（当前仅 rule-based） |
 | `policy/` | F4 | Policy 映射（GlobalBasePolicy 已实现） |
@@ -67,7 +71,7 @@ F0 INTAKE → F1 STANDARDIZE → F1.5 TOPIC ASSEMBLY → F2 ANCHOR → F3 INTENT
 
 - 后端：Python 3.11+ / FastAPI / Pydantic V2
 - 前端：TypeScript / Next.js 16 / React 19 / TailwindCSS 4
-- LLM：GLM-5.1 (SVIPS) / Qwen-Plus (DashScope) / Qwen-VL-Plus
+- LLM：MiMo-V2.5 (F1 Vision/OCR) / GLM-5.1 (SVIPS) / Qwen-Plus (DashScope)
 
 ## 启动命令
 
@@ -81,5 +85,6 @@ pytest tests/ -v
 
 - `docs/ARCHITECTURE.md` — 完整架构文档（canonical）
 - `docs/specs/f-stage-contracts.md` — 每阶段契约
+- `docs/specs/f1-standardization-contract.md` — F1 标准化契约（最新）
 - `docs/specs/canonical-path-test-plan.md` — 测试计划
 - `CLAUDE.md` — 项目工程规范

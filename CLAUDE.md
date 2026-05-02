@@ -28,8 +28,8 @@ F0 (Intake) → F1 (Standardize) → F1.5 (Topic Assembly) → F2 (Anchor) → F
 | F-stage | 代码目录 | 职责 | 可调用 |
 |---------|----------|------|--------|
 | F0 | `ingestion/` | 多源数据接入（飞书/B站/微信） | `services/llm.py`, `services/converter.py` |
-| F1 | `parsing/` | 内容标准化（OCR/ASR/block化） | `services/llm.py`, `services/perception.py` |
-| F1.5 | `parsing/topic_assembler.py` | 长篇复杂内容主题组装（TopicBlock） | `schemas/content_envelope.py`, `schemas/topic_block.py` |
+| F1 | `parsing/` | 内容标准化：结构边界、standardization quality、provenance | `services/llm.py`, `services/perception.py` |
+| F1.5 | `parsing/topic_assembler.py` | 长篇复杂内容主题组装（TopicBlock）；只处理语义边界 | `schemas/content_envelope.py`, `schemas/topic_block.py` |
 | F2 | `enrichment/` | 实体锚定、质量评估、时间解析 | `services/finance_skills_client.py`, `entity_registry.py` |
 | F3 | `extraction/intent_extractor.py` | 投资意图提取 | `services/llm.py` |
 | F4 | `policy/` | Intent→TradeAction policy 映射 | 规则引擎（无 LLM） |
@@ -41,6 +41,8 @@ F0 (Intake) → F1 (Standardize) → F1.5 (Topic Assembly) → F2 (Anchor) → F
 - 在 API route 中写业务逻辑（route 只做参数解析和响应格式化，逻辑放 `services/`）
 - F3 生成 TradeAction（F3 职责止于 Intent）
 - F5 不经过 F3/F4 直接从原始文本生成 TradeAction
+- F1.5 解析 F1 原始格式细节（markdown heading、HTML wrapper、OCR bbox、ASR timestamp）
+- 新 F1 代码输出 legacy `SegmentRecord` 作为 canonical 结果
 
 **公共模块**（任何 F-stage 可调用）：
 - `services/llm.py` — LLM 统一调用
@@ -66,7 +68,7 @@ F0 (Intake) → F1 (Standardize) → F1.5 (Topic Assembly) → F2 (Anchor) → F
 ```
 ContentRecord (F0)
   └→ ContentEnvelope (F1)
-       └→ ContentBlock (F1)
+       └→ ContentBlock + BlockQuality + BlockProvenance (F1)
             └→ TopicBlock / TopicAssemblyResult (F1.5)
                  └→ QualityCard + TemporalAnchor + EntityAnchor + EvidenceSpan (F2)
                       └→ NormalizedInvestmentIntent (F3)
@@ -76,7 +78,8 @@ ContentRecord (F0)
 ```
 
 > 旧 L0/L3/L5 命名仅在 `pipeline/orchestrator.py`（legacy orchestrator）和 `data/` 目录结构中保留。Schema 定义、API 契约、文档均以 F-stage 为准。
-> F1.5 是 F1/F2 之间的 mandatory sub-stage，用于把长聊天、长文档、音频转录稿等 multi-topic 内容组装为 `TopicBlock`，但不改变 F0-F8 顶层命名。
+> F1 标准化契约以 `docs/specs/f1-standardization-contract.md` 为准。旧 V0 block type、legacy `SegmentRecord`、L3 perception 只能作为迁移输入，不是新代码的 canonical output。
+> F1.5 是 F1/F2 之间的 mandatory sub-stage，用于把长聊天、长文档等 multi-topic 内容组装为 `TopicBlock`，但不改变 F0-F8 顶层命名。规则版 TopicAssembler 只作为 baseline/fallback，主方向是 constrained LLM proposal + deterministic validator。
 
 ### 前后端契约同步
 
@@ -121,10 +124,10 @@ ContentRecord (F0)
 | 场景 | 主模型 | 降级模型 |
 |---|---|---|
 | 文本富化/分类 | GLM-5.1 (SVIPS) | Qwen-Plus (DashScope) |
-| 图像 OCR/图表分析 | Qwen-VL-Plus | Qwen-VL-Max |
+| 图像 OCR/图表分析 | MiMo-V2.5 | — |
 | 结构化提取 (Instructor) | Qwen-Max | — |
 
-模型注册表在 `model_config.py`，自动 fallback。
+模型注册表在 `model_config.py`。F1 vision/OCR 当前固定为 `mimo-v2.5`，不启用视觉模型 fallback。
 
 ### Prompt 管理
 
@@ -236,7 +239,7 @@ cd src/finer_dashboard && npx tsc --noEmit
 
 | 文件 | 内容 | 是否 gitignore |
 |---|---|---|
-| `.env` | API 密钥（GLM_API_KEY, DASHSCOPE_API_KEY） | 是 |
+| `.env` | API 密钥（MIMO_API_KEY, GLM_API_KEY, DASHSCOPE_API_KEY） | 是 |
 | `configs/*.yaml` | 服务配置（飞书、creator profiles） | 否（敏感字段用占位符） |
 | `configs/*.yaml.example` | 配置模板 | 否 |
 | `src/finer/config.py` | 配置加载器 | 否 |

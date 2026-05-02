@@ -1,0 +1,44 @@
+{
+  "fixture_id": "img_maodaren_0319",
+  "description": "飞书图片：猫大人群截图，2026-03-19 00:42，含吉利汽车财报分析上下文",
+  "source_type": "image",
+  "file_type": "png",
+  "raw_path": "data/raw/maodaren/unclassified/20260319_0042_img_v3_02vu_6fffd77a-0155-45fc-85fe-d68d8ad4cc4g.png",
+  "source_record_id": "maodaren_unclassified_0d1809312620",
+  "creator_id": "ou_4b89fb1c91dee0c54ae4a2bb1643aaa9",
+  "creator_name": "maodaren",
+  "expected_adapter": "ImageOCRLayoutStandardizer",
+  "expected_profile": "image_ocr_layout_v1",
+  "published_at": "2026-03-19T00:42:00",
+  "metadata": {
+    "file_size_bytes": 147233,
+    "feishu_chat_id": "oc_6ff7bde4c69b7ca19f3a2f7fda426885",
+    "feishu_message_id": "om_x100b54992fcef4a0b29f24066abdfdb",
+    "feishu_sender_id": "ou_4b89fb1c91dee0c54ae4a2bb1643aaa9",
+    "context_text": "汽车的销量和营收增长都是明牌，这个没有特别多要说的。毛利率略微增长，但是净利润增速其实是低于我的预期（符合市场预期的）。\n从财报上看，主要是两个点影响的净利润率：\n1.价格战影响：虽然极氪（高端）和领克（中高端）销量也在增长，但在总销量大盘中，吉利品牌（Geely Auto）的占比依然最大。随着吉利品牌向新能源转型，短期内不可避免地会牺牲一部分单车利润和营收。\n2. 研发投入增加，全年研发费用 176.2亿元（同比+29%）以及品牌整合成本投入（私有化极氪）",
+    "vision_transcript_available": false,
+    "vision_transcript_error": "DASHSCOPE_API_KEY not configured"
+  },
+  "assertions": {
+    "blocks_non_empty": true,
+    "order_index_sequential": true,
+    "every_block_has_quality": true,
+    "every_block_has_provenance": true,
+    "passes_canonical_validator": true,
+    "required_block_types": ["ocr_unreadable", "section_title"],
+    "optional_block_types": ["table_region", "chart_region", "ocr_unreadable"],
+    "source_type_must_be": "image",
+    "block_type_must_not_be_legacy": true,
+    "quality_must_be_block_quality": true,
+    "source_record_id_match": true,
+    "standardization_profile_match": true,
+    "raw_path_match": true,
+    "bbox_populated_when_layout_available": true
+  },
+  "engineering_risks": [
+    "context_text 包含吉利汽车财报分析，图片可能是财报截图或数据图表",
+    "147KB 较小，可能是单区域截图而非复杂多区域文档",
+    "OCR 未提取，但 context_text 可作为 fallback 信息源（adapter 是否使用？）",
+    "发消息者是 maodaren 群主本人（ou_4b89fb1c...），与聊天记录样本同源"
+  ]
+}

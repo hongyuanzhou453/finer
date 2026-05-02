@@ -1,0 +1,45 @@
+{
+  "fixture_id": "pdf_maodaren_0415",
+  "description": "飞书 PDF：第三方机构研报，2026-04-15 15:46，14MB 多页文档",
+  "source_type": "pdf",
+  "file_type": "pdf",
+  "raw_path": "data/raw/maodaren/unclassified/20260415_1546_file_v3_0010p_e630a0b1-2ce6-44c6-b2dc-2f66db85e79g.pdf",
+  "source_record_id": "maodaren_unclassified_39a7c3690e9c",
+  "creator_id": "ou_4b89fb1c91dee0c54ae4a2bb1643aaa9",
+  "creator_name": "maodaren",
+  "expected_adapter": "PDFStandardizer",
+  "expected_profile": "pdf_layout_v1",
+  "published_at": "2026-04-15T15:46:00",
+  "metadata": {
+    "file_size_bytes": 14155272,
+    "feishu_chat_id": "oc_6ff7bde4c69b7ca19f3a2f7fda426885",
+    "feishu_message_id": "manual",
+    "context_text": "",
+    "page_index_required": true
+  },
+  "assertions": {
+    "blocks_non_empty": true,
+    "order_index_sequential": true,
+    "every_block_has_quality": true,
+    "every_block_has_provenance": true,
+    "passes_canonical_validator": true,
+    "required_block_types": ["section_title", "paragraph"],
+    "optional_block_types": ["table_region", "chart_region", "image_text", "ocr_unreadable"],
+    "source_type_must_be": "pdf",
+    "block_type_must_not_be_legacy": true,
+    "quality_must_be_block_quality": true,
+    "source_record_id_match": true,
+    "standardization_profile_match": true,
+    "raw_path_match": true,
+    "page_index_populated": true,
+    "min_region_types": 2,
+    "must_identify_cover_or_chapter": true
+  },
+  "engineering_risks": [
+    "14MB PDF 解析耗时可能超测试超时，需设置合理 timeout",
+    "PDF 页数未知，需验证 page_index 覆盖范围（封面/目录/正文/附录）",
+    "研报通常含表格和图表，需 table_region/chart_region block，纯 OCR 文本丢失结构",
+    "bbox 在 PDF 场景是页面坐标系（points），非像素坐标系，需确认 BoundingBox 语义",
+    "feishu_message_id 为 'manual'（非自动同步），来源可信度需在 metadata 中标注"
+  ]
+}

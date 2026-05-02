@@ -20,6 +20,8 @@ const SOURCE_TYPE_LABELS: Record<SourceType | "all", string> = {
   feishu: "飞书",
   notebooklm: "NotebookLM",
   local: "本地导入",
+  wechat: "微信",
+  bilibili: "B站",
   unknown: "未知",
 };
 
