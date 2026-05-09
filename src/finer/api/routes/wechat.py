@@ -384,7 +384,9 @@ async def exporter_health():
     try:
         import httpx
         start = _time.time()
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        # Use proxy=None to bypass system proxy for local connections
+        transport = httpx.AsyncHTTPTransport(proxy=None)
+        async with httpx.AsyncClient(timeout=5.0, transport=transport) as client:
             resp = await client.get(f"{url}/api/web/login/scan")
             latency = (_time.time() - start) * 1000
             return ExporterHealthResponse(
@@ -408,6 +410,17 @@ async def get_wechat_status():
     config = load_wechat_service_config(REPO_ROOT)
     adapter = get_unified_wechat_adapter(REPO_ROOT, _get_adapter_config())
 
+    # Check exporter availability
+    exporter_available = False
+    try:
+        import httpx
+        transport = httpx.AsyncHTTPTransport(proxy=None)
+        async with httpx.AsyncClient(timeout=3.0, transport=transport) as client:
+            resp = await client.get(f"{config.exporter_url}/api/web/login/scan")
+            exporter_available = resp.status_code in (200, 401, 404)
+    except Exception:
+        pass
+
     accounts = await adapter.list_accounts()
     total_articles = sum(acc.article_count for acc in accounts)
     last_sync = max(
@@ -418,6 +431,7 @@ async def get_wechat_status():
     return WeChatStatusResponse(
         enabled=True,
         source_type=WeChatSourceType(config.source_type),
+        exporter_available=exporter_available,
         exporter_url=config.exporter_url,
         accounts_count=len(accounts),
         total_articles_synced=total_articles,

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeJsonResponse } from "@/lib/api-proxy";
 
 const UPSTREAM_BASE = "http://127.0.0.1:8000/api/integrations";
 
@@ -7,13 +8,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ path
   const proxyPath = path.join("/");
   const { searchParams } = new URL(request.url);
   const query = searchParams.toString();
-  
+
   try {
     const res = await fetch(`${UPSTREAM_BASE}/${proxyPath}${query ? `?${query}` : ''}`, { cache: "no-store" });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const { data, status } = await safeJsonResponse(res);
+    return NextResponse.json(data, { status });
   } catch {
-    return NextResponse.json({ error: "Upstream connection failed" }, { status: 502 });
+    return NextResponse.json(
+      { ok: false, error: { code: "PROXY_ERROR", message: "Upstream connection failed" } },
+      { status: 502 },
+    );
   }
 }
 
@@ -21,15 +25,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ pat
   const { path } = await params;
   const proxyPath = path.join("/");
   try {
-    const body = await request.json();
+    const body = await request.text();
     const res = await fetch(`${UPSTREAM_BASE}/${proxyPath}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body,
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const { data, status } = await safeJsonResponse(res);
+    return NextResponse.json(data, { status });
   } catch {
-    return NextResponse.json({ error: "Upstream connection failed" }, { status: 502 });
+    return NextResponse.json(
+      { ok: false, error: { code: "PROXY_ERROR", message: "Upstream connection failed" } },
+      { status: 502 },
+    );
   }
 }

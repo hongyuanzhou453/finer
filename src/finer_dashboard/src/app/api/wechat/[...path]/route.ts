@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeJsonResponse } from "@/lib/api-proxy";
 
 const UPSTREAM_URL = "http://127.0.0.1:8000/api/wechat";
 
@@ -11,11 +12,14 @@ export async function GET(request: Request) {
       cache: "no-store",
       headers: request.headers,
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const { data, status } = await safeJsonResponse(res);
+    return NextResponse.json(data, { status });
   } catch (error) {
     console.error("API Proxy Error (GET /api/wechat):", error);
-    return NextResponse.json({ error: "Failed to connect to API backend" }, { status: 502 });
+    return NextResponse.json(
+      { ok: false, error: { code: "PROXY_ERROR", message: "Failed to connect to API backend" } },
+      { status: 502 },
+    );
   }
 }
 
@@ -46,11 +50,14 @@ export async function POST(request: Request) {
     }
 
     const res = await fetch(`${UPSTREAM_URL}${path}?${searchParams.toString()}`, fetchInit);
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const { data, status } = await safeJsonResponse(res);
+    return NextResponse.json(data, { status });
   } catch (error) {
     console.error("API Proxy Error (POST /api/wechat):", error);
-    return NextResponse.json({ error: "Failed to connect to API backend" }, { status: 502 });
+    return NextResponse.json(
+      { ok: false, error: { code: "PROXY_ERROR", message: "Failed to connect to API backend" } },
+      { status: 502 },
+    );
   }
 }
 
@@ -63,10 +70,13 @@ export async function DELETE(request: Request) {
       method: "DELETE",
       headers: request.headers,
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const { data, status } = await safeJsonResponse(res);
+    return NextResponse.json(data, { status });
   } catch (error) {
     console.error("API Proxy Error (DELETE /api/wechat):", error);
-    return NextResponse.json({ error: "Failed to connect to API backend" }, { status: 502 });
+    return NextResponse.json(
+      { ok: false, error: { code: "PROXY_ERROR", message: "Failed to connect to API backend" } },
+      { status: 502 },
+    );
   }
 }

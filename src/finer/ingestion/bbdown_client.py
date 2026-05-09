@@ -21,11 +21,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -37,6 +40,7 @@ from finer.schemas.bbdown import (
     BBDownTaskResponse,
     BBDownVideoInfo,
     DownloadTaskStatus,
+    SubtitleFormat,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,11 +129,12 @@ class BBDownClient:
         # Get BBDown version
         try:
             result = subprocess.run(
-                ["BBDown", "--version"],
+                ["BBDown", "--help"],
                 capture_output=True,
                 text=True,
             )
-            logger.info(f"BBDown version: {result.stdout.strip()}")
+            first_line = result.stdout.splitlines()[0] if result.stdout else ""
+            logger.info(f"BBDown version: {first_line}")
         except Exception as e:
             logger.warning(f"Could not get BBDown version: {e}")
 
@@ -140,8 +145,8 @@ class BBDownClient:
         logger.info(f"Starting BBDown: {' '.join(cmd)}")
         self._bbdown_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         # Wait for service to start
@@ -406,13 +411,148 @@ class BBDownAdapter:
         asr_client: Optional[Any] = None,  # MiMoASRClient
     ):
         self.config = config or BBDownConfig()
+        self.config.download_dir = Path(self.config.download_dir)
         self.bbdown = BBDownClient(self.config)
         self.asr_client = asr_client
 
+    @staticmethod
+    def _cli_env(cookie: Optional[str] = None) -> dict[str, str]:
+        """Build a stable environment for BBDown CLI execution."""
+        env = os.environ.copy()
+        path_parts = [
+            str(Path.home() / ".dotnet" / "tools"),
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            env.get("PATH", ""),
+        ]
+        env["PATH"] = os.pathsep.join(p for p in path_parts if p)
+        if "DOTNET_ROOT" not in env:
+            for candidate in [
+                Path("/opt/homebrew/opt/dotnet/libexec"),
+                Path("/usr/local/share/dotnet"),
+                Path("/usr/share/dotnet"),
+            ]:
+                if candidate.exists():
+                    env["DOTNET_ROOT"] = str(candidate)
+                    break
+        if cookie:
+            env["BBDOWN_COOKIE"] = cookie
+        return env
+
+    @staticmethod
+    def _parse_duration(duration: str) -> int:
+        """Parse BBDown duration strings like ``11m58s`` or ``1h02m03s``."""
+        value = duration.strip()
+        if not value:
+            return 0
+
+        if ":" in value:
+            parts = [int(p) for p in value.split(":")]
+            if len(parts) == 2:
+                return parts[0] * 60 + parts[1]
+            if len(parts) == 3:
+                return parts[0] * 3600 + parts[1] * 60 + parts[2]
+
+        match = re.fullmatch(
+            r"(?:(?P<hours>\d+)h)?(?:(?P<minutes>\d+)m)?(?:(?P<seconds>\d+)s)?",
+            value,
+        )
+        if not match:
+            return 0
+        return (
+            int(match.group("hours") or 0) * 3600
+            + int(match.group("minutes") or 0) * 60
+            + int(match.group("seconds") or 0)
+        )
+
+    def _cookie(self) -> Optional[str]:
+        return self.config.cookie or os.getenv("BBDOWN_COOKIE")
+
+    def _cookie_args(self) -> list[str]:
+        cookie = self._cookie()
+        return ["-c", cookie] if cookie else []
+
+    def _run_cli(self, args: list[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess[str]:
+        """Run BBDown CLI and return the completed process."""
+        env = self._cli_env(self._cookie())
+        return subprocess.run(
+            ["BBDown", *args],
+            cwd=str(cwd) if cwd else None,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @staticmethod
+    def _combined_output(result: subprocess.CompletedProcess[str]) -> str:
+        return "\n".join(p for p in [result.stdout, result.stderr] if p)
+
+    @staticmethod
+    def _parse_publish_time(raw: str) -> datetime:
+        value = raw.strip()
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            cleaned = re.sub(r"\s+[+-]\d{2}:\d{2}$", "", value)
+            return datetime.fromisoformat(cleaned)
+
+    @staticmethod
+    def _safe_title_glob(title: str) -> str:
+        return re.sub(r"[\[\]*?]", "", title).strip()
+
     async def get_video_info(self, bvid_or_url: str) -> BBDownVideoInfo:
         """Get video information."""
-        async with self.bbdown as client:
-            return await client.get_video_info(bvid_or_url)
+        bvid = self._extract_bvid(bvid_or_url)
+        result = self._run_cli([
+            bvid_or_url,
+            "--only-show-info",
+            "--hide-streams",
+            "--skip-ai",
+            *self._cookie_args(),
+        ])
+        output = self._combined_output(result)
+        if result.returncode != 0:
+            raise BBDownError(f"BBDown info failed: {output.strip()}")
+
+        aid_match = re.search(r"获取aid结束:\s*(\d+)", output)
+        title_match = re.search(r"视频标题:\s*(.+)", output)
+        publish_match = re.search(r"发布时间:\s*(.+)", output)
+        mid_match = re.search(r"space\.bilibili\.com/(\d+)", output)
+        page_count_match = re.search(r"共计\s*(\d+)\s*个分P", output)
+        page_matches = re.findall(
+            r"P\d+:\s*\[[^\]]+\]\s*\[(?P<title>[^\]]+)\]\s*\[(?P<duration>[^\]]+)\]",
+            output,
+        )
+
+        title = title_match.group(1).strip() if title_match else ""
+        if not title and page_matches:
+            title = page_matches[0][0].strip()
+
+        duration = sum(self._parse_duration(item[1]) for item in page_matches)
+        if not duration and page_matches:
+            duration = self._parse_duration(page_matches[0][1])
+
+        publish_time = (
+            self._parse_publish_time(publish_match.group(1))
+            if publish_match
+            else datetime.fromtimestamp(0)
+        )
+
+        return BBDownVideoInfo(
+            bvid=bvid,
+            aid=int(aid_match.group(1)) if aid_match else 0,
+            title=title,
+            uploader="",
+            uploader_id=int(mid_match.group(1)) if mid_match else 0,
+            publish_time=publish_time,
+            duration=duration,
+            description="",
+            cover_url="",
+            page_count=int(page_count_match.group(1)) if page_count_match else max(len(page_matches), 1),
+            tags=[],
+            has_subtitle=False,
+        )
 
     async def download_audio(
         self,
@@ -428,37 +568,40 @@ class BBDownAdapter:
         Returns:
             下载的音频文件路径
         """
-        request = BBDownDownloadRequest(
-            bvid_or_url=bvid_or_url,
-            download_video=False,
-            download_audio=True,
-            download_subtitle=False,
-            output_dir=str(output_dir) if output_dir else str(self.config.download_dir),
-        )
+        search_dir = output_dir or self.config.download_dir
+        search_dir = Path(search_dir)
+        search_dir.mkdir(parents=True, exist_ok=True)
+        bvid = self._extract_bvid(bvid_or_url)
 
-        async with self.bbdown as client:
-            task = await client.add_download_task(request)
-            result = await client.wait_for_task(task.task_id)
+        result = self._run_cli([
+            bvid_or_url,
+            "--audio-only",
+            "--skip-cover",
+            "--skip-subtitle",
+            "--skip-ai",
+            "-F",
+            "<bvid>",
+            "--work-dir",
+            str(search_dir),
+            *self._cookie_args(),
+        ])
+        output = self._combined_output(result)
+        if result.returncode != 0:
+            raise BBDownError(f"Audio download failed: {output.strip()}")
 
-            if result.status == DownloadTaskStatus.FAILED:
-                raise BBDownError(result.error_message or "Audio download failed")
-
-            # Find the downloaded audio file
-            search_dir = output_dir or self.config.download_dir
-            bvid = self._extract_bvid(bvid_or_url)
-
-            # Look for audio files matching the BVID
-            for ext in [".m4a", ".mp3", ".flac", ".aac"]:
-                audio_files = list(search_dir.glob(f"*{bvid}*{ext}"))
-                if audio_files:
-                    return audio_files[0]
-
-            # Fallback: look for any recent audio file
-            audio_files = list(search_dir.glob("*.m4a"))
+        for ext in [".m4a", ".mp3", ".flac", ".aac", ".m4s"]:
+            audio_files = list(search_dir.glob(f"*{bvid}*{ext}"))
             if audio_files:
                 return max(audio_files, key=lambda p: p.stat().st_mtime)
 
-            return None
+        audio_files = [
+            p for ext in [".m4a", ".mp3", ".flac", ".aac", ".m4s"]
+            for p in search_dir.glob(f"*{ext}")
+        ]
+        if audio_files:
+            return max(audio_files, key=lambda p: p.stat().st_mtime)
+
+        return None
 
     def _extract_bvid(self, bvid_or_url: str) -> str:
         """Extract BVID from URL or return as-is."""
@@ -482,38 +625,77 @@ class BBDownAdapter:
         Returns:
             字幕数据，如果视频没有字幕则返回 None
         """
-        request = BBDownDownloadRequest(
-            bvid_or_url=bvid_or_url,
-            download_video=False,
-            download_audio=False,
-            download_subtitle=True,
+        search_dir = Path(self.config.download_dir)
+        search_dir.mkdir(parents=True, exist_ok=True)
+        bvid = self._extract_bvid(bvid_or_url)
+        before_run = time.time() - 1
+
+        video_title = ""
+        try:
+            video_title = (await self.get_video_info(bvid_or_url)).title
+        except Exception as exc:
+            logger.debug("BBDown title lookup before subtitle download failed: %s", exc)
+
+        result = self._run_cli([
+            bvid_or_url,
+            "--sub-only",
+            "--skip-ai=false",
+            "-F",
+            "<bvid>",
+            "--work-dir",
+            str(search_dir),
+            *self._cookie_args(),
+        ])
+        output = self._combined_output(result)
+        if result.returncode != 0:
+            logger.warning("Subtitle download failed: %s", output.strip())
+            return None
+
+        subtitle_file = self._find_subtitle_file(search_dir, bvid, video_title, before_run)
+        if subtitle_file is None:
+            return None
+
+        content = subtitle_file.read_text(encoding="utf-8")
+        fmt = subtitle_file.suffix.lstrip(".").lower()
+        return BBDownSubtitle(
+            language=language,
+            format=SubtitleFormat(fmt),
+            content=content,
+            segments=self._parse_subtitle_segments(content, fmt),
         )
 
-        async with self.bbdown as client:
-            task = await client.add_download_task(request)
-            result = await client.wait_for_task(task.task_id)
+    def _find_subtitle_file(
+        self,
+        search_dir: Path,
+        bvid: str,
+        video_title: str = "",
+        since: float = 0.0,
+    ) -> Optional[Path]:
+        """Find a BBDown subtitle file by BVID, title, then recent mtime."""
+        candidates: list[Path] = []
+        for ext in [".json", ".srt", ".ass"]:
+            candidates.extend(search_dir.glob(f"*{bvid}*{ext}"))
+        if candidates:
+            return max(candidates, key=lambda p: p.stat().st_mtime)
 
-            if result.status == DownloadTaskStatus.FAILED:
-                logger.warning(f"Subtitle download failed: {result.error_message}")
-                return None
+        if video_title:
+            title_glob = self._safe_title_glob(video_title)
+            if title_glob:
+                title_candidates: list[Path] = []
+                for ext in [".json", ".srt", ".ass"]:
+                    title_candidates.extend(search_dir.glob(f"*{title_glob}*{ext}"))
+                if title_candidates:
+                    return max(title_candidates, key=lambda p: p.stat().st_mtime)
 
-            # Find the downloaded subtitle file
-            search_dir = self.config.download_dir
-            bvid = self._extract_bvid(bvid_or_url)
+        recent = [
+            p for ext in [".json", ".srt", ".ass"]
+            for p in search_dir.glob(f"*{ext}")
+            if p.stat().st_mtime >= since
+        ]
+        if recent:
+            return max(recent, key=lambda p: p.stat().st_mtime)
 
-            # Look for subtitle files
-            for ext in [".srt", ".json", ".ass"]:
-                subtitle_files = list(search_dir.glob(f"*{bvid}*{ext}"))
-                if subtitle_files:
-                    content = subtitle_files[0].read_text(encoding="utf-8")
-                    return BBDownSubtitle(
-                        language=language,
-                        format=ext[1:],
-                        content=content,
-                        segments=self._parse_subtitle_segments(content, ext[1:]),
-                    )
-
-            return None
+        return None
 
     def _parse_subtitle_segments(
         self,
@@ -642,8 +824,8 @@ async def download_bilibili_audio(
     config = BBDownConfig(
         download_dir=output_dir or Path("data/raw/bilibili/audio"),
     )
-    async with BBDownAdapter(config) as adapter:
-        return await adapter.download_audio(bvid_or_url, output_dir)
+    adapter = BBDownAdapter(config)
+    return await adapter.download_audio(bvid_or_url, output_dir)
 
 
 async def transcribe_bilibili_video(
@@ -666,5 +848,5 @@ async def transcribe_bilibili_video(
     config = BBDownConfig()
     asr_client = MiMoASRClient()
 
-    async with BBDownAdapter(config, asr_client) as adapter:
-        return await adapter.transcribe_video(bvid_or_url, prefer_subtitle, language)
+    adapter = BBDownAdapter(config, asr_client)
+    return await adapter.transcribe_video(bvid_or_url, prefer_subtitle, language)
