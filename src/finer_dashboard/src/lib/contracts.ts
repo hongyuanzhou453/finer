@@ -2,6 +2,32 @@
 // API Error Envelope (mirrors src/finer/errors/exceptions.py FinerError.to_payload)
 // =============================================================================
 
+/** Structured error details from the backend FinerError.to_payload. */
+export interface ApiErrorDetails {
+  /** UUID identifying this request in server logs. */
+  requestId?: string;
+  /** Pipeline stage where the error occurred, e.g. "F0". */
+  stage?: string;
+  /** Operation that failed, e.g. "wechat_import". */
+  operation?: string;
+  /** Source channel identifier, e.g. "wechat", "bilibili". */
+  sourceChannel?: string;
+  /** Whether the operation can be retried. */
+  retryable?: boolean;
+  /** Actionable fix suggestion for the user. */
+  fixHint?: string;
+  /** Content ID associated with the error. */
+  contentId?: string;
+  /** Import run ID associated with the error. */
+  importRunId?: string;
+  /** External source ID. */
+  externalSourceId?: string;
+  /** Python exception class name (debugging). */
+  exceptionType?: string;
+  /** Catch-all for additional error context. */
+  [key: string]: unknown;
+}
+
 /** Canonical error payload returned by FastAPI error handlers. */
 export type ApiErrorEnvelope = {
   ok: false;
@@ -14,6 +40,24 @@ export type ApiErrorEnvelope = {
     details?: {
       /** UUID identifying this request in server logs. */
       request_id?: string;
+      /** Pipeline stage where the error occurred. */
+      stage?: string;
+      /** Operation that failed. */
+      operation?: string;
+      /** Source channel identifier. */
+      source_channel?: string;
+      /** Whether the operation can be retried. */
+      retryable?: boolean;
+      /** Actionable fix suggestion for the user. */
+      fix_hint?: string;
+      /** Content ID associated with the error. */
+      content_id?: string;
+      /** Import run ID. */
+      import_run_id?: string;
+      /** External source ID. */
+      external_source_id?: string;
+      /** Python exception class name. */
+      exception_type?: string;
       /** Catch-all for additional error context. */
       [key: string]: unknown;
     };
@@ -835,3 +879,29 @@ export type ExporterHealth = {
   latency_ms?: number;
   error?: string;
 };
+
+// =============================================================================
+// F0 Project Memory — Index Health & Query (mirrors src/finer/schemas/f0_index.py)
+// =============================================================================
+
+/** F0 index health status for Import Console display. */
+export interface F0IndexHealth {
+  status: "healthy" | "stale" | "missing" | "rebuilding";
+  recordCount: number;
+  lastRebuildAt: string | null;
+  lastRebuildDurationMs: number | null;
+  manifestCountOnDisk: number;
+  drift: number;
+  dbPath: string;
+  dbSizeBytes: number;
+  needsRebuild: boolean;
+}
+
+/** F0 index query result. */
+export interface F0IndexResult {
+  records: Record<string, unknown>[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}

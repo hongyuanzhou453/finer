@@ -57,3 +57,7 @@ def ensure_storage(root: Path) -> list[str]:
         created.append(str(raw_path))
 
     return created
+
+
+# F0 Project Memory SQLite index path
+F0_INDEX_DB_PATH = DATA_ROOT / "f0_index.db"

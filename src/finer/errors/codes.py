@@ -138,6 +138,10 @@ class ErrorCode(str, Enum):
     NLM_EXT_001 = "NLM_EXT_001"
     NLM_TMO_001 = "NLM_TMO_001"
 
+    F0_INDEX_001 = "F0_INDEX_001"
+    F0_INDEX_002 = "F0_INDEX_002"
+    F0_INDEX_003 = "F0_INDEX_003"
+
 
 @dataclass(frozen=True)
 class ErrorCodeInfo:
@@ -336,6 +340,10 @@ ERROR_CODE_DEFINITIONS: dict[ErrorCode, ErrorCodeInfo] = {
 
     ErrorCode.NLM_EXT_001: _info(ErrorCode.NLM_EXT_001, "NLM upstream failed", "NLM notebook or document dependency returned an error.", "Check NLM configuration and upstream status."),
     ErrorCode.NLM_TMO_001: _info(ErrorCode.NLM_TMO_001, "NLM upstream timeout", "NLM dependency exceeded timeout.", "Retry with smaller scope or longer timeout."),
+
+    ErrorCode.F0_INDEX_001: _info(ErrorCode.F0_INDEX_001, "F0 index missing or not loaded", "The F0 SQLite index file does not exist or has not been loaded.", "Run POST /api/f0-index/rebuild to create the index.", status_code=503),
+    ErrorCode.F0_INDEX_002: _info(ErrorCode.F0_INDEX_002, "F0 index query failed", "A query against the F0 SQLite index failed unexpectedly.", "Check index health via GET /api/f0-index/health. Rebuild if stale.", status_code=500),
+    ErrorCode.F0_INDEX_003: _info(ErrorCode.F0_INDEX_003, "F0 index rebuild failed", "The F0 index rebuild process encountered an error.", "Check server logs for details. Ensure manifest files are valid JSON.", status_code=500),
 }
 
 

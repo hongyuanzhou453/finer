@@ -13,11 +13,13 @@ from finer.errors import (
     ErrorCode,
     FinerExternalServiceError,
     FinerError,
+    build_error_details,
     get_error_info,
     list_error_codes,
     lookup_error_codes,
     parse_error_code,
     register_error_handlers,
+    sanitize_error_details,
 )
 
 
@@ -25,7 +27,7 @@ CODE_PATTERN = re.compile(r"^[A-Z0-9]+_[A-Z]+_[0-9]{3}$")
 
 
 def test_error_catalog_is_complete_and_searchable() -> None:
-    assert len(ErrorCode) == 104
+    assert len(ErrorCode) == 107
     assert len(ERROR_CODE_DEFINITIONS) == len(ErrorCode)
     assert len(list_error_codes()) == len(ErrorCode)
 
@@ -60,14 +62,13 @@ def test_finer_error_payload_uses_catalog_defaults() -> None:
     assert error.status_code == 429
     assert error.error_code_str == "LLM_EXT_002"
     assert str(error) == "[LLM_EXT_002] Rate limited"
-    assert error.to_payload() == {
-        "ok": False,
-        "error": {
-            "code": "LLM_EXT_002",
-            "message": "Rate limited",
-            "details": {"retry_after": 60, "service": "mimo-api"},
-        },
-    }
+    payload = error.to_payload()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "LLM_EXT_002"
+    assert payload["error"]["message"] == "Rate limited"
+    assert payload["error"]["details"]["retry_after"] == 60
+    assert payload["error"]["details"]["service"] == "mimo-api"
+    assert payload["error"]["details"]["retryable"] is True
 
 
 def test_fastapi_handlers_serialize_finer_error() -> None:
@@ -84,19 +85,16 @@ def test_fastapi_handlers_serialize_finer_error() -> None:
 
     client = TestClient(app)
     response = client.get("/boom", headers={"X-Request-ID": "req-1"})
+    data = response.json()
 
     assert response.status_code == 502
-    assert response.json() == {
-        "ok": False,
-        "error": {
-            "code": "WX_EXT_001",
-            "message": "Exporter not responding",
-            "details": {
-                "service": "wechat-exporter",
-                "request_id": "req-1",
-            },
-        },
-    }
+    assert data["ok"] is False
+    assert data["error"]["code"] == "WX_EXT_001"
+    assert data["error"]["message"] == "Exporter not responding"
+    assert data["error"]["details"]["service"] == "wechat-exporter"
+    assert data["error"]["details"]["request_id"] == "req-1"
+    assert data["error"]["details"]["fix_hint"] == "Start exporter and verify exporter_url."
+    assert data["error"]["details"]["exception_type"] == "FinerExternalServiceError"
 
 
 def test_fastapi_handlers_wrap_legacy_http_exception() -> None:
@@ -116,6 +114,7 @@ def test_fastapi_handlers_wrap_legacy_http_exception() -> None:
     assert data["error"]["code"] == "SYS_NTF_001"
     assert data["error"]["message"] == "Session not found"
     assert data["error"]["details"]["request_id"] == "req-404"
+    assert "fix_hint" in data["error"]["details"]
 
 
 def test_fastapi_handlers_wrap_request_validation_error() -> None:
@@ -165,3 +164,126 @@ def test_server_create_app_registers_finer_error_handler() -> None:
 
     app = create_app()
     assert FinerError in app.exception_handlers
+
+
+# ---------------------------------------------------------------------------
+# New tests for enhanced error envelope (request_id, context, fix_hint, etc.)
+# ---------------------------------------------------------------------------
+
+
+def test_error_details_include_request_id() -> None:
+    """Handler auto-injects request_id into error details."""
+    app = FastAPI()
+    register_error_handlers(app)
+
+    @app.get("/ctx")
+    def ctx() -> None:
+        raise FinerError(ErrorCode.F0_EXT_001, "source down")
+
+    client = TestClient(app)
+    # With explicit header
+    resp = client.get("/ctx", headers={"X-Request-ID": "req-abc123"})
+    assert resp.json()["error"]["details"]["request_id"] == "req-abc123"
+
+    # Auto-generated
+    resp2 = client.get("/ctx")
+    rid = resp2.json()["error"]["details"]["request_id"]
+    assert rid.startswith("req-")
+    assert len(rid) == 12  # "req-" + 8 hex chars
+
+
+def test_error_details_include_stage_operation() -> None:
+    """stage/operation context fields propagate into error details."""
+    app = FastAPI()
+    register_error_handlers(app)
+
+    @app.get("/stage")
+    def stage_route() -> None:
+        raise FinerError(
+            ErrorCode.F0_EXT_001,
+            "wechat unreachable",
+            stage="F0",
+            operation="wechat_import",
+            source_channel="wechat",
+            content_id="c-001",
+        )
+
+    client = TestClient(app)
+    data = client.get("/stage", headers={"X-Request-ID": "req-s1"}).json()
+    details = data["error"]["details"]
+    assert details["stage"] == "F0"
+    assert details["operation"] == "wechat_import"
+    assert details["source_channel"] == "wechat"
+    assert details["content_id"] == "c-001"
+    assert details["request_id"] == "req-s1"
+
+
+def test_error_details_include_fix_hint() -> None:
+    """fix_hint is injected from the error catalog."""
+    app = FastAPI()
+    register_error_handlers(app)
+
+    @app.get("/hint")
+    def hint() -> None:
+        raise FinerError(ErrorCode.F0_EXT_001, "source down")
+
+    client = TestClient(app)
+    data = client.get("/hint", headers={"X-Request-ID": "req-hint"}).json()
+    expected_hint = get_error_info(ErrorCode.F0_EXT_001).fix_hint
+    assert data["error"]["details"]["fix_hint"] == expected_hint
+
+
+def test_sensitive_fields_filtered() -> None:
+    """token/secret/password fields are redacted in error details."""
+    app = FastAPI()
+    register_error_handlers(app)
+
+    @app.get("/leak")
+    def leak() -> None:
+        raise FinerError(
+            ErrorCode.SYS_INT_001,
+            "config error",
+            details={
+                "token": "sk-secret-123",
+                "password": "hunter2",
+                "api_key": "AKIA12345",
+                "authorization": "Bearer xyz",
+                "safe_field": "visible",
+            },
+        )
+
+    client = TestClient(app)
+    data = client.get("/leak", headers={"X-Request-ID": "req-leak"}).json()
+    details = data["error"]["details"]
+    assert details["token"] == "***REDACTED***"
+    assert details["password"] == "***REDACTED***"
+    assert details["api_key"] == "***REDACTED***"
+    assert details["authorization"] == "***REDACTED***"
+    assert details["safe_field"] == "visible"
+    assert details["request_id"] == "req-leak"
+
+
+def test_finerr_to_payload_with_context() -> None:
+    """FinerError.to_payload() includes context fields in details."""
+    error = FinerError(
+        ErrorCode.F0_EXT_001,
+        "wechat unreachable",
+        stage="F0",
+        operation="wechat_import",
+        source_channel="wechat",
+        content_id="c-001",
+        import_run_id="run-42",
+        external_source_id="ext-7",
+        retryable=False,
+    )
+    payload = error.to_payload()
+    details = payload["error"]["details"]
+    assert details["stage"] == "F0"
+    assert details["operation"] == "wechat_import"
+    assert details["source_channel"] == "wechat"
+    assert details["content_id"] == "c-001"
+    assert details["import_run_id"] == "run-42"
+    assert details["external_source_id"] == "ext-7"
+    assert details["retryable"] is False
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "F0_EXT_001"
