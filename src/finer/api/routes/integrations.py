@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from pathlib import Path
@@ -77,7 +77,14 @@ async def fetch_feishu_chat(req: FetchRequest):
     # Verify chat is watched to get its metadata
     chat_cfg = next((c for c in feishu_cfg.get("watched_chats", []) if c["chat_id"] == req.chat_id), None)
     if not chat_cfg:
-        raise HTTPException(400, "Chat ID not registered in configurations.")
+        raise FinerError(
+            ErrorCode.F0_IN_001,
+            "Chat ID not registered in configurations.",
+            stage="F0",
+            operation="feishu_fetch",
+            source_channel="feishu",
+            retryable=False,
+        )
         
     chat_name = chat_cfg.get("name", "Unknown Chat")
     

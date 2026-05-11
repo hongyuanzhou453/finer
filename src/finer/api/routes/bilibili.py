@@ -169,7 +169,15 @@ async def get_video_info(bvid: str):
         return video_info_to_response(info)
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise FinerError(
+            ErrorCode.BILI_IN_001,
+            str(e),
+            stage="F0",
+            operation="bilibili_video_info",
+            source_channel="bilibili",
+            retryable=False,
+            cause=e,
+        )
     except Exception as e:
         logger.error(f"Failed to get video info: {e}")
         raise FinerError(
@@ -219,7 +227,15 @@ async def transcribe_video(
         return transcript_to_response(result, transcript_path, metadata_path)
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise FinerError(
+            ErrorCode.BILI_IN_001,
+            str(e),
+            stage="F0",
+            operation="bilibili_transcribe",
+            source_channel="bilibili",
+            retryable=False,
+            cause=e,
+        )
     except Exception as e:
         logger.error(f"Transcription failed: {e}", exc_info=True)
         raise FinerError(
@@ -304,7 +320,14 @@ async def get_task_status(task_id: str):
         TaskStatusResponse with current status and result if completed
     """
     if task_id not in _tasks:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise FinerError(
+            ErrorCode.BILI_NTF_001,
+            "Task not found",
+            stage="F0",
+            operation="bilibili_task_status",
+            source_channel="bilibili",
+            retryable=False,
+        )
 
     return _tasks[task_id]
 
@@ -345,9 +368,13 @@ async def sync_to_f0_intake(
                     break
 
         if not transcript_file:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Transcript not found for {parsed_bvid}. Run /transcribe first."
+            raise FinerError(
+                ErrorCode.BILI_NTF_001,
+                f"Transcript not found for {parsed_bvid}. Run /transcribe first.",
+                stage="F0",
+                operation="bilibili_sync",
+                source_channel="bilibili",
+                retryable=False,
             )
 
         # Create F0 content ID
@@ -536,7 +563,14 @@ async def delete_transcription(bvid: str):
                 deleted_files.append(str(file_path))
 
     if not deleted_files:
-        raise HTTPException(status_code=404, detail=f"No files found for {parsed_bvid}")
+        raise FinerError(
+            ErrorCode.BILI_NTF_001,
+            f"No files found for {parsed_bvid}",
+            stage="F0",
+            operation="bilibili_files",
+            source_channel="bilibili",
+            retryable=False,
+        )
 
     return {
         "bvid": parsed_bvid,

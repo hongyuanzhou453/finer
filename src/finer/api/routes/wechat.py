@@ -8,7 +8,10 @@ Provides endpoints for:
 - Exporter health check
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
+
+from finer.errors.exceptions import FinerError
+from finer.errors.codes import ErrorCode
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -109,7 +112,7 @@ async def create_login_session():
     except Exception as e:
         logger.error(f"Failed to create login session: {e}")
         _session_store.transition(session.session_id, LoginState.FAILED, str(e))
-        raise HTTPException(status_code=502, detail=f"Exporter unavailable: {e}")
+        raise FinerError(ErrorCode.WX_EXT_001, f"Exporter unavailable: {e}", stage="F0", operation="wechat_login", source_channel="wechat", retryable=True, cause=e)
 
 
 @router.get("/login/{session_id}/qr")
@@ -117,11 +120,11 @@ async def get_qr_code(session_id: str):
     """Get QR code data URI for a session."""
     session = _session_store.get_session(session_id)
     if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise FinerError(ErrorCode.WX_AUTH_001, "Session not found", stage="F0", operation="wechat_qr", source_channel="wechat", retryable=False)
 
     qr_data_uri = session.build_qr_data_uri()
     if not qr_data_uri:
-        raise HTTPException(status_code=404, detail="QR code not available for this session")
+        raise FinerError(ErrorCode.WX_AUTH_001, "QR code not available for this session", stage="F0", operation="wechat_qr", source_channel="wechat", retryable=False)
 
     return {"session_id": session_id, "qr_data_uri": qr_data_uri}
 
@@ -135,7 +138,7 @@ async def check_login_status(session_id: str):
     """
     session = _session_store.get_session(session_id)
     if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise FinerError(ErrorCode.WX_AUTH_001, "Session not found", stage="F0", operation="wechat_poll_status", source_channel="wechat", retryable=False)
 
     # If already terminal, return immediately
     if session.is_terminal:
@@ -242,7 +245,7 @@ async def list_articles(
         )
     except Exception as e:
         logger.error(f"Failed to list articles: {e}")
-        raise HTTPException(status_code=502, detail=f"Failed to list articles: {e}")
+        raise FinerError(ErrorCode.WX_EXT_001, f"Failed to list articles: {e}", stage="F0", operation="wechat_list_articles", source_channel="wechat", retryable=True, cause=e)
 
 
 # --- Sync Endpoint ---
@@ -368,7 +371,7 @@ async def sync_articles(
 
     except Exception as e:
         logger.error(f"Sync failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Sync failed: {e}")
+        raise FinerError(ErrorCode.WX_EXT_001, f"Sync failed: {e}", stage="F0", operation="wechat_sync", source_channel="wechat", retryable=True, cause=e)
 
 
 # --- Exporter Health ---

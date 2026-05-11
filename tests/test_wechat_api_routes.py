@@ -38,12 +38,16 @@ class TestLoginEndpoints:
     @patch("finer.api.routes.wechat._get_exporter_client")
     def test_login_status_not_found(self, mock_get_client, client):
         resp = client.get("/api/wechat/login/nonexistent/status")
-        assert resp.status_code == 404
+        assert resp.status_code == 401
+        data = resp.json()
+        assert data["error"]["code"] == "WX_AUTH_001"
 
     @patch("finer.api.routes.wechat._get_exporter_client")
     def test_qr_endpoint_not_found(self, mock_get_client, client):
         resp = client.get("/api/wechat/login/nonexistent/qr")
-        assert resp.status_code == 404
+        assert resp.status_code == 401
+        data = resp.json()
+        assert data["error"]["code"] == "WX_AUTH_001"
 
 
 class TestAccountEndpoints:
