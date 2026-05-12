@@ -52,6 +52,16 @@ F0 (Intake) → F1 (Standardize) → F1.5 (Topic Assembly) → F2 (Anchor) → F
 
 ---
 
+## 错误反馈系统 (Line F)
+
+新建或改动的 API 错误必须使用 canonical error envelope（见 `src/finer/errors/`）。每个错误必须携带 `request_id`、`stage`、`operation`、`retryable`、`fix_hint`；F0 导入错误还必须携带 `source_channel`。
+
+旧路由中尚未迁移的错误响应由 verification agent 报告并逐步收敛，不允许为了“一次性清零”做无边界全量迁移。
+
+详见 `docs/specs/2026-05-parallel-agent-execution.md` Line F 章节。
+
+---
+
 ## 2. Schema 即真相源
 
 **唯一真相源**：`src/finer/schemas/` 下的 Pydantic 模型。
@@ -328,11 +338,16 @@ docs/specs/2026-05-parallel-agent-execution.md
 
 - 一个实现型 Agent 只能拥有一个 F-stage、一个明确 frontend surface，或一个只读 verification 任务。
 - 共享 contract 先冻结，再允许下游并行；渠道 Agent 不得私自扩展 `ContentRecord`。
+- 第一轮并行优先级：并行规范 -> ERR-0/ERR-1 错误反馈基础 -> A0 F0-Core -> A1 Project Memory contract -> A2 分渠道导入 -> A3 Import Console -> KOL Backtest MVP。
 - F0 只输出 `ContentRecord`、raw archive、import receipt/status、F0 local index；不得做 OCR、topic assembly、entity/time anchor、intent、TradeAction、backtest。
 - F0 Project Memory 以 raw 文件和 `ContentRecord`/manifest 为可重建依据，SQLite 只能作为热索引；Finer OS 启动默认不得递归扫描 raw 目录。
 - 新增或修改 SQLite 表结构、旧数据迁移、批量重建、批量删除，必须先获得用户确认。
+- F0 渠道导入按来源拆分为飞书、本地上传、NotebookLM、微信、B站；共享文件如 `integrations.py`、`contracts.ts` 必须单 agent 串行修改或先拆分 ownership。
+- 新建或改动的错误响应必须使用 Line F canonical envelope；必须包含 `request_id`、`stage`、`operation`、`retryable`、`fix_hint`，F0 还必须包含 `source_channel`。
+- 错误 details 禁止出现 token、secret、password、cookie、authorization、api_key。
 - 新主链路不得依赖 legacy `TradeActionExtractor.extract_from_text()`；F5 canonical `TradeAction` 必须包含 `intent_id`、`policy_id`、`evidence_span_ids`、`execution_timing`。
 - F0 Import Console 只能展示导入状态和项目内存健康状态，不得把“导入成功”显示为“解析成功”。
+- F0 Import Console 必须展示错误码、request_id、retryable、fix_hint；不得展示原始 traceback、token、cookie 或 auth header。
 - 多 Agent 并行写代码时优先使用独立 git worktree 或独立分支；不得让两个实现型 Agent 在同一工作目录修改重叠文件。
 - Verification Agent 默认只读，只能读文件、运行命令、报告发现；不得顺手改业务代码。
 

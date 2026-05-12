@@ -101,9 +101,12 @@ F0 Project Memory 可以先写 contract 和测试计划。真正落地 SQLite sc
 ```bash
 codex/f0-core-memory
 codex/f0-feishu-intake
+codex/f0-local-intake
+codex/f0-nlm-intake
 codex/f0-wechat-intake
 codex/f0-bilibili-intake
 codex/f0-import-console
+codex/error-feedback-foundation
 codex/kol-backtest-mvp
 codex/f3-f4-f5-canonical
 codex/f8-backtest-chart
@@ -225,6 +228,41 @@ Forbidden in F0 project memory:
 
 Actual SQLite schema creation or data migration requires user confirmation before implementation.
 
+**Allowed files for first-round contract work**
+
+- `docs/specs/**`
+- `src/finer/schemas/content.py`
+- `src/finer/ingestion/receipt.py`
+- `src/finer/manifests.py`
+- `src/finer/paths.py`
+- `src/finer/api/routes/files.py`
+- F0 project memory tests under `tests/`
+
+**Forbidden files**
+
+- `src/finer/parsing/**`
+- `src/finer/enrichment/**`
+- `src/finer/extraction/**`
+- `src/finer/policy/**`
+- `src/finer/backtest/**`
+- `data/**`
+- SQLite migration scripts or generated database files unless separately approved by the user
+
+**First-round deliverables**
+
+- Project memory contract: indexable fields, query shape, health status, rebuild states.
+- Explicit startup rule: startup reads index metadata first and never performs recursive raw scan by default.
+- API response contract for Import Console index health.
+- Test plan or contract tests that can run without creating or migrating a production database.
+
+**Recommended commands**
+
+```bash
+pytest tests/test_errors.py -q
+rg -n "rglob|os\\.walk|glob\\(" src/finer/api src/finer/ingestion src/finer/manifests.py
+rg -n "sqlite|CREATE TABLE|ALTER TABLE|migration" src/finer tests docs/specs/2026-05-parallel-agent-execution.md
+```
+
 #### A2. F0-Channel Adapters
 
 **F-stage**: F0
@@ -253,6 +291,126 @@ Every channel must preserve:
 - import error details
 
 Channel adapters must not call F1-F8 logic.
+
+**Shared channel rules**
+
+- Each channel agent owns one source adapter and its route tests.
+- Shared helpers and schema changes must go through A0/A1 instead of being changed independently.
+- `src/finer/api/routes/integrations.py` is a conflict-prone file. Only one channel agent may edit it at a time, or the route must be split before parallel edits.
+- Channel agents must use Line F error envelope for all new or changed failures.
+- Channel agents must not change frontend files unless explicitly assigned A3.
+
+#### A2a. F0-Feishu Intake
+
+**Allowed files**
+
+- `src/finer/ingestion/feishu_poller.py`
+- Feishu-specific integration route or route tests
+- Feishu fixtures under `tests/fixtures/`
+
+**Output**
+
+- raw archive
+- `ContentRecord`
+- import receipt
+- Line F error details with `source_channel=feishu`
+
+**Recommended commands**
+
+```bash
+pytest tests -q -k "feishu or f0"
+rg -n "from finer\\.(parsing|enrichment|extraction|policy|backtest)|TradeAction|Backtest" src/finer/ingestion/feishu_poller.py
+```
+
+#### A2b. F0-Local Upload
+
+**Allowed files**
+
+- `src/finer/api/routes/files.py`
+- local upload helper modules if already present
+- local upload tests and fixtures
+
+**Output**
+
+- raw archive
+- `ContentRecord`
+- import receipt
+- dedupe result
+- Line F error details with `source_channel=local`
+
+**Recommended commands**
+
+```bash
+pytest tests -q -k "files or upload or f0"
+rg -n "from finer\\.(parsing|enrichment|extraction|policy|backtest)|TradeAction|Backtest" src/finer/api/routes/files.py
+```
+
+#### A2c. F0-NotebookLM Intake
+
+**Allowed files**
+
+- `src/finer/ingestion/nlm_sync.py`
+- NotebookLM-specific integration route or route tests
+- NotebookLM fixtures under `tests/fixtures/`
+
+**Output**
+
+- raw archive
+- `ContentRecord`
+- import receipt
+- Line F error details with `source_channel=nlm`
+
+**Recommended commands**
+
+```bash
+pytest tests -q -k "nlm or notebook or f0"
+rg -n "from finer\\.(parsing|enrichment|extraction|policy|backtest)|TradeAction|Backtest" src/finer/ingestion/nlm_sync.py
+```
+
+#### A2d. F0-WeChat Intake
+
+**Allowed files**
+
+- `src/finer/ingestion/wechat_adapter.py`
+- `src/finer/ingestion/wechat_exporter_client.py`
+- `src/finer/api/routes/wechat.py`
+- WeChat tests and fixtures
+
+**Output**
+
+- article/video raw artifacts
+- `ContentRecord`
+- import receipt
+- Line F error details with `source_channel=wechat`
+
+**Recommended commands**
+
+```bash
+pytest tests/test_wechat_content_record.py tests/test_wechat_artifact_store.py tests/test_wechat_api_routes.py -q
+rg -n "from finer\\.(parsing|enrichment|extraction|policy|backtest)|TradeAction|Backtest" src/finer/ingestion/wechat_adapter.py src/finer/ingestion/wechat_exporter_client.py src/finer/api/routes/wechat.py
+```
+
+#### A2e. F0-Bilibili Intake
+
+**Allowed files**
+
+- `src/finer/ingestion/bilibili_adapter.py`
+- `src/finer/api/routes/bilibili.py`
+- Bilibili tests and fixtures
+
+**Output**
+
+- video/audio/subtitle raw artifacts
+- `ContentRecord`
+- import receipt
+- Line F error details with `source_channel=bilibili`
+
+**Recommended commands**
+
+```bash
+pytest tests/test_bilibili.py -q
+rg -n "from finer\\.(parsing|enrichment|extraction|policy|backtest)|TradeAction|Backtest" src/finer/ingestion/bilibili_adapter.py src/finer/api/routes/bilibili.py
+```
 
 #### A3. F0-Frontend Import Console
 
@@ -289,6 +447,21 @@ Channel adapters must not call F1-F8 logic.
 - dedupe status
 - project memory index health
 - explicit rebuild trigger placeholder
+
+**Error UI requirements**
+
+- Display `error.code`, `request_id`, `retryable`, and `fix_hint`.
+- Do not display raw exception messages, tokens, cookies, request headers, or auth values.
+- Retry buttons must call the F0 retry/import endpoint only. They must not trigger F1-F8 processing.
+
+**Recommended commands**
+
+```bash
+cd src/finer_dashboard && npm run build
+cd src/finer_dashboard && npx tsc --noEmit
+rg -n "backtest|extract|TradeAction|processed" src/finer_dashboard/src/components/data-source-config src/finer_dashboard/src/app/settings
+rg -n "requestId|request_id|fixHint|fix_hint|retryable|error\\.code" src/finer_dashboard/src
+```
 
 #### A4. F0-Verification
 
@@ -421,25 +594,287 @@ Verification must cover:
 - F0 cold-start/index path
 - F8 backtest readiness
 - frontend mock leakage
+- Line F error envelope usage
+
+Recommended commands:
+
+```bash
+pytest tests/test_errors.py -q
+pytest tests/test_wechat_content_record.py tests/test_wechat_artifact_store.py tests/test_wechat_api_routes.py tests/test_bilibili.py -q
+pytest tests/test_canonical_f3_f4_f5_contract.py tests/test_canonical_action_builder.py tests/test_intent_extractor_canonical.py tests/test_policy_mapper.py -q
+rg -n "extract_from_text\\(" src/finer tests
+rg -n "return \\{.*\"error\"|HTTPException\\(status_code=.*detail=\"" src/finer/api/routes src/finer/ingestion
+rg -n "from finer\\.(parsing|enrichment|extraction|policy|backtest)|import finer\\.(parsing|enrichment|extraction|policy|backtest)" src/finer/ingestion src/finer/api/routes/files.py
+rg -n "mock|hard-coded|hardcoded|sampleData|demoData" src/finer_dashboard/src/app/kol src/finer_dashboard/src/app/backtest src/finer_dashboard/src/components
+cd src/finer_dashboard && npm run build
+```
+
+### Line F: Error Feedback Foundation
+
+**Mission**
+
+让所有并行 agent 在开发 F0 / F3-F5 / F8 / 前端时，遇到错误都能返回稳定 error_code、request_id、stage、operation、source_channel、retryable 和可读修复提示。
+
+**First-round scope**
+
+- Preserve the existing `src/finer/errors/` structure.
+- Add a thin canonical details layer, route mapping guidance, frontend display contract, and tests.
+- Do not add an error history database, observability platform, new queue, or schema migration in the first round.
+- Do not attempt to migrate every historical route at once. New or touched routes must comply; untouched legacy responses are reported by verification.
+
+#### Canonical Error Envelope
+
+所有 API 错误响应必须遵循：
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "F0_EXT_001",
+    "message": "微信导出器不可达",
+    "details": {
+      "request_id": "req-xxx",
+      "stage": "F0",
+      "operation": "wechat_import",
+      "source_channel": "wechat",
+      "content_id": "optional",
+      "import_run_id": "optional",
+      "external_source_id": "optional",
+      "retryable": true,
+      "fix_hint": "启动 exporter 并验证 exporter_url",
+      "exception_type": "optional"
+    }
+  }
+}
+```
+
+#### Required Fields
+
+| 字段 | 类型 | 必须 | 说明 |
+|------|------|------|------|
+| request_id | string | 是 | 自动生成，贯穿请求生命周期 |
+| stage | string | 是 | F0/F1/F2/.../F8/cross |
+| operation | string | 是 | 操作标识，如 wechat_import、bilibili_sync |
+| source_channel | string | 否 | 数据源渠道：wechat/bilibili/feishu/nlm/local |
+| retryable | boolean | 是 | 是否可重试 |
+| fix_hint | string | 是 | 人类可读的修复建议 |
+| content_id | string | 否 | 关联的内容 ID |
+| import_run_id | string | 否 | 导入批次 ID |
+| external_source_id | string | 否 | 外部系统 ID |
+| exception_type | string | 否 | Python 异常类名（调试用） |
+
+#### Sensitive Field Filtering
+
+details 中不得出现：
+
+- token, secret, password, cookie, authorization, api_key
+
+#### F0 Error Code Registry
+
+| Code | 含义 | retryable |
+|------|------|-----------|
+| F0_AUTH_001 | 认证/会话失效 | true |
+| F0_EXT_001 | 外部服务不可达 | true |
+| F0_EXT_002 | 外部返回异常数据 | false |
+| F0_IO_001 | raw 文件写入失败 | true |
+| F0_STATE_001 | cursor/session 状态异常 | true |
+| F0_TMO_001 | 操作超时 | true |
+
+#### ERR-0. Contract And Documentation
+
+**Type**: cross-stage documentation
+
+**Allowed files**
+
+- `docs/specs/2026-05-parallel-agent-execution.md`
+- `CLAUDE.md`
+- `src/finer/errors/README.md`
+- `src/finer/errors/RUNBOOK.md`
+
+**Forbidden files**
+
+- business implementation files
+- frontend implementation files
+- tests, unless the task explicitly asks for doc examples to become executable tests
+
+**Deliverables**
+
+- Canonical details field list.
+- Sensitive field filtering rule.
+- F0 route mapping table.
+- Agent task cards for ERR-1 to ERR-4.
+
+**Recommended commands**
+
+```bash
+rg -n "request_id|stage|operation|source_channel|retryable|fix_hint" docs/specs/2026-05-parallel-agent-execution.md CLAUDE.md src/finer/errors/README.md src/finer/errors/RUNBOOK.md
+git diff --check
+```
+
+#### ERR-1. Backend Error Envelope Thin Layer
+
+**Type**: backend infrastructure
+
+**Allowed files**
+
+- `src/finer/errors/exceptions.py`
+- `src/finer/errors/handler.py`
+- `src/finer/errors/__init__.py`
+- `tests/test_errors.py`
+
+**Forbidden files**
+
+- F0/F1/F2/F3/F4/F5/F8 business modules
+- dashboard files
+- database schema or migration files
+
+**Implementation requirements**
+
+- Keep the API payload shape: `{"ok": false, "error": {"code", "message", "details"}}`.
+- Ensure `request_id` is present in details.
+- Provide or preserve helpers for `stage`, `operation`, `source_channel`, `retryable`, and `fix_hint`.
+- Filter sensitive detail keys before serialization.
+- Preserve debug gating for raw exception messages.
+
+**Recommended commands**
+
+```bash
+pytest tests/test_errors.py -q
+rg -n "token|secret|password|cookie|authorization|api_key" src/finer/errors tests/test_errors.py
+```
+
+#### ERR-2. F0 Error Mapping
+
+**Type**: F0 backend mapping
+
+**Allowed files**
+
+- `src/finer/api/routes/files.py`
+- `src/finer/api/routes/integrations.py`
+- `src/finer/api/routes/wechat.py`
+- `src/finer/api/routes/bilibili.py`
+- `src/finer/ingestion/wechat_adapter.py`
+- `src/finer/ingestion/bilibili_adapter.py`
+- `src/finer/ingestion/feishu_poller.py`
+- `src/finer/ingestion/nlm_sync.py`
+- route/adapter tests for touched files
+
+**Forbidden files**
+
+- `src/finer/parsing/**`
+- `src/finer/enrichment/**`
+- `src/finer/extraction/**`
+- `src/finer/policy/**`
+- `src/finer/backtest/**`
+- dashboard files
+
+**Mapping rules**
+
+| Failure | Preferred code | Required details |
+|---|---|---|
+| auth/session invalid | `F0_AUTH_001` or specific integration auth code | `stage=F0`, `operation`, `source_channel`, `retryable=true` |
+| external source unavailable | `F0_EXT_001` | `stage=F0`, `operation`, `source_channel`, `retryable=true` |
+| invalid external data | `F0_EXT_002` | `stage=F0`, `operation`, `source_channel`, `retryable=false` |
+| raw artifact write failed | `F0_IO_001` | `stage=F0`, `operation`, `source_channel`, `retryable=true` |
+| cursor/session state invalid | `F0_STATE_001` | `stage=F0`, `operation`, `source_channel`, `retryable=true` |
+| timeout | `F0_TMO_001` | `stage=F0`, `operation`, `source_channel`, `retryable=true` |
+
+**Recommended commands**
+
+```bash
+pytest tests/test_wechat_api_routes.py tests/test_bilibili.py tests/test_wechat_content_record.py -q
+rg -n "return \\{.*\"error\"|HTTPException\\(status_code=.*detail=\"" src/finer/api/routes src/finer/ingestion
+rg -n "stage=.*F0|source_channel|retryable|fix_hint" src/finer/api/routes src/finer/ingestion tests
+```
+
+#### ERR-3. Frontend Error Feedback
+
+**Type**: dashboard contract and UI
+
+**Allowed files**
+
+- `src/finer_dashboard/src/lib/contracts.ts`
+- `src/finer_dashboard/src/lib/api-client.ts`
+- `src/finer_dashboard/src/components/error-panel/**`
+- `src/finer_dashboard/src/components/data-source-config/**`
+- focused frontend tests if present
+
+**Forbidden files**
+
+- backend business modules
+- F1-F8 pipeline modules
+- unrelated dashboard pages
+
+**Requirements**
+
+- Expose `code`, `message`, `requestId`, `details`, `fixHint`, and `retryable` in the frontend error type.
+- Import Console must show code, request id, fix hint, and retry state.
+- Do not render sensitive raw details or Python tracebacks.
+
+**Recommended commands**
+
+```bash
+cd src/finer_dashboard && npm run build
+cd src/finer_dashboard && npx tsc --noEmit
+rg -n "requestId|request_id|fixHint|fix_hint|retryable|error\\.code" src/finer_dashboard/src
+```
+
+#### ERR-4. Error Verification Gate
+
+**Type**: read-only verification
+
+**Allowed behavior**
+
+- read files
+- run tests
+- report route gaps and sensitive detail risks
+
+**Forbidden behavior**
+
+- no implementation edits
+- no schema edits
+- no database changes
+- no data deletion
+
+**Recommended commands**
+
+```bash
+pytest tests/test_errors.py -q
+rg -n "return \\{.*\"error\"|HTTPException\\(status_code=.*detail=\"" src/finer/api/routes src/finer/ingestion
+rg -n "token|secret|password|cookie|authorization|api_key" src/finer/errors src/finer/api/routes src/finer/ingestion
+rg -n "request_id|fix_hint|retryable|source_channel|stage" src/finer src/finer_dashboard/src
+```
 
 ## 4. Dependency Graph
 
 ```mermaid
 flowchart TD
     A0["A0 F0-Core Contract"] --> A1["A1 F0 Project Memory"]
-    A0 --> A2["A2 Channel Adapters"]
+    A0 --> A2["A2a-A2e Channel Adapters"]
     A0 --> A3["A3 Import Console"]
     A1 --> A3
     A2 --> A4["A4 F0 Verification"]
     A3 --> A4
 
+    ERR0["ERR-0 Error Contract"] --> ERR1["ERR-1 Backend Envelope"]
+    ERR1 --> ERR2["ERR-2 F0 Error Mapping"]
+    ERR1 --> ERR3["ERR-3 Frontend Error Feedback"]
+    ERR2 --> ERR4["ERR-4 Error Verification"]
+    ERR3 --> ERR4
+
     B["B KOL MVP Contract + Fixtures"] --> C["C F3-F4-F5 Canonical Path"]
     B --> D["D F8 API + Revenue Curve"]
     C --> D
 
+    ERR1 --> A2
+    ERR1 --> C
+    ERR1 --> D
+    ERR3 --> A3
+
     A4 --> E["E Verification Gates"]
     D --> E
     C --> E
+    ERR4 --> E
 ```
 
 ## 5. Artifact Handoff Rules
@@ -450,10 +885,14 @@ Agents exchange artifacts through files, not private assumptions.
 |---|---|---|
 | A0 | F0 contract doc / schema tests | A1, A2, A3 |
 | A1 | F0 index contract / project memory health model | A3, A4 |
-| A2 | channel-specific `ContentRecord` fixtures | A4, future F1 |
+| A2a-A2e | channel-specific `ContentRecord` fixtures | A4, future F1 |
 | B | golden artifacts | C, D, E |
 | C | canonical `TradeAction` fixtures | D, E |
 | D | `BacktestResult` fixture + snapshots | E |
+| ERR-0 | canonical error envelope contract | ERR-1, ERR-2, ERR-3, ERR-4 |
+| ERR-1 | backend error helper and handler contract | ERR-2, ERR-3, ERR-4 |
+| ERR-2 | F0 route/adapter error mapping | A2a-A2e, A3, E |
+| ERR-3 | frontend error display contract | A3, E |
 
 Every artifact must be JSON serializable and traceable to upstream ids.
 
@@ -466,6 +905,8 @@ Before starting:
 - [ ] Declare parallel line and F-stage.
 - [ ] List allowed and forbidden files.
 - [ ] Confirm whether the task touches database schema or migration.
+- [ ] Confirm no other active agent owns the same files.
+- [ ] Confirm whether the task touches shared routes such as `integrations.py` or `contracts.ts`.
 
 Before finalizing:
 
@@ -475,13 +916,17 @@ Before finalizing:
 - [ ] Report contract impact.
 - [ ] Report verification commands and results.
 - [ ] Report open issues.
+- [ ] Report any remaining non-canonical error envelopes or raw `HTTPException` gaps.
 
 ## 7. Current P0 Ordering
 
 1. Freeze this parallel execution spec and sync mandatory rules into `CLAUDE.md`.
-2. Implement or refine F0-Core contract before channel work.
-3. Define F0 Project Memory contract before frontend depends on it.
-4. Freeze KOL Backtest MVP artifacts.
-5. Close F3-F4-F5 canonical path.
-6. Wire F8/API/revenue curve.
-7. Run verification gates.
+2. Freeze Error Feedback Foundation task cards: ERR-0 -> ERR-4.
+3. Implement ERR-1 before ERR-2/ERR-3 so downstream agents share the same envelope helper.
+4. Implement or refine A0 F0-Core contract before channel work.
+5. Define A1 F0 Project Memory contract before frontend depends on it.
+6. Run A2a-A2e channel repair in parallel after A0/A1/ERR-1 are stable.
+7. Freeze KOL Backtest MVP artifacts.
+8. Close F3-F4-F5 canonical path.
+9. Wire F8/API/revenue curve.
+10. Run ERR-4, A4, and Line E verification gates.
