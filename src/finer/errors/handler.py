@@ -12,10 +12,22 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from finer.errors.codes import ErrorCode
+from finer.errors.codes import ErrorCode, get_error_info
 from finer.errors.exceptions import FinerError
 
 logger = logging.getLogger(__name__)
+
+_SENSITIVE_KEYS = frozenset({
+    "token",
+    "secret",
+    "password",
+    "cookie",
+    "authorization",
+    "api_key",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+})
 
 
 def register_error_handlers(app: FastAPI) -> None:
@@ -45,12 +57,45 @@ def error_response(
     )
 
 
+def build_error_details(error: FinerError, request_id: str) -> dict[str, Any]:
+    """Build canonical error details, auto-injecting *request_id* and *fix_hint*.
+
+    Context fields from the error (stage, operation, etc.) are merged into
+    details.  ``request_id`` and ``fix_hint`` are injected last so they always
+    appear in the output even if the caller omitted them.
+    """
+
+    details = error.to_payload()["error"]["details"]
+    details["request_id"] = request_id
+    details["fix_hint"] = details.get("fix_hint") or error.info.fix_hint
+    details["exception_type"] = details.get("exception_type") or type(error).__name__
+    return details
+
+
+def sanitize_error_details(details: dict[str, Any]) -> dict[str, Any]:
+    """Filter sensitive fields (token, secret, password, etc.) from error details."""
+
+    return {
+        key: ("***REDACTED***" if key.lower() in _SENSITIVE_KEYS else value)
+        for key, value in details.items()
+    }
+
+
 async def finer_error_handler(request: Request, exc: FinerError) -> JSONResponse:
     """Serialize expected Finer failures."""
 
-    payload = exc.to_payload()
-    payload["error"]["details"] = _with_request_id(request, payload["error"]["details"])
-    _log_error(request, exc.error_code_str, exc.status_code, exc.message, exc.details)
+    request_id = _resolve_request_id(request)
+    details = build_error_details(exc, request_id)
+    details = sanitize_error_details(details)
+    payload = {
+        "ok": False,
+        "error": {
+            "code": exc.error_code_str,
+            "message": exc.message,
+            "details": details,
+        },
+    }
+    _log_error(request, exc.error_code_str, exc.status_code, exc.message, details)
     return JSONResponse(status_code=exc.status_code, content=jsonable_encoder(payload))
 
 
@@ -59,15 +104,20 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
     code = _code_for_status(exc.status_code)
     message = _message_from_http_exception(exc)
-    details = _with_request_id(request, _details_from_http_exception(exc))
+    base_details = _details_from_http_exception(exc)
+    request_id = _resolve_request_id(request)
+    base_details["request_id"] = request_id
+    info = get_error_info(code)
+    base_details["fix_hint"] = base_details.get("fix_hint") or info.fix_hint
+    base_details = sanitize_error_details(base_details)
     response = error_response(
         code,
         message,
-        details=details,
+        details=base_details,
         status_code=exc.status_code,
         headers=exc.headers,
     )
-    _log_error(request, code.value, exc.status_code, message, details)
+    _log_error(request, code.value, exc.status_code, message, base_details)
     return response
 
 
@@ -77,7 +127,11 @@ async def validation_error_handler(
 ) -> JSONResponse:
     """Serialize request model validation errors."""
 
-    details = _with_request_id(request, {"errors": exc.errors()})
+    request_id = _resolve_request_id(request)
+    details: dict[str, Any] = {"errors": exc.errors(), "request_id": request_id}
+    info = get_error_info(ErrorCode.SYS_IN_002)
+    details["fix_hint"] = info.fix_hint
+    details = sanitize_error_details(details)
     response = error_response(
         ErrorCode.SYS_IN_002,
         "Request validation failed",
@@ -90,10 +144,13 @@ async def validation_error_handler(
 async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """Serialize unexpected failures without leaking details by default."""
 
-    details: dict[str, Any] = {"exception_type": type(exc).__name__}
+    request_id = _resolve_request_id(request)
+    details: dict[str, Any] = {"exception_type": type(exc).__name__, "request_id": request_id}
     if _debug_errors_enabled():
         details["exception_message"] = str(exc)
-    details = _with_request_id(request, details)
+    info = get_error_info(ErrorCode.SYS_INT_001)
+    details["fix_hint"] = info.fix_hint
+    details = sanitize_error_details(details)
     response = error_response(
         ErrorCode.SYS_INT_001,
         "Internal server error",
@@ -109,6 +166,15 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
         },
     )
     return response
+
+
+def _resolve_request_id(request: Request) -> str:
+    """Return ``X-Request-ID`` header value or generate ``req-{uuid[:8]}``."""
+
+    header_val = request.headers.get("X-Request-ID")
+    if header_val:
+        return header_val
+    return f"req-{uuid4().hex[:8]}"
 
 
 def _code_for_status(status_code: int) -> ErrorCode:
@@ -151,12 +217,6 @@ def _details_from_http_exception(exc: HTTPException) -> dict[str, Any]:
     return {}
 
 
-def _with_request_id(request: Request, details: dict[str, Any] | None) -> dict[str, Any]:
-    resolved = dict(details or {})
-    resolved.setdefault("request_id", request.headers.get("X-Request-ID") or str(uuid4()))
-    return resolved
-
-
 def _debug_errors_enabled() -> bool:
     return os.environ.get("FINER_ERROR_DEBUG", "false").lower() == "true"
 
@@ -182,10 +242,12 @@ def _log_error(
 
 
 __all__ = [
+    "build_error_details",
     "error_response",
     "finer_error_handler",
     "http_exception_handler",
     "register_error_handlers",
+    "sanitize_error_details",
     "unhandled_error_handler",
     "validation_error_handler",
 ]

@@ -101,8 +101,12 @@ export function ErrorPanel({
       `Message: ${error.message}`,
       error.requestId ? `Request ID: ${error.requestId}` : null,
       error.status ? `HTTP Status: ${error.status}` : null,
+      error.details?.stage ? `Stage: ${error.details.stage}` : null,
+      error.details?.operation ? `Operation: ${error.details.operation}` : null,
+      `Retryable: ${error.retryable ? "Yes" : "No"}`,
+      error.fixHint ? `Fix Hint (server): ${error.fixHint}` : null,
       codeMeta ? `Root Cause: ${codeMeta.rootCause}` : null,
-      codeMeta ? `Fix Hint: ${codeMeta.fixHint}` : null,
+      codeMeta ? `Fix Hint (code): ${codeMeta.fixHint}` : null,
     ]
       .filter(Boolean)
       .join("\n");
@@ -122,6 +126,18 @@ export function ErrorPanel({
         <AlertTriangle className={cn("h-4 w-4 shrink-0", styles.icon)} />
         <span className="truncate font-mono text-xs">{error.code}</span>
         <span className="truncate text-neutral-300">{error.message}</span>
+        {error.retryable !== undefined && (
+          <span
+            className={cn(
+              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+              error.retryable
+                ? "bg-emerald-500/20 text-emerald-400"
+                : "bg-red-500/20 text-red-400",
+            )}
+          >
+            {error.retryable ? "可重试" : "不可重试"}
+          </span>
+        )}
         {onRetry && (
           <button
             onClick={onRetry}
@@ -187,19 +203,53 @@ export function ErrorPanel({
             <span className="font-medium text-neutral-300">Root cause:</span>{" "}
             {codeMeta.rootCause}
           </p>
-          <p>
-            <span className="font-medium text-neutral-300">Fix hint:</span>{" "}
-            {codeMeta.fixHint}
-          </p>
+          {!error.fixHint && (
+            <p>
+              <span className="font-medium text-neutral-300">Fix hint:</span>{" "}
+              {codeMeta.fixHint}
+            </p>
+          )}
         </div>
       )}
 
-      {/* Metadata row */}
+      {/* Server-provided fix hint */}
+      {error.fixHint && (
+        <div className="mt-3 rounded-md bg-neutral-800/60 px-3 py-2 text-xs text-neutral-300">
+          <span className="mr-1.5">💡</span>
+          {error.fixHint}
+        </div>
+      )}
+
+      {/* Retryable badge + Metadata row */}
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
+        {error.retryable !== undefined && (
+          <span
+            className={cn(
+              "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
+              error.retryable
+                ? "bg-emerald-500/20 text-emerald-400"
+                : "bg-red-500/20 text-red-400",
+            )}
+          >
+            {error.retryable ? "Retryable" : "Not retryable"}
+          </span>
+        )}
         {error.requestId && (
           <span className="flex items-center gap-1.5 font-mono">
-            <span className="text-neutral-400">request_id:</span>
+            <span className="text-neutral-400">Request ID:</span>
             {error.requestId}
+          </span>
+        )}
+        {error.details?.stage && (
+          <span className="flex items-center gap-1.5">
+            <span className="text-neutral-400">Stage:</span>
+            {error.details.stage}
+          </span>
+        )}
+        {error.details?.operation && (
+          <span className="flex items-center gap-1.5">
+            <span className="text-neutral-400">Operation:</span>
+            {error.details.operation}
           </span>
         )}
         {error.status > 0 && (

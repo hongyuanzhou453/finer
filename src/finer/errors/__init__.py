@@ -25,7 +25,12 @@ from finer.errors.exceptions import (
     FinerTimeoutError,
     FinerValidationError,
 )
-from finer.errors.handler import error_response, register_error_handlers
+from finer.errors.handler import (
+    build_error_details,
+    error_response,
+    register_error_handlers,
+    sanitize_error_details,
+)
 
 __all__ = [
     "CATEGORY_STATUS",
@@ -44,6 +49,7 @@ __all__ = [
     "FinerStateError",
     "FinerTimeoutError",
     "FinerValidationError",
+    "build_error_details",
     "coerce_error_code",
     "error_response",
     "get_error_info",
@@ -51,4 +57,5 @@ __all__ = [
     "lookup_error_codes",
     "parse_error_code",
     "register_error_handlers",
+    "sanitize_error_details",
 ]

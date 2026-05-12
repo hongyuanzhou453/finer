@@ -3,6 +3,51 @@
 > 本文档是错误码的运维参考手册。错误码定义在 `codes.py`，元数据在 `ERROR_CODE_DEFINITIONS`。
 > 完整错误系统文档见 `README.md`。
 
+---
+
+## Line F: Error Feedback Foundation — 快速参考
+
+新建或改动的错误路径必须返回 canonical error envelope，包含以下必填字段。历史路径由 verification agent 记录缺口并逐步迁移，不做无边界全量替换。
+
+| 字段 | 说明 |
+|------|------|
+| request_id | 自动生成，贯穿请求生命周期 |
+| stage | F0/F1/F2/.../F8/cross |
+| operation | 操作标识（如 wechat_import） |
+| retryable | 是否可重试 |
+| fix_hint | 人类可读修复建议 |
+
+可选字段：source_channel、content_id、import_run_id、external_source_id、exception_type。
+
+details 中**禁止**出现：token、secret、password、cookie、authorization、api_key。
+
+F0 错误码速查：
+
+| Code | 含义 | retryable |
+|------|------|-----------|
+| F0_AUTH_001 | 认证/会话失效 | true |
+| F0_EXT_001 | 外部服务不可达 | true |
+| F0_EXT_002 | 外部返回异常数据 | false |
+| F0_IO_001 | raw 文件写入失败 | true |
+| F0_STATE_001 | cursor/session 状态异常 | true |
+| F0_TMO_001 | 操作超时 | true |
+
+完整规范见 `docs/specs/2026-05-parallel-agent-execution.md` Line F 章节。
+
+### 第一轮任务拆分
+
+| Task | 类型 | 允许范围 | 验收 |
+|------|------|----------|------|
+| ERR-0 | 契约/文档 | 并行规范、`CLAUDE.md`、错误系统文档 | 字段、敏感过滤、任务卡齐全 |
+| ERR-1 | 后端薄层 | `src/finer/errors/` 和 `tests/test_errors.py` | `pytest tests/test_errors.py -q` |
+| ERR-2 | F0 映射 | F0 routes/adapters 和对应测试 | F0 失败返回 code/request_id/stage/operation/source_channel/retryable/fix_hint |
+| ERR-3 | 前端展示 | dashboard error contracts、api-client、Import Console | build/tsc 通过，UI 展示 code/request_id/retryable/fix_hint |
+| ERR-4 | 只读验证 | 读文件和运行命令 | 报告 raw error、敏感字段、前端展示缺口 |
+
+第一轮禁止新增错误历史库、生产数据迁移、SQLite schema 变更或观测平台。
+
+---
+
 ## 错误码格式
 
 ```
