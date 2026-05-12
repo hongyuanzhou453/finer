@@ -192,7 +192,7 @@ async def rebuild_index():
     processed = 0
 
     for content_id, (manifest, path) in manifests_index["by_content_id"].items():
-        source_path = manifest.get("source_path")
+        source_path = manifest.get("raw_path") or manifest.get("source_path")
         if source_path:
             source_file = Path(source_path)
             if source_file.exists() and source_file.suffix in [".md", ".txt"]:

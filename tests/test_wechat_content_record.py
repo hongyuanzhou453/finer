@@ -68,7 +68,7 @@ class TestBuildContentRecord:
             artifacts=artifacts,
         )
         assert record.source_platform == "wechat"
-        assert record.content_type == "wechat_article"
+        assert record.source_type == "wechat_article"
         assert record.creator_name == "测试公众号"
         assert record.title == "Test Article"
         assert record.source_url == "https://mp.weixin.qq.com/s/abc"
@@ -82,7 +82,7 @@ class TestBuildContentRecord:
     def test_source_path_is_md_path(self, artifacts):
         article = _FakeArticle()
         record = build_content_record(article, "acc_001", "name", artifacts)
-        assert record.source_path == str(artifacts.raw_md_path)
+        assert record.raw_path == str(artifacts.raw_md_path)
 
     def test_metadata_fields(self, artifacts):
         article = _FakeArticle()

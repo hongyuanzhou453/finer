@@ -331,7 +331,7 @@ async def import_from_pool(req: ImportRequest):
             
             # 2. Move to raw/creator_id/content_type
             creator_id = classification.creator_id or "_inbox"
-            content_type = classification.content_type or "unclassified"
+            content_type = classification.source_type or "unclassified"
 
             target_dir = RAW_DIR / creator_id / content_type
             target_dir.mkdir(parents=True, exist_ok=True)

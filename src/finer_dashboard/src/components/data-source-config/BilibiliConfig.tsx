@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { SyncStatus, SyncStatusType } from "./SyncStatus";
 import { cn } from "@/lib/utils";
+import { apiFetch, ApiError } from "@/lib/api-client";
+import { ErrorPanel } from "@/components/error-panel/ErrorPanel";
 
 type VideoInfo = {
   bvid: string;
@@ -52,24 +54,28 @@ export function BilibiliConfig() {
   const [transcribedVideos, setTranscribedVideos] = useState<TranscribedVideo[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Fetch error state
+  const [fetchError, setFetchError] = useState<ApiError | null>(null);
+
   const loadHistory = async () => {
     setLoadingHistory(true);
+    setFetchError(null);
     try {
-      // 后端列表端点是 /api/bilibili/list
-      const res = await fetch("/api/bilibili/list");
-      const data = await res.json();
-      // 映射后端字段到前端期望的字段
+      const data = await apiFetch<{ videos?: Record<string, unknown>[] }>("/api/bilibili/list");
       const videos = (data.videos || []).map((v: Record<string, unknown>) => ({
-        id: v.bvid,
-        bvid: v.bvid,
-        title: v.title,
-        author: v.uploader,
-        transcribed_at: v.transcribed_at || "",
+        id: v.bvid as string,
+        bvid: v.bvid as string,
+        title: v.title as string,
+        author: v.uploader as string,
+        transcribed_at: (v.transcribed_at as string) || "",
         transcript_file: "",
         status: "completed" as const,
       }));
       setTranscribedVideos(videos);
     } catch (err) {
+      if (err instanceof ApiError) {
+        setFetchError(err);
+      }
       console.error("Failed to load history:", err);
     } finally {
       setLoadingHistory(false);
@@ -103,30 +109,39 @@ export function BilibiliConfig() {
     setLoadingVideo(true);
     setVideoError(null);
     setVideoInfo(null);
+    setFetchError(null);
 
     try {
-      // 使用路径参数而非查询参数
-      const res = await fetch(`/api/bilibili/video/${bvid}`);
-      const data = await res.json();
+      const data = await apiFetch<{
+        bvid: string;
+        title: string;
+        uploader: string;
+        duration: number;
+        cover_url: string;
+        description: string;
+        publish_time: string;
+      }>(`/api/bilibili/video/${bvid}`);
 
-      if (res.status === 400 || res.status === 500) {
-        setVideoError(data.detail || "获取视频信息失败");
-      } else {
-        // 映射后端字段到前端期望的字段
-        setVideoInfo({
-          bvid: data.bvid,
-          title: data.title,
-          author: data.uploader, // 后端返回 uploader
-          duration: formatDuration(data.duration), // 后端返回秒数
-          cover_url: data.cover_url,
-          description: data.description,
-          pub_date: data.publish_time, // 后端返回 publish_time
-          view_count: 0, // 后端不返回播放量
-        });
-      }
+      setVideoInfo({
+        bvid: data.bvid,
+        title: data.title,
+        author: data.uploader,
+        duration: formatDuration(data.duration),
+        cover_url: data.cover_url,
+        description: data.description,
+        pub_date: data.publish_time,
+        view_count: 0,
+      });
     } catch (err) {
-      console.error("Failed to fetch video:", err);
-      setVideoError("获取视频信息失败，请重试");
+      if (err instanceof ApiError) {
+        const hint = err.fixHint
+          ? `${err.message} — ${err.fixHint}`
+          : err.message;
+        setVideoError(hint);
+        setFetchError(err);
+      } else {
+        setVideoError("获取视频信息失败，请重试");
+      }
     } finally {
       setLoadingVideo(false);
     }
@@ -146,35 +161,34 @@ export function BilibiliConfig() {
     setTranscribeStatus("syncing");
     setTranscribeMessage("正在获取视频信息...");
     setTranscribeProgress(10);
+    setFetchError(null);
 
     try {
-      // Update progress simulation
       const progressInterval = setInterval(() => {
         setTranscribeProgress((prev) => Math.min(prev + 5, 90));
       }, 500);
 
-      // 使用路径参数而非 body
-      const res = await fetch(`/api/bilibili/transcribe/${videoInfo.bvid}?language=zh&save_files=true`, {
-        method: "POST",
-      });
+      const data = await apiFetch<{ transcript_path?: string }>(
+        `/api/bilibili/transcribe/${videoInfo.bvid}?language=zh&save_files=true`,
+        { method: "POST" },
+      );
 
       clearInterval(progressInterval);
-      const data = await res.json();
-
-      if (res.ok) {
-        setTranscribeProgress(100);
-        setTranscribeStatus("success");
-        setTranscribeMessage(`转录完成，已保存到 ${data.transcript_path || "F0"}`);
-        // Reload history
-        await loadHistory();
-      } else {
-        setTranscribeStatus("error");
-        setTranscribeMessage(data.detail || "转录失败，请重试");
-      }
+      setTranscribeProgress(100);
+      setTranscribeStatus("success");
+      setTranscribeMessage(`转录完成，已保存到 ${data.transcript_path || "F0"}`);
+      await loadHistory();
     } catch (err) {
-      console.error("Transcribe failed:", err);
+      if (err instanceof ApiError) {
+        const hint = err.fixHint
+          ? `${err.message} — ${err.fixHint}`
+          : err.message;
+        setTranscribeMessage(hint);
+        setFetchError(err);
+      } else {
+        setTranscribeMessage("转录失败，请检查网络连接");
+      }
       setTranscribeStatus("error");
-      setTranscribeMessage("转录失败，请检查网络连接");
     }
   };
 
@@ -183,6 +197,7 @@ export function BilibiliConfig() {
     setInputValue("");
     setVideoInfo(null);
     setVideoError(null);
+    setFetchError(null);
     setTranscribeStatus("idle");
     setTranscribeMessage("");
     setTranscribeProgress(0);
@@ -190,6 +205,14 @@ export function BilibiliConfig() {
 
   return (
     <div className="space-y-8">
+      {/* Fetch Error Panel */}
+      {fetchError && (
+        <ErrorPanel
+          error={fetchError}
+          onDismiss={() => setFetchError(null)}
+        />
+      )}
+
       {/* Input Section */}
       <section className="space-y-4">
         <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--ink-soft)]">

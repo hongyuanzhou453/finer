@@ -43,7 +43,7 @@ def _send_markdown(lark_cli: str, chat_id: str, markdown: str) -> bool:
 def _format_file_entry(
     filename: str,
     creator_id: str,
-    content_type: str,
+    source_type: str,
     confidence: float,
     matched_rule: str,
     nlm_synced: bool,
@@ -53,7 +53,7 @@ def _format_file_entry(
     nlm_badge = " → 📓NLM" if nlm_synced else ""
     return (
         f"  • {conf_emoji} **{filename}**\n"
-        f"    └─ `{creator_id}/{content_type}` "
+        f"    └─ `{creator_id}/{source_type}` "
         f"(规则: {matched_rule}, 置信度: {confidence:.0%}){nlm_badge}"
     )
 
@@ -98,7 +98,7 @@ class ReceiptSender:
                 lines.append(_format_file_entry(
                     filename=f.get("filename", "unknown"),
                     creator_id=f.get("creator_id", "?"),
-                    content_type=f.get("content_type", "?"),
+                    source_type=f.get("source_type") or f.get("content_type", "?"),
                     confidence=f.get("confidence", 0.0),
                     matched_rule=f.get("matched_rule", "?"),
                     nlm_synced=f.get("nlm_synced", False),

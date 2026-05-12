@@ -400,9 +400,9 @@ class PipelineOrchestrator:
 
         return {
             "output_path": str(manifest_path),
-            "content_type": manifest.get("content_type"),
+            "content_type": manifest.get("source_type") or manifest.get("content_type"),
             "creator_name": manifest.get("creator_name"),
-            "source_path": manifest.get("source_path"),
+            "source_path": manifest.get("raw_path") or manifest.get("source_path"),
         }
 
     async def _run_l1(
@@ -420,7 +420,7 @@ class PipelineOrchestrator:
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = json.load(f)
 
-        source_path = Path(manifest["source_path"])
+        source_path = Path(manifest.get("raw_path") or manifest.get("source_path"))
         if not source_path.exists():
             raise FileNotFoundError(f"Source file not found: {source_path}")
 
@@ -499,8 +499,8 @@ class PipelineOrchestrator:
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = json.load(f)
 
-        source_path = Path(manifest["source_path"])
-        content_type = manifest.get("content_type", "text")
+        source_path = Path(manifest.get("raw_path") or manifest.get("source_path"))
+        content_type = manifest.get("source_type") or manifest.get("content_type", "text")
 
         orchestrator = PerceptionOrchestrator()
         research_obj = orchestrator.process_content(

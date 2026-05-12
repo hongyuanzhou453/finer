@@ -83,7 +83,7 @@ def _build_manifests_index() -> Dict[str, Any]:
         data = read_json_file(mp)
         if data and data.get("content_id"):
             manifests_by_content_id[data["content_id"]] = (data, mp)
-            src = data.get("source_path") or data.get("title") or data.get("content_id", "")
+            src = data.get("raw_path") or data.get("source_path") or data.get("title") or data.get("content_id", "")
             manifests_by_source_name[Path(src).name] = (data, mp)
 
     return {

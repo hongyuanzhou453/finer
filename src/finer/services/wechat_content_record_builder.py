@@ -93,10 +93,11 @@ def build_content_record(
         content_id=content_id,
         creator_name=account_name,
         source_platform="wechat",
-        content_type="wechat_article",
+        source_type="wechat_article",
         published_at=published_at,
         title=getattr(article, "title", None),
         source_url=article_url or None,
-        source_path=str(artifacts.raw_md_path),
+        raw_path=str(artifacts.raw_md_path),
+        file_type="text",
         metadata=metadata,
     )

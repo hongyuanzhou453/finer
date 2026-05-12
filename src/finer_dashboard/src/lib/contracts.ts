@@ -887,21 +887,57 @@ export type ExporterHealth = {
 /** F0 index health status for Import Console display. */
 export interface F0IndexHealth {
   status: "healthy" | "stale" | "missing" | "rebuilding";
-  recordCount: number;
-  lastRebuildAt: string | null;
-  lastRebuildDurationMs: number | null;
-  manifestCountOnDisk: number;
+  record_count: number;
+  last_rebuild_at: string | null;
+  last_rebuild_duration_ms: number | null;
+  manifest_count_on_disk: number;
   drift: number;
-  dbPath: string;
-  dbSizeBytes: number;
-  needsRebuild: boolean;
+  db_path: string;
+  db_size_bytes: number;
+  needs_rebuild: boolean;
 }
 
 /** F0 index query result. */
 export interface F0IndexResult {
-  records: Record<string, unknown>[];
-  totalCount: number;
+  records: F0ContentRecord[];
+  total_count: number;
   page: number;
-  pageSize: number;
-  hasMore: boolean;
+  page_size: number;
+  has_more: boolean;
+}
+
+/** Single content record from F0 index. */
+export interface F0ContentRecord {
+  content_id: string;
+  source_type: string;
+  source_platform: string;
+  creator_id: string | null;
+  creator_name: string | null;
+  title: string | null;
+  raw_path: string;
+  file_type: string;
+  published_at: string | null;
+  collected_at: string;
+  source_url: string | null;
+  external_source_id: string | null;
+  manifest_path: string | null;
+  import_run_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Import run record (mirrors src/finer/schemas/f0_index.py import_runs table). */
+export interface ImportRun {
+  run_id: string;
+  source_channel: string;
+  started_at: string;
+  finished_at: string | null;
+  status: "pending" | "running" | "completed" | "failed";
+  records_created: number;
+  records_skipped: number;
+  error_code: string | null;
+  error_message: string | null;
+  request_id: string | null;
+  retryable: boolean;
+  fix_hint: string | null;
 }

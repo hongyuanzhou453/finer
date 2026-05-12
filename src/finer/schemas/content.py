@@ -25,6 +25,14 @@ class ContentRecord(BaseModel):
         "wechat_article",
         "manual_upload",
         "nlm_note",
+        "chat_transcript",
+        "chat_export",
+        "livestream_audio",
+        "weekly_strategy",
+        "daily_pre",
+        "daily_post",
+        "research_report",
+        "unclassified",
     ] = Field(..., description="Canonical intake source type")
     source_platform: str = Field(..., description="Platform where the content originated (feishu, bilibili, wechat, local, nlm)")
 

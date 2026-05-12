@@ -45,6 +45,33 @@ class ContentManifest:
         return asdict(self)
 
     @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ContentManifest:
+        """Create a ContentManifest from a dict (e.g. loaded from disk JSON).
+
+        Accepts both old key names (content_type, source_path) and new
+        canonical key names (source_type, raw_path) for backward compatibility.
+        """
+        return cls(
+            content_id=d["content_id"],
+            source_type=d.get("source_type") or d.get("content_type", "unclassified"),
+            source_platform=d.get("source_platform", ""),
+            creator_id=d.get("creator_id"),
+            creator_name=d.get("creator_name"),
+            published_at=d.get("published_at"),
+            collected_at=d.get("collected_at", ""),
+            title=d.get("title"),
+            raw_path=d.get("raw_path") or d.get("source_path", ""),
+            file_type=d.get("file_type", "text"),
+            metadata=d.get("metadata", {}),
+            source_url=d.get("source_url"),
+            external_source_id=d.get("external_source_id"),
+            dedupe_fingerprint=d.get("dedupe_fingerprint"),
+            overall_summary=d.get("overall_summary"),
+            language=d.get("language"),
+            market_scope=d.get("market_scope"),
+        )
+
+    @classmethod
     def from_record(cls, record: ContentRecord) -> ContentManifest:
         """Create a ContentManifest from a pydantic ContentRecord."""
         return cls(
@@ -68,9 +95,9 @@ class ContentManifest:
         )
 
 
-def build_content_id(creator_id: str, content_type: str, filename: str) -> str:
-    digest = hashlib.sha1(f"{creator_id}:{content_type}:{filename}".encode("utf-8")).hexdigest()
-    return f"{creator_id}_{content_type}_{digest[:12]}"
+def build_content_id(creator_id: str, source_type: str, filename: str) -> str:
+    digest = hashlib.sha1(f"{creator_id}:{source_type}:{filename}".encode("utf-8")).hexdigest()
+    return f"{creator_id}_{source_type}_{digest[:12]}"
 
 
 def infer_published_at_from_filename(file_path: Path) -> str:
@@ -115,22 +142,22 @@ def register_file(
     root: Path,
     creator_id: str,
     creator_name: str,
-    content_type: str,
+    source_type: str,
     source_platform: str,
     source_file: Path,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    content_id = build_content_id(creator_id, content_type, source_file.name)
+    content_id = build_content_id(creator_id, source_type, source_file.name)
     published_at = infer_published_at_from_filename(source_file)
     extension = source_file.suffix.lower()
 
-    raw_target_dir = root / "data" / "raw" / creator_id / content_type
+    raw_target_dir = root / "data" / "raw" / creator_id / source_type
     raw_target_dir.mkdir(parents=True, exist_ok=True)
     target_file = raw_target_dir / source_file.name
 
     manifest = ContentManifest(
         content_id=content_id,
-        source_type=content_type,
+        source_type=source_type,
         source_platform=source_platform,
         creator_id=creator_id,
         creator_name=creator_name,

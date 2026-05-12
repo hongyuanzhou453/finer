@@ -2,52 +2,12 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { DataSourceConfig } from "@/components/data-source-config/DataSourceConfig";
 import {
   Settings,
   Database,
   Users,
-  MessageCircle,
-  Video,
-  RefreshCw,
-  CheckCircle,
-  XCircle,
-  ExternalLink,
 } from "lucide-react";
-
-type DataSource = {
-  id: string;
-  name: string;
-  type: "feishu" | "wechat" | "bilibili";
-  status: "connected" | "disconnected" | "error";
-  lastSync?: string;
-  config: Record<string, string>;
-};
-
-const mockDataSources: DataSource[] = [
-  {
-    id: "ds-1",
-    name: "投研群飞书",
-    type: "feishu",
-    status: "connected",
-    lastSync: "2026-04-24 10:30",
-    config: { appId: "cli_xxx", folderToken: "fldcn_xxx" },
-  },
-  {
-    id: "ds-2",
-    name: "公众号数据",
-    type: "wechat",
-    status: "connected",
-    lastSync: "2026-04-23 18:00",
-    config: { accountId: "gh_xxx" },
-  },
-  {
-    id: "ds-3",
-    name: "B站 UP主",
-    type: "bilibili",
-    status: "disconnected",
-    config: { mid: "0" },
-  },
-];
 
 type KOLConfig = {
   id: string;
@@ -63,42 +23,19 @@ const mockKOLConfigs: KOLConfig[] = [
   { id: "kol-3", name: "量化小李", platform: "feishu", platformId: "feishu789", enabled: true },
 ];
 
-function getTypeIcon(type: DataSource["type"]) {
-  switch (type) {
-    case "feishu":
-      return <Database className="w-5 h-5" />;
-    case "wechat":
-      return <MessageCircle className="w-5 h-5" />;
-    case "bilibili":
-      return <Video className="w-5 h-5" />;
-  }
-}
-
-function getTypeLabel(type: DataSource["type"]) {
-  const labels = {
+function getTypeLabel(type: string) {
+  const labels: Record<string, string> = {
     feishu: "飞书",
     wechat: "微信公众号",
     bilibili: "B站",
   };
-  return labels[type];
-}
-
-function getStatusIcon(status: DataSource["status"]) {
-  switch (status) {
-    case "connected":
-      return <CheckCircle className="w-4 h-4 text-green-600" />;
-    case "disconnected":
-      return <XCircle className="w-4 h-4 text-stone-400" />;
-    case "error":
-      return <XCircle className="w-4 h-4 text-red-600" />;
-  }
+  return labels[type] ?? type;
 }
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<"datasources" | "kols" | "system">(
     "datasources"
   );
-  const [dataSources] = useState(mockDataSources);
   const [kolConfigs, setKOLConfigs] = useState(mockKOLConfigs);
 
   return (
@@ -138,45 +75,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === "datasources" && (
-        <div className="space-y-4">
-          {dataSources.map((source) => (
-            <div
-              key={source.id}
-              className="bg-white border border-stone-200 rounded-lg p-4"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-stone-100 rounded-lg">
-                    {getTypeIcon(source.type)}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-bold">{source.name}</h3>
-                      {getStatusIcon(source.status)}
-                    </div>
-                    <div className="text-sm text-foreground/60">
-                      {getTypeLabel(source.type)}
-                      {source.lastSync && ` · 上次同步: ${source.lastSync}`}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border border-stone-200 rounded hover:bg-stone-50 transition-colors">
-                    <RefreshCw className="w-3 h-3" />
-                    同步
-                  </button>
-                  <button className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border border-stone-200 rounded hover:bg-stone-50 transition-colors">
-                    <ExternalLink className="w-3 h-3" />
-                    配置
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {activeTab === "datasources" && <DataSourceConfig />}
 
       {activeTab === "kols" && (
         <div>
@@ -206,7 +105,7 @@ export default function SettingsPage() {
                   <tr key={kol.id} className="border-b border-stone-100 last:border-0">
                     <td className="px-4 py-3 font-medium">{kol.name}</td>
                     <td className="px-4 py-3 text-foreground/60">
-                      {getTypeLabel(kol.platform as DataSource["type"])}
+                      {getTypeLabel(kol.platform)}
                     </td>
                     <td className="px-4 py-3 text-foreground/60 font-mono text-xs">
                       {kol.platformId}

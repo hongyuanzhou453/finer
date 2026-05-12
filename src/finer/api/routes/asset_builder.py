@@ -137,7 +137,7 @@ def build_manifest_asset(
 ) -> AssetFile:
     content_id = manifest.get("content_id", "unknown")
     title = manifest.get("title")
-    source_path = manifest.get("source_path")
+    source_path = manifest.get("raw_path") or manifest.get("source_path")
 
     tokens = build_match_tokens(content_id, title, source_path)
     evidence_path = first_matching_path(evidence_paths, tokens)
@@ -158,7 +158,7 @@ def build_manifest_asset(
         status = "canonical"
 
     creator_name = manifest.get("creator_name", "unknown")
-    content_type = manifest.get("content_type", "unknown")
+    content_type = manifest.get("source_type") or manifest.get("content_type", "unknown")
 
     tags = [t for t in [content_type, creator_name] if t]
     review_payload = build_review_payload_from_candidate(candidate_event_path)
@@ -173,7 +173,7 @@ def build_manifest_asset(
     source_type, group_id, group_name = extract_source_info(manifest, source_path)
     file_timestamp = extract_file_timestamp(manifest, Path(source_path) if source_path else None)
 
-    content_type = manifest.get("content_type", "unknown")
+    content_type = manifest.get("source_type") or manifest.get("content_type", "unknown")
     display_name = format_display_name(title or content_id, content_type)
 
     # Build semantic display fields
@@ -295,7 +295,7 @@ def _build_workflow_assets_uncached(workflow_stage: str) -> List[AssetFile]:
                 "_inbox",
             )
             content_type = _text_or(
-                manifest.get("content_type") if manifest else (parts[2] if len(parts) > 2 else None),
+                (manifest.get("source_type") or manifest.get("content_type")) if manifest else (parts[2] if len(parts) > 2 else None),
                 "unclassified",
             )
 
@@ -471,11 +471,11 @@ def _build_workflow_assets_uncached(workflow_stage: str) -> List[AssetFile]:
             else:
                 review_payload = build_review_payload_from_candidate(cp)
 
-            tokens = build_match_tokens(content_id, manifest.get("title") if manifest else None, manifest.get("source_path") if manifest else None)
+            tokens = build_match_tokens(content_id, manifest.get("title") if manifest else None, (manifest.get("raw_path") or manifest.get("source_path")) if manifest else None)
             evidence_path = first_matching_path(evidence_paths, tokens)
             approved_event_path = first_matching_path(approved_paths, tokens)
 
-            source_type, group_id, group_name = extract_source_info(manifest, manifest.get("source_path") if manifest else str(cp))
+            source_type, group_id, group_name = extract_source_info(manifest, (manifest.get("raw_path") or manifest.get("source_path")) if manifest else str(cp))
             file_timestamp = extract_file_timestamp(manifest, cp)
 
             # Build semantic display fields
@@ -498,15 +498,15 @@ def _build_workflow_assets_uncached(workflow_stage: str) -> List[AssetFile]:
                 stageBadge=STAGE_BADGE_BY_WORKFLOW[workflow_stage],
                 creatorName=manifest.get("creator_name", "unknown") if manifest else "unknown",
                 sourcePlatform=manifest.get("source_platform", "pipeline") if manifest else "pipeline",
-                contentType=manifest.get("content_type", "candidate_event") if manifest else "candidate_event",
+                contentType=(manifest.get("source_type") or manifest.get("content_type", "candidate_event")) if manifest else "candidate_event",
                 contentId=content_id,
-                sourcePath=manifest.get("source_path", str(cp)) if manifest else str(cp),
+                sourcePath=(manifest.get("raw_path") or manifest.get("source_path", str(cp))) if manifest else str(cp),
                 manifestPath=str(manifest_tuple[1]) if manifest_tuple else None,
                 evidencePath=str(evidence_path) if evidence_path else None,
                 candidateEventPath=str(cp),
                 approvedEventPath=str(approved_event_path) if approved_event_path else None,
                 summary=review_payload.evidence_text if review_payload and review_payload.evidence_text else (read_preview(evidence_path) or "Candidate event extracted."),
-                tags=review_payload.tags if review_payload else [manifest.get("content_type", "candidate_event") if manifest else "candidate_event"],
+                tags=review_payload.tags if review_payload else [(manifest.get("source_type") or manifest.get("content_type", "candidate_event")) if manifest else "candidate_event"],
                 reviewPayload=review_payload or build_fallback_review_payload("Candidate missing.", []),
                 sourceType=source_type,
                 sourceGroupId=group_id,

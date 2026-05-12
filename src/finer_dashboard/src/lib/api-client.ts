@@ -10,12 +10,33 @@
  * Mirrors backend error format from src/finer/errors/exceptions.py.
  */
 
-import type { ApiErrorEnvelope } from "./contracts";
+import type { ApiErrorDetails, ApiErrorEnvelope } from "./contracts";
 import { isApiError } from "./contracts";
 
 // =============================================================================
 // Error Classes
 // =============================================================================
+
+/**
+ * Normalize backend snake_case details to camelCase ApiErrorDetails.
+ */
+function normalizeDetails(
+  raw: Record<string, unknown> | undefined,
+): ApiErrorDetails | undefined {
+  if (!raw) return undefined;
+  return {
+    requestId: (raw.request_id as string) ?? undefined,
+    stage: (raw.stage as string) ?? undefined,
+    operation: (raw.operation as string) ?? undefined,
+    sourceChannel: (raw.source_channel as string) ?? undefined,
+    retryable: (raw.retryable as boolean) ?? undefined,
+    fixHint: (raw.fix_hint as string) ?? undefined,
+    contentId: (raw.content_id as string) ?? undefined,
+    importRunId: (raw.import_run_id as string) ?? undefined,
+    externalSourceId: (raw.external_source_id as string) ?? undefined,
+    exceptionType: (raw.exception_type as string) ?? undefined,
+  };
+}
 
 /**
  * Structured API error matching the backend FinerError.to_payload format.
@@ -28,8 +49,12 @@ export class ApiError extends Error {
   readonly status: number;
   /** Server-provided request_id for log correlation. */
   readonly requestId: string | undefined;
-  /** Additional error details from the server. */
-  readonly details: Record<string, unknown> | undefined;
+  /** Structured error details from the server (camelCase). */
+  readonly details: ApiErrorDetails | undefined;
+  /** Actionable fix suggestion from the server or client-side lookup. */
+  readonly fixHint: string | undefined;
+  /** Whether the backend indicates this error is retryable. */
+  readonly retryable: boolean;
 
   constructor(
     code: string,
@@ -42,8 +67,12 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.code = code;
     this.status = status;
-    this.requestId = requestId;
-    this.details = details;
+
+    const normalized = normalizeDetails(details);
+    this.details = normalized;
+    this.requestId = requestId ?? normalized?.requestId;
+    this.fixHint = normalized?.fixHint;
+    this.retryable = normalized?.retryable ?? isRetryable(status);
   }
 
   /** Human-readable summary for toast / console display. */

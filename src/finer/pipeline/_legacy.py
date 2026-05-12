@@ -49,7 +49,7 @@ def register_directory(
                 root=root,
                 creator_id=creator_id,
                 creator_name=creator_cfg["display_name"],
-                content_type=content_type,
+                source_type=content_type,
                 source_platform="image_upload" if "image" in content_type else "bilibili",
                 source_file=file_path,
                 dry_run=dry_run,
@@ -84,8 +84,8 @@ def run_perception_pipeline(root: Path, dry_run: bool = False) -> dict[str, Any]
             manifest = json.load(f)
 
         content_id = manifest["content_id"]
-        source_path = Path(manifest["source_path"])
-        content_type = manifest["content_type"]
+        source_path = Path(manifest.get("raw_path") or manifest.get("source_path"))
+        content_type = manifest.get("source_type") or manifest.get("content_type")
 
         if dry_run:
             results.append({"content_id": content_id, "status": "skipped_dry_run"})

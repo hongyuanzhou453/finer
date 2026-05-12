@@ -46,6 +46,9 @@ class F0IndexSchema:
         "records_skipped": "INTEGER DEFAULT 0",
         "error_code": "TEXT",
         "error_message": "TEXT",
+        "request_id": "TEXT",
+        "retryable": "INTEGER DEFAULT 0",
+        "fix_hint": "TEXT",
     }
 
     # index_metadata table

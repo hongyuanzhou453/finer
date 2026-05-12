@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 class ClassificationResult:
     """Result of classifying a downloaded file."""
     creator_id: str
-    content_type: str
+    source_type: str
     published_at: datetime
     confidence: float       # 0.0 ~ 1.0
     matched_rule: str       # which rule or method produced this result
@@ -63,10 +63,10 @@ _TAG_TO_TYPE: dict[str, str] = {
 
 
 def _extract_tags(text: str) -> tuple[str | None, str | None]:
-    """Extract creator_id and content_type from hashtags in text."""
+    """Extract creator_id and source_type from hashtags in text."""
     tags = _TAG_PATTERN.findall(text)
     creator_id = None
-    content_type = None
+    source_type = None
     
     for tag in tags:
         tag_lower = tag.lower()
@@ -76,11 +76,11 @@ def _extract_tags(text: str) -> tuple[str | None, str | None]:
             creator_id = _TAG_TO_CREATOR[tag_lower]
         
         if tag in _TAG_TO_TYPE:
-            content_type = _TAG_TO_TYPE[tag]
+            source_type = _TAG_TO_TYPE[tag]
         elif tag_lower in _TAG_TO_TYPE:
-            content_type = _TAG_TO_TYPE[tag_lower]
-    
-    return creator_id, content_type
+            source_type = _TAG_TO_TYPE[tag_lower]
+
+    return creator_id, source_type
 
 
 # ── Date inference ───────────────────────────────────────────
@@ -120,7 +120,7 @@ def _match_rules(
 ) -> tuple[str | None, str | None, str]:
     """Match filename and context against classification rules.
     
-    Returns (creator_id, content_type, rule_name) or (None, None, "").
+    Returns (creator_id, source_type, rule_name) or (None, None, "").
     """
     # Try matching against both filename and context text
     combined = f"{filename} {context_text}"
@@ -145,7 +145,7 @@ def _ai_classify(
 ) -> tuple[str | None, str | None, str]:
     """Use Gemini CLI for AI-assisted file classification.
     
-    Returns (creator_id, content_type, reasoning).
+    Returns (creator_id, source_type, reasoning).
     """
     prompt = f"""你是一个金融研究文件分类助手。请根据以下信息对文件进行分类。
 
@@ -224,7 +224,7 @@ class FileClassifier:
         if tag_creator and tag_type:
             return ClassificationResult(
                 creator_id=tag_creator,
-                content_type=tag_type,
+                source_type=tag_type,
                 published_at=published_at,
                 confidence=0.95,
                 matched_rule="explicit_tag",
@@ -237,7 +237,7 @@ class FileClassifier:
         if rule_creator and rule_type:
             return ClassificationResult(
                 creator_id=rule_creator,
-                content_type=rule_type,
+                source_type=rule_type,
                 published_at=published_at,
                 confidence=0.80,
                 matched_rule=f"rule:{rule_name}",
@@ -251,7 +251,7 @@ class FileClassifier:
             if partial_creator != self.default.get("creator_id"):
                 return ClassificationResult(
                     creator_id=partial_creator,
-                    content_type=partial_type,
+                    source_type=partial_type,
                     published_at=published_at,
                     confidence=0.60,
                     matched_rule=f"chat_default:{chat_default_creator}",
@@ -265,7 +265,7 @@ class FileClassifier:
             if ai_creator and ai_type:
                 return ClassificationResult(
                     creator_id=ai_creator,
-                    content_type=ai_type,
+                    source_type=ai_type,
                     published_at=published_at,
                     confidence=0.70,
                     matched_rule="ai_classification",
@@ -275,7 +275,7 @@ class FileClassifier:
         # ── Priority 5: Fallback ──
         return ClassificationResult(
             creator_id=self.default.get("creator_id", "_inbox"),
-            content_type=self.default.get("content_type", "unclassified"),
+            source_type=self.default.get("source_type", self.default.get("content_type", "unclassified")),
             published_at=published_at,
             confidence=0.10,
             matched_rule="default_fallback",

@@ -38,7 +38,7 @@ def _archive_file(
     target_dir = (
         root / "data" / "raw"
         / classification.creator_id
-        / classification.content_type
+        / classification.source_type
     )
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / file.local_path.name
@@ -69,7 +69,7 @@ def _create_manifest(
     """Create a content manifest for an archived file."""
     content_id = build_content_id(
         classification.creator_id,
-        classification.content_type,
+        classification.source_type,
         file.original_name,
     )
     
@@ -93,7 +93,7 @@ def _create_manifest(
 
     manifest = ContentManifest(
         content_id=content_id,
-        source_type=classification.content_type,
+        source_type=classification.source_type,
         source_platform="feishu",
         creator_id=classification.creator_id,
         creator_name=classification.creator_id,
@@ -133,7 +133,7 @@ def _create_chat_transcript_manifest(
         "feishu_chat_id": chat_id,
         "chat_name": chat_name,
         "message_count": message_count,
-        "content_type": "chat_transcript",
+        "source_type": "chat_transcript",
     }
 
     manifest = ContentManifest(
@@ -335,7 +335,7 @@ def sync_chat(
                 "Classified %s → %s/%s (%.0f%%, %s)",
                 file.original_name,
                 classification.creator_id,
-                classification.content_type,
+                classification.source_type,
                 classification.confidence * 100,
                 classification.matched_rule,
             )
@@ -415,7 +415,7 @@ def sync_chat(
             processed_files.append({
                 "filename": file.original_name,
                 "creator_id": classification.creator_id,
-                "content_type": classification.content_type,
+                "source_type": classification.source_type,
                 "confidence": classification.confidence,
                 "matched_rule": classification.matched_rule,
                 "archived_path": str(archived_path),

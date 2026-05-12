@@ -5,6 +5,8 @@ import { RefreshCw, Trash2, Loader2, ExternalLink, AlertCircle } from "lucide-re
 import { QRCodeDisplay } from "./QRCodeDisplay";
 import { SyncStatus, SyncStatusType } from "./SyncStatus";
 import { cn } from "@/lib/utils";
+import { apiFetch, ApiError } from "@/lib/api-client";
+import { ErrorPanel } from "@/components/error-panel/ErrorPanel";
 import type { WeChatAccount, WeChatArticle, WeChatLoginStatus } from "@/lib/contracts";
 
 type Tab = "login" | "accounts" | "articles";
@@ -38,6 +40,9 @@ export function WeChatConfig() {
   // Exporter health
   const [exporterAvailable, setExporterAvailable] = useState<boolean | null>(null);
 
+  // Fetch error state
+  const [fetchError, setFetchError] = useState<ApiError | null>(null);
+
   // Load accounts on mount
   useEffect(() => {
     loadAccounts();
@@ -57,14 +62,17 @@ export function WeChatConfig() {
 
   const loadAccounts = async () => {
     setLoadingAccounts(true);
+    setFetchError(null);
     try {
-      const res = await fetch("/api/wechat/accounts");
-      const data = await res.json();
+      const data = await apiFetch<WeChatAccount[]>("/api/wechat/accounts");
       setAccounts(Array.isArray(data) ? data : []);
       if (data.length > 0 && !selectedAccountId) {
         setSelectedAccountId(data[0].account_id);
       }
     } catch (err) {
+      if (err instanceof ApiError) {
+        setFetchError(err);
+      }
       console.error("Failed to load accounts:", err);
     } finally {
       setLoadingAccounts(false);
@@ -76,23 +84,31 @@ export function WeChatConfig() {
     setQrDataUri(null);
     setLoginError(null);
     setLoginStatus(null);
+    setFetchError(null);
     try {
-      const res = await fetch("/api/wechat/login", { method: "POST" });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setLoginError(data.detail || "无法连接导出服务");
-        setLoginStatus("failed");
-        return;
-      }
+      const data = await apiFetch<{
+        qr_data_uri?: string;
+        qr_url?: string;
+        expires_in?: number;
+        session_id?: string;
+        status?: WeChatLoginStatus;
+      }>("/api/wechat/login", { method: "POST" });
 
       setQrDataUri(data.qr_data_uri || data.qr_url || null);
       setExpiresIn(data.expires_in || 300);
-      setLoginSessionId(data.session_id);
+      setLoginSessionId(data.session_id ?? null);
       setLoginStatus(data.status || "qr_ready");
       setPollingLogin(true);
-    } catch {
-      setLoginError("请求失败，请检查导出服务是否运行");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const hint = err.fixHint
+          ? `${err.message} — ${err.fixHint}`
+          : err.message;
+        setLoginError(hint);
+        setFetchError(err);
+      } else {
+        setLoginError("请求失败，请检查导出服务是否运行");
+      }
       setLoginStatus("failed");
     } finally {
       setIsLoggingIn(false);
@@ -162,28 +178,32 @@ export function WeChatConfig() {
     setSyncStatus("syncing");
     setSyncProgress(0);
     setSyncMessage("正在同步文章...");
+    setFetchError(null);
 
     try {
-      const res = await fetch(`/api/wechat/sync/${selectedAccountId}`, {
-        method: "POST",
-      });
-      const data = await res.json();
+      const data = await apiFetch<{
+        synced_count: number;
+        failed_count: number;
+      }>(`/api/wechat/sync/${selectedAccountId}`, { method: "POST" });
 
-      if (res.ok) {
-        setSyncStatus("success");
-        setSyncMessage(
-          `同步完成：${data.synced_count} 篇成功` +
-          (data.failed_count > 0 ? `，${data.failed_count} 篇失败` : "")
-        );
-        setSyncProgress(100);
-        await loadArticles(selectedAccountId);
+      setSyncStatus("success");
+      setSyncMessage(
+        `同步完成：${data.synced_count} 篇成功` +
+        (data.failed_count > 0 ? `，${data.failed_count} 篇失败` : "")
+      );
+      setSyncProgress(100);
+      await loadArticles(selectedAccountId);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const hint = err.fixHint
+          ? `${err.message} — ${err.fixHint}`
+          : err.message;
+        setSyncMessage(hint);
+        setFetchError(err);
       } else {
-        setSyncStatus("error");
-        setSyncMessage(data.detail || "同步失败");
+        setSyncMessage("同步失败，请重试");
       }
-    } catch {
       setSyncStatus("error");
-      setSyncMessage("同步失败，请重试");
     }
   };
 
@@ -217,6 +237,18 @@ export function WeChatConfig() {
             重试
           </button>
         </div>
+      )}
+
+      {/* Fetch Error Panel */}
+      {fetchError && (
+        <ErrorPanel
+          error={fetchError}
+          onRetry={() => {
+            setFetchError(null);
+            loadAccounts();
+          }}
+          onDismiss={() => setFetchError(null)}
+        />
       )}
 
       {/* Metric Grid */}
