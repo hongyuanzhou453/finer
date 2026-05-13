@@ -26,6 +26,17 @@ from finer.backtest.prices import (
     MultiMarketPriceProvider,
     PriceCache,
     PriceCacheConfig,
+    PriceSnapshotMaterializer,
+)
+from finer.backtest.converter import (
+    trade_action_to_record,
+    trade_actions_to_records,
+    extract_tickers_from_actions,
+)
+from finer.backtest.storage import (
+    save_backtest_result,
+    load_backtest_result,
+    list_backtest_results,
 )
 
 __all__ = [
@@ -47,4 +58,13 @@ __all__ = [
     "MultiMarketPriceProvider",
     "PriceCache",
     "PriceCacheConfig",
+    "PriceSnapshotMaterializer",
+    # Converter
+    "trade_action_to_record",
+    "trade_actions_to_records",
+    "extract_tickers_from_actions",
+    # Storage
+    "save_backtest_result",
+    "load_backtest_result",
+    "list_backtest_results",
 ]

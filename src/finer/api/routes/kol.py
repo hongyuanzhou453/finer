@@ -279,3 +279,64 @@ async def list_kols():
         "kols": [{"id": k, "count": c} for k, c in sorted(kols.items(), key=lambda x: -x[1])],
         "total": len(kols),
     }
+
+
+class KOLListItem(BaseModel):
+    """KOL list item with rating data, aligned with frontend KOL type."""
+    id: str
+    name: str
+    platform: str = ""
+    platform_id: str = ""
+    overall_score: float = Field(0.0, description="Overall rating 1-5")
+    dimension_scores: Dict[str, float] = Field(default_factory=dict)
+    accuracy: float = Field(0.0, description="Accuracy percentage 0-100")
+    avg_return: float = Field(0.0, description="Average return percentage")
+    total_opinions: int = 0
+    last_active: str = ""
+    tags: List[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+def _discover_kol_ids() -> List[str]:
+    """Discover all KOL IDs from data layers."""
+    kol_ids: Dict[str, int] = {}
+    for layer in ["L5_candidate", "L6_annotated"]:
+        layer_dir = DATA_ROOT / layer
+        if not layer_dir.exists():
+            continue
+        for file_path in layer_dir.glob("**/*.action.json"):
+            try:
+                data = json.loads(file_path.read_text(encoding="utf-8"))
+                kol_id = data.get("source", {}).get("creator_id")
+                if kol_id:
+                    kol_ids[kol_id] = kol_ids.get(kol_id, 0) + 1
+            except Exception:
+                continue
+    return [k for k, _ in sorted(kol_ids.items(), key=lambda x: -x[1])]
+
+
+@router.get("/list/enriched", response_model=List[KOLListItem])
+async def list_kols_enriched():
+    """List all KOLs with full rating data."""
+    kol_ids = _discover_kol_ids()
+    result: List[KOLListItem] = []
+
+    for kol_id in kol_ids:
+        rating = _calculate_kol_rating(kol_id)
+        dim_scores = {d.dimension: d.score for d in rating.dimensions}
+        r = rating.rating
+
+        result.append(KOLListItem(
+            id=kol_id,
+            name=r.get("name", kol_id),
+            platform=r.get("platform", ""),
+            overall_score=r.get("overallRating", 0.0),
+            dimension_scores=dim_scores,
+            accuracy=round(r.get("successRate", 0.0) * 100, 1),
+            avg_return=r.get("avgReturn", 0.0),
+            total_opinions=r.get("totalOpinions", 0),
+            last_active=rating.timeline[0].date if rating.timeline else "",
+            tags=rating.focusAreas[:3],
+        ))
+
+    return result

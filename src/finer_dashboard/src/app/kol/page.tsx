@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -12,7 +12,9 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { KOL } from "@/lib/contracts";
-import { mockKOLs } from "@/lib/mock-data";
+import { useAsyncData } from "@/lib/hooks/useAsyncData";
+import { listKOLs } from "@/lib/api-client";
+import { kolListItemToKOL } from "@/lib/adapters";
 
 function getScoreColor(score: number): string {
   if (score >= 4.5) return "text-green-600";
@@ -31,22 +33,21 @@ function getPlatformLabel(platform: string): string {
 }
 
 export default function KOLListPage() {
-  const [kols, setKOLs] = useState<KOL[]>([]);
-  const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<"score" | "accuracy" | "return">("score");
   // Project Memory source: "catalog" | "degraded_scan" — set when connected to real API
   const [dataSource, setDataSource] = useState<"catalog" | "degraded_scan">("catalog");
 
-  useEffect(() => {
-    // Simulate API call
-    const timer = setTimeout(() => {
-      setKOLs(mockKOLs);
-      setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, []);
+  const {
+    data: kols,
+    loading,
+    error,
+    reload,
+  } = useAsyncData(
+    () => listKOLs().then((items) => items.map(kolListItemToKOL)),
+    [],
+  );
 
-  const sortedKOLs = [...kols].sort((a, b) => {
+  const sortedKOLs = [...(kols ?? [])].sort((a, b) => {
     switch (sortBy) {
       case "score":
         return b.overallScore - a.overallScore;
@@ -101,6 +102,20 @@ export default function KOLListPage() {
           ))}
         </div>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="mb-6 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>加载 KOL 列表失败：{error.message}</span>
+          <button
+            onClick={reload}
+            className="ml-auto shrink-0 underline hover:text-red-900"
+          >
+            重试
+          </button>
+        </div>
+      )}
 
       {/* KOL Cards */}
       {loading ? (

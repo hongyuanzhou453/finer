@@ -258,7 +258,7 @@ Each KOL's content set MUST cover:
 
 ### 4.6 Trader Ji Required Coverage
 
-- **Actionable intents (explicit_action)**: t_001, t_002, t_003, t_007 (2), t_008, t_010 (2), t_012, t_014 = **11 actionable intents** across 8 content items
+- **Actionable intents (explicit_action)**: t_001, t_002, t_003, t_007 (2), t_008, t_010 (2), t_012, t_014 = **10 actionable intents** across 8 content items
 - **Non-executable intents**: t_004 (watch), t_005 (watch), t_006 (opinion), t_009 (watch), t_011 (review_required), t_013 (opinion), t_015 (review_required) = **7 non-executable intents**
 - **Action types**: open (t_001, t_007/510300), add (t_008, t_010/510300), close_long (t_002, t_012), reduce (t_007/159915, t_010/600519, t_014), hold (t_003) = **5 distinct action types**
 - **Directions**: bullish (t_001, t_004, t_008, t_013), bearish (t_002, t_005, t_014), neutral (t_003, t_006), mixed (t_007), unknown (t_011, t_015) = **5 directions**

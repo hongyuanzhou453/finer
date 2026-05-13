@@ -556,6 +556,67 @@ export type KOL = {
   enabled: boolean;
 };
 
+/** Backend KOL list item from GET /api/kol/list/enriched (snake_case). */
+export type KOLListItemRaw = {
+  id: string;
+  name: string;
+  platform: string;
+  platform_id: string;
+  overall_score: number;
+  dimension_scores: Record<string, number>;
+  accuracy: number;
+  avg_return: number;
+  total_opinions: number;
+  last_active: string;
+  tags: string[];
+  enabled: boolean;
+};
+
+/** Backend KOL rating response (mirrors kol.py KOLRatingResponse). */
+export type KOLRatingResponse = {
+  rating: {
+    kolId: string;
+    name: string;
+    platform: string;
+    overallRating: number;
+    avgReturn: number;
+    successRate: number;
+    totalOpinions: number;
+  };
+  dimensions: Array<{
+    dimension: string;
+    score: number;
+    label: string;
+  }>;
+  timeline: Array<{
+    date: string;
+    rating: number;
+    return_pct?: number;
+  }>;
+  focusAreas: string[];
+  recentOpinions: Array<{
+    id: string;
+    ticker: string;
+    ticker_name?: string;
+    direction: string;
+    timestamp: string;
+    result?: string;
+  }>;
+};
+
+/** KOL detail view type used by kol/[id]/page.tsx. */
+export type KOLDetail = KOL & {
+  stats: {
+    totalOpinions: number;
+    correctCount: number;
+    avgReturn: number;
+    maxReturn: number;
+    minReturn: number;
+    avgHoldingDays: number;
+  };
+  timeline: KOLTimelineEvent[];
+};
+
 export type KOLTimelineEvent = {
   id: string;
   kolId: string;
@@ -600,6 +661,113 @@ export type BacktestTask = {
     return: number;
     opinionId: string;
   }>;
+};
+
+// =============================================================================
+// F8 Backtest Result (mirrors src/finer/backtest/engine.py BacktestResult)
+// =============================================================================
+
+/** Daily portfolio state snapshot. */
+export type PortfolioSnapshot = {
+  date: string;
+  cash: number;
+  positions_value: number;
+  total_value: number;
+  daily_pnl: number;
+  cumulative_pnl: number;
+  cumulative_return: number;
+  peak_value: number;
+  current_drawdown: number;
+  num_positions: number;
+  long_exposure: number;
+  short_exposure: number;
+};
+
+/** Completed trade record from backtest engine. */
+export type TradeRecord = {
+  trade_id: string;
+  ticker: string;
+  side: "long" | "short" | "flat";
+  quantity: number;
+  entry_date: string;
+  entry_price: number;
+  exit_date: string;
+  exit_price: number;
+  gross_pnl: number;
+  commission: number;
+  slippage: number;
+  borrowing_cost: number;
+  net_pnl: number;
+  return_pct: number;
+  exit_reason: string;
+  holding_days: number;
+  trade_action_id?: string;
+  kol_id?: string;
+};
+
+/** Per-KOL performance attribution. */
+export type KolMetrics = {
+  total_trades: number;
+  total_pnl: number;
+  win_rate: number;
+  avg_return: number;
+};
+
+/** Summary returned by GET /api/backtest/results (list endpoint). */
+export type BacktestSummary = {
+  backtest_id: string;
+  kol_id: string | null;
+  start_date: string;
+  end_date: string;
+  total_return: number;
+  sharpe_ratio: number;
+  max_drawdown: number;
+  win_rate: number;
+  total_trades: number;
+  created_at: string;
+  filepath?: string;
+};
+
+/** Complete backtest result from F8 engine. */
+export type BacktestResult = {
+  backtest_id: string;
+  start_date: string;
+  end_date: string;
+  run_timestamp: string;
+  initial_capital: number;
+  config: Record<string, unknown>;
+
+  // Performance metrics
+  total_return: number;
+  annualized_return: number;
+  volatility: number;
+  sharpe_ratio: number;
+  sortino_ratio: number;
+  calmar_ratio: number;
+  max_drawdown: number;
+  max_drawdown_duration: number;
+
+  // Trade statistics
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  avg_win: number;
+  avg_loss: number;
+  profit_factor: number;
+  avg_holding_days: number;
+
+  // Risk metrics
+  value_at_risk_95: number;
+  expected_shortfall: number;
+  max_consecutive_losses: number;
+
+  // Time series data
+  portfolio_snapshots: PortfolioSnapshot[];
+  trades: TradeRecord[];
+
+  // KOL attribution
+  kol_metrics: Record<string, KolMetrics>;
 };
 
 export type SourceGroup = {

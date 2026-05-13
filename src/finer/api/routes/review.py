@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 from typing import Optional
 from pathlib import Path
@@ -6,6 +6,8 @@ import json
 from datetime import datetime
 import re
 from finer.paths import ensure_storage, REPO_ROOT, DATA_ROOT
+from finer.errors.codes import ErrorCode
+from finer.errors.exceptions import FinerError
 from finer.schemas.contract import ReviewPayload
 from finer.api.routes.files_utils import safe_file_name
 
@@ -24,7 +26,7 @@ class ReviewSaveRequest(BaseModel):
 @router.post("")
 async def save_review(body: ReviewSaveRequest):
     if not body.contentId or not body.payload:
-        raise HTTPException(status_code=400, detail="Missing contentId or review payload")
+        raise FinerError(ErrorCode.F6_IN_001, "Missing contentId or review payload", stage="F6", operation="submit_review", retryable=False)
 
     REVIEW_STORE_DIR.mkdir(parents=True, exist_ok=True)
     APPROVED_EVENTS_DIR.mkdir(parents=True, exist_ok=True)

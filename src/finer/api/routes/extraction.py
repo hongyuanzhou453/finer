@@ -20,8 +20,10 @@ from finer.paths import REPO_ROOT, DATA_ROOT
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
-L5_CANDIDATE_DIR = DATA_ROOT / "L5_candidate"   # legacy dir; canonical is data/F5_executed
-L4_PARSED_DIR = DATA_ROOT / "L4_parsed"         # legacy dir; canonical is data/F2_anchored
+L5_CANDIDATE_DIR = DATA_ROOT / "L5_candidate"   # legacy dir
+L4_PARSED_DIR = DATA_ROOT / "L4_parsed"         # legacy dir
+F5_EXECUTED_DIR = DATA_ROOT / "F5_executed"     # canonical F5 output dir
+F2_ANCHORED_DIR = DATA_ROOT / "F2_anchored"     # canonical F2 input dir
 
 
 # ============================================
@@ -35,6 +37,8 @@ class ExtractionRequest(BaseModel):
     author: Optional[str] = Field(None, description="作者")
     timestamp: Optional[str] = Field(None, description="时间戳")
     enable_enrichment: bool = Field(True, description="是否启用市场数据富化")
+    legacy: bool = Field(False, description="使用旧版直接提取路径（non_canonical），默认走 F3→F4→F5 canonical 链路")
+    strategy: str = Field("programmatic", description="F5 策略: programmatic（确定性）或 llm_guided（LLM 引导）")
 
 
 class BatchExtractionRequest(BaseModel):
@@ -133,7 +137,8 @@ def _action_to_response(action) -> TradeActionResponse:
 async def extract_trade_actions(request: ExtractionRequest):
     """从文本提取 Trade Actions.
 
-    这是 F5 Execute 层的核心端点，使用 GLM-5.1 + Finance-Skills 混合策略。
+    默认走 canonical F3→F4→F5 链路（带完整追溯链）。
+    设置 legacy=true 回退到旧版直接提取路径（non_canonical）。
 
     Args:
         request: 包含文本和可选上下文的请求
@@ -144,49 +149,69 @@ async def extract_trade_actions(request: ExtractionRequest):
     import time
     start_time = time.time()
 
+    # 构建上下文
+    context = {
+        "source_id": request.source_id or "api_request",
+    }
+    if request.author:
+        context["author"] = request.author
+    if request.timestamp:
+        context["timestamp"] = request.timestamp
+
     try:
-        from finer.extraction.trade_action_extractor import TradeActionExtractor
+        if request.legacy:
+            # Legacy 路径: 直接调 TradeActionExtractor.extract_from_text()
+            from finer.extraction.trade_action_extractor import TradeActionExtractor
 
-        # 创建提取器
-        extractor = TradeActionExtractor(enable_enrichment=request.enable_enrichment)
+            extractor = TradeActionExtractor(enable_enrichment=request.enable_enrichment)
+            result = await extractor.extract_from_text(request.text, context)
 
-        # 构建上下文
-        context = {
-            "source_id": request.source_id or "api_request",
-        }
-        if request.author:
-            context["author"] = request.author
-        if request.timestamp:
-            context["timestamp"] = request.timestamp
+            if not result.success:
+                return ExtractionResponse(
+                    success=False,
+                    actions=[],
+                    total_actions=0,
+                    avg_confidence=0.0,
+                    model=extractor.model_version,
+                    processing_time_ms=(time.time() - start_time) * 1000,
+                    error=result.error or "提取失败",
+                )
 
-        # 执行提取
-        result = await extractor.extract_from_text(request.text, context)
-
-        if not result.success:
+            actions = [_action_to_response(a) for a in result.actions]
             return ExtractionResponse(
-                success=False,
-                actions=[],
-                total_actions=0,
-                avg_confidence=0.0,
+                success=True,
+                actions=actions,
+                total_actions=len(actions),
+                avg_confidence=result.avg_confidence,
                 model=extractor.model_version,
                 processing_time_ms=(time.time() - start_time) * 1000,
-                error=result.error or "提取失败",
+            )
+        else:
+            # Canonical 路径: F3→F4→F5
+            from finer.pipeline.canonical_runner import run_canonical_extraction
+
+            trade_actions = await run_canonical_extraction(
+                text=request.text,
+                context=context,
+                strategy=request.strategy,
             )
 
-        # 转换结果
-        actions = [_action_to_response(a) for a in result.actions]
-
-        return ExtractionResponse(
-            success=True,
-            actions=actions,
-            total_actions=len(actions),
-            avg_confidence=result.avg_confidence,
-            model=extractor.model_version,
-            processing_time_ms=(time.time() - start_time) * 1000,
-        )
+            actions = [_action_to_response(a) for a in trade_actions]
+            avg_conf = (
+                sum(a.confidence for a in trade_actions) / len(trade_actions)
+                if trade_actions else 0.0
+            )
+            return ExtractionResponse(
+                success=True,
+                actions=actions,
+                total_actions=len(actions),
+                avg_confidence=avg_conf,
+                model=f"canonical-{request.strategy}",
+                processing_time_ms=(time.time() - start_time) * 1000,
+            )
 
     except ImportError as e:
-        logger.error(f"Failed to import TradeActionExtractor: {e}")
+        logger.error(f"Failed to import module: {e}")
         raise HTTPException(status_code=500, detail=f"模块导入失败: {e}")
     except Exception as e:
         logger.error(f"Extraction failed: {e}", exc_info=True)
@@ -249,25 +274,32 @@ async def batch_extract(request: BatchExtractionRequest):
 @router.post("/pipeline")
 async def run_extraction_pipeline(
     background_tasks: BackgroundTasks,
-    input_dir: Optional[str] = Query(None, description="输入目录 (legacy L4/F2 解析产物)"),
-    output_dir: Optional[str] = Query(None, description="输出目录 (legacy L5/F5 候选事件)"),
+    input_dir: Optional[str] = Query(None, description="输入目录 (canonical F2_anchored / legacy L4_parsed)"),
+    output_dir: Optional[str] = Query(None, description="输出目录 (canonical F5_executed / legacy L5_candidate)"),
     limit: int = Query(100, description="最大处理文件数"),
+    legacy: bool = Query(False, description="使用旧版 L4→L5 目录和提取路径"),
 ):
     """运行完整的 F5 提取管线.
 
-    从 data/L4_parsed (legacy) 读取解析产物，提取 Trade Actions，写入 data/L5_candidate (legacy)。
+    默认从 data/F2_anchored 读取，写入 data/F5_executed（canonical 路径）。
+    设置 legacy=true 回退到 data/L4_parsed → data/L5_candidate。
 
     Args:
         background_tasks: FastAPI 后台任务
-        input_dir: 输入目录，默认 data/L4_parsed
-        output_dir: 输出目录，默认 data/L5_candidate
+        input_dir: 输入目录，默认 canonical F2_anchored / legacy L4_parsed
+        output_dir: 输出目录，默认 canonical F5_executed / legacy L5_candidate
         limit: 最大处理文件数
+        legacy: 是否使用旧版目录和提取路径
 
     Returns:
         任务状态
     """
-    input_path = Path(input_dir) if input_dir else L4_PARSED_DIR
-    output_path = Path(output_dir) if output_dir else L5_CANDIDATE_DIR
+    if legacy:
+        input_path = Path(input_dir) if input_dir else L4_PARSED_DIR
+        output_path = Path(output_dir) if output_dir else L5_CANDIDATE_DIR
+    else:
+        input_path = Path(input_dir) if input_dir else F2_ANCHORED_DIR
+        output_path = Path(output_dir) if output_dir else F5_EXECUTED_DIR
 
     # 确保输出目录存在
     output_path.mkdir(parents=True, exist_ok=True)
@@ -275,7 +307,7 @@ async def run_extraction_pipeline(
     # 定义后台任务
     def run_pipeline():
         import asyncio
-        asyncio.run(_run_extraction_pipeline_async(input_path, output_path, limit))
+        asyncio.run(_run_extraction_pipeline_async(input_path, output_path, limit, legacy=legacy))
 
     background_tasks.add_task(run_pipeline)
 
@@ -288,55 +320,62 @@ async def run_extraction_pipeline(
     }
 
 
-async def _run_extraction_pipeline_async(input_path: Path, output_path: Path, limit: int):
+async def _run_extraction_pipeline_async(
+    input_path: Path,
+    output_path: Path,
+    limit: int,
+    legacy: bool = False,
+):
     """异步执行提取管线."""
     try:
-        from finer.extraction.trade_action_extractor import TradeActionExtractor
-
-        extractor = TradeActionExtractor()
-
         # 查找输入文件
         input_files = list(input_path.glob("**/*.json"))[:limit]
-        logger.info(f"Found {len(input_files)} files to process in {input_path}")
+        logger.info(f"Found {len(input_files)} files to process in {input_path} (legacy={legacy})")
 
         processed = 0
         failed = 0
 
         for file_path in input_files:
             try:
-                # 读取文件内容
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                # 提取文本内容
                 text = data.get("text") or data.get("content") or data.get("clean_text", "")
                 if not text:
                     logger.warning(f"No text content in {file_path}")
                     continue
 
-                # 执行提取
                 context = {
                     "source_id": str(file_path),
                     "source_file": file_path.name,
                 }
-                result = await extractor.extract_from_text(text, context)
 
-                if result.success and result.actions:
-                    # 保存结果
+                if legacy:
+                    from finer.extraction.trade_action_extractor import TradeActionExtractor
+                    extractor = TradeActionExtractor()
+                    result = await extractor.extract_from_text(text, context)
+                    actions = result.actions if result.success else []
+                    model = extractor.model_version
+                else:
+                    from finer.pipeline.canonical_runner import run_canonical_extraction
+                    actions = await run_canonical_extraction(text, context)
+                    model = "canonical-programmatic"
+
+                if actions:
                     output_file = output_path / f"{file_path.stem}_actions.json"
                     output_data = {
                         "source_file": str(file_path),
                         "extracted_at": datetime.now().isoformat(),
-                        "model": extractor.model_version,
-                        "actions": [a.model_dump() for a in result.actions],
+                        "model": model,
+                        "actions": [a.model_dump() for a in actions],
                     }
                     with open(output_file, "w", encoding="utf-8") as f:
                         json.dump(output_data, f, ensure_ascii=False, indent=2)
                     processed += 1
-                    logger.info(f"Extracted {len(result.actions)} actions from {file_path.name}")
+                    logger.info(f"Extracted {len(actions)} actions from {file_path.name}")
                 else:
                     failed += 1
-                    logger.warning(f"No actions extracted from {file_path.name}: {result.error}")
+                    logger.warning(f"No actions extracted from {file_path.name}")
 
             except Exception as e:
                 failed += 1
@@ -350,13 +389,27 @@ async def _run_extraction_pipeline_async(input_path: Path, output_path: Path, li
 
 @router.get("/status", response_model=PipelineStatusResponse)
 async def get_extraction_status():
-    """获取 F5 提取管线状态."""
-    # 统计 L5_candidate 目录中的文件
+    """获取 F5 提取管线状态 (canonical F5_executed + legacy L5_candidate)."""
     total_files = 0
     processed = 0
     failed = 0
     pending = 0
 
+    # Check canonical F5_executed
+    if F5_EXECUTED_DIR.exists():
+        for f in F5_EXECUTED_DIR.glob("*.json"):
+            total_files += 1
+            try:
+                with open(f, "r", encoding="utf-8") as fp:
+                    data = json.load(fp)
+                if data.get("actions"):
+                    processed += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+
+    # Check legacy L5_candidate
     if L5_CANDIDATE_DIR.exists():
         for f in L5_CANDIDATE_DIR.glob("*.json"):
             total_files += 1
@@ -367,15 +420,23 @@ async def get_extraction_status():
                     processed += 1
                 else:
                     failed += 1
-            except:
+            except Exception:
                 failed += 1
 
-    # 统计 L4_parsed (legacy) 中待处理的文件
+    # Pending from canonical F2_anchored
+    if F2_ANCHORED_DIR.exists():
+        for f in F2_ANCHORED_DIR.glob("**/*.json"):
+            canonical_out = F5_EXECUTED_DIR / f"{f.stem}_actions.json"
+            legacy_out = L5_CANDIDATE_DIR / f"{f.stem}_actions.json"
+            if not canonical_out.exists() and not legacy_out.exists():
+                pending += 1
+
+    # Pending from legacy L4_parsed
     if L4_PARSED_DIR.exists():
         for f in L4_PARSED_DIR.glob("**/*.json"):
-            # 检查是否已在 L5 (legacy) 中处理
-            l5_file = L5_CANDIDATE_DIR / f"{f.stem}_actions.json"
-            if not l5_file.exists():
+            canonical_out = F5_EXECUTED_DIR / f"{f.stem}_actions.json"
+            legacy_out = L5_CANDIDATE_DIR / f"{f.stem}_actions.json"
+            if not canonical_out.exists() and not legacy_out.exists():
                 pending += 1
 
     return PipelineStatusResponse(

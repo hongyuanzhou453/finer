@@ -46,7 +46,7 @@ def ensure_storage(root: Path) -> list[str]:
         data_root / "processed" / "candidate_events",
         data_root / "processed" / "review_store",
         data_root / "processed" / "approved_events",
-        data_root / "backtests",
+        data_root / "F8_metrics",
         data_root / "market" / "tushare" / "parquet",  # Tushare Parquet storage
     ]:
         path.mkdir(parents=True, exist_ok=True)

@@ -3,11 +3,11 @@
 This module provides:
 1. PriceProvider protocol for abstract price data access
 2. CachedPriceProvider using Finance-Skills API
-3. MockPriceProvider for fallback when API unavailable
+3. MockPriceProvider for explicit opt-in fallback
 
 Key Design:
 - Thread-safe caching with TTL
-- Automatic fallback to mock prices
+- No silent mock fallback in production (fallback_to_mock=False by default)
 - Support for multi-market (US/HK/CN/Crypto)
 """
 
@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Protocol, Tuple
 
 import numpy as np
+import pandas as pd
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -161,12 +163,16 @@ class PriceCache:
 # =============================================================================
 
 class CachedPriceProvider:
-    """Price provider with Finance-Skills API caching."""
+    """Price provider with Finance-Skills API caching.
+
+    By default, raises FinerExternalServiceError when real data is unavailable.
+    Set fallback_to_mock=True only for tests or explicit mock scenarios.
+    """
 
     def __init__(
         self,
         cache_ttl: int = 3600,
-        fallback_to_mock: bool = True,
+        fallback_to_mock: bool = False,
     ):
         self._cache = PriceCache(PriceCacheConfig(default_ttl=cache_ttl))
         self._fallback_to_mock = fallback_to_mock
@@ -236,7 +242,11 @@ class CachedPriceProvider:
         return None
 
     def get_price(self, ticker: str, date: str) -> Optional[float]:
-        """Get price for ticker on specific date (sync wrapper)."""
+        """Get price for ticker on specific date (sync wrapper).
+
+        Raises:
+            FinerExternalServiceError: If real data unavailable and fallback_to_mock=False.
+        """
         # Check cache first
         cached = self._cache.get(ticker, date)
         if cached:
@@ -247,9 +257,9 @@ class CachedPriceProvider:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 # Already in async context, need to schedule
-                # For now, use mock fallback
                 if self._fallback_to_mock:
                     return self._get_mock_price(ticker, date)
+                self._raise_price_unavailable(ticker, date)
             else:
                 # Can run async
                 price = loop.run_until_complete(self._fetch_from_api(ticker, date))
@@ -257,21 +267,25 @@ class CachedPriceProvider:
                     self._cache.set(ticker, price, date)
                     return price
         except RuntimeError:
-            # No event loop, use mock
+            # No event loop
             pass
 
         # Fallback to mock
         if self._fallback_to_mock:
             return self._get_mock_price(ticker, date)
 
-        return None
+        self._raise_price_unavailable(ticker, date)
 
     async def get_price_async(
         self,
         ticker: str,
         date: str
     ) -> Optional[float]:
-        """Async version of get_price."""
+        """Async version of get_price.
+
+        Raises:
+            FinerExternalServiceError: If real data unavailable and fallback_to_mock=False.
+        """
         # Check cache
         cached = self._cache.get(ticker, date)
         if cached:
@@ -288,7 +302,7 @@ class CachedPriceProvider:
         if self._fallback_to_mock:
             return self._get_mock_price(ticker, date)
 
-        return None
+        self._raise_price_unavailable(ticker, date)
 
     def get_prices(
         self,
@@ -296,7 +310,11 @@ class CachedPriceProvider:
         start: str,
         end: str
     ) -> List[Tuple[str, float]]:
-        """Get price series for date range."""
+        """Get price series for date range.
+
+        Raises:
+            FinerExternalServiceError: If any date has no data and fallback_to_mock=False.
+        """
         prices = []
 
         # Parse dates
@@ -363,7 +381,11 @@ class CachedPriceProvider:
         return prices
 
     def get_latest_price(self, ticker: str) -> Optional[float]:
-        """Get latest price for ticker."""
+        """Get latest price for ticker.
+
+        Raises:
+            FinerExternalServiceError: If real data unavailable and fallback_to_mock=False.
+        """
         # Check cache
         cached = self._cache.get(ticker)
         if cached:
@@ -382,16 +404,30 @@ class CachedPriceProvider:
 
         # Fallback
         if self._fallback_to_mock:
-            base_price = self._price_seeds.get(ticker, 100.0)
             return self._get_mock_price(ticker, datetime.now().strftime('%Y-%m-%d'))
 
-        return None
+        self._raise_price_unavailable(ticker, None)
 
     def _get_mock_price(self, ticker: str, date: str) -> float:
         """Generate mock price for fallback."""
         if self._mock_provider is None:
             self._mock_provider = MockPriceProvider(self._price_seeds)
         return self._mock_provider.get_price(ticker, date) or 100.0
+
+    @staticmethod
+    def _raise_price_unavailable(ticker: str, date: Optional[str] = None) -> None:
+        """Raise canonical error when real price data is unavailable."""
+        from finer.errors import FinerExternalServiceError
+
+        date_info = f" on {date}" if date else ""
+        raise FinerExternalServiceError(
+            code="F8_EXT_001",
+            message=f"Price data unavailable for {ticker}{date_info}",
+            stage="F8",
+            operation="price_fetch",
+            retryable=True,
+            details={"ticker": ticker, "date": date},
+        )
 
     def clear_cache(self) -> None:
         """Clear price cache."""
@@ -539,7 +575,7 @@ class MultiMarketPriceProvider:
         cn_provider: Optional[PriceProvider] = None,
         crypto_provider: Optional[PriceProvider] = None,
     ):
-        self.us_provider = us_provider or CachedPriceProvider()
+        self.us_provider = us_provider or CachedPriceProvider(fallback_to_mock=False)
         self.hk_provider = hk_provider or MockPriceProvider({
             '00700.HK': 350.0,
             '00941.HK': 80.0,
@@ -594,3 +630,130 @@ class MultiMarketPriceProvider:
         """Get latest price from appropriate provider."""
         provider = self._get_provider(ticker)
         return provider.get_latest_price(ticker)
+
+
+# =============================================================================
+# Price Snapshot Materializer
+# =============================================================================
+
+
+class PriceSnapshotMaterializer:
+    """Materializes price snapshots from Tushare Parquet for BacktestEngine.
+
+    Reads OHLCV data via LocalPro and produces a DataFrame matching
+    the format expected by BacktestEngine.run_backtest().
+
+    Output DataFrame columns:
+        date (datetime64), ticker (str), open, high, low, close (float), volume (float)
+    """
+
+    def __init__(self, data_dir: Optional[Path] = None, adj: str = "qfq") -> None:
+        from finer.paths import MARKET_PARQUET_DIR
+        self._data_dir = data_dir or MARKET_PARQUET_DIR
+        self._adj = adj
+
+    def materialize(
+        self,
+        tickers: List[str],
+        start_date: str,
+        end_date: str,
+    ) -> pd.DataFrame:
+        """Build price DataFrame for given tickers and date range.
+
+        Args:
+            tickers: List of ticker symbols (e.g., ['000001.SZ', '600519.SH']).
+            start_date: ISO date string (e.g., '2024-01-01').
+            end_date: ISO date string (e.g., '2024-12-31').
+
+        Returns:
+            DataFrame with columns: date, ticker, open, high, low, close, volume.
+            Empty DataFrame if tickers list is empty.
+
+        Raises:
+            FinerExternalServiceError: If tickers non-empty but no data found.
+        """
+        empty_df = pd.DataFrame(columns=["date", "ticker", "open", "high", "low", "close", "volume"])
+
+        if not tickers:
+            return empty_df
+
+        from finer.market_data.local_api import LocalPro
+
+        api = LocalPro(self._data_dir)
+        frames: list[pd.DataFrame] = []
+
+        for ticker in tickers:
+            try:
+                df = api.pro_bar(
+                    ts_code=ticker,
+                    start_date=start_date.replace("-", ""),
+                    end_date=end_date.replace("-", ""),
+                    adj=self._adj,
+                )
+                if df.empty:
+                    logger.warning("No price data for %s in [%s, %s]", ticker, start_date, end_date)
+                    continue
+
+                # Normalize columns to BacktestEngine format
+                out = pd.DataFrame({
+                    "date": pd.to_datetime(df["trade_date"], format="%Y%m%d"),
+                    "ticker": ticker,
+                    "open": df["open"].astype(float),
+                    "high": df["high"].astype(float),
+                    "low": df["low"].astype(float),
+                    "close": df["close"].astype(float),
+                    "volume": df["vol"].astype(float) if "vol" in df.columns else 0.0,
+                })
+                frames.append(out)
+            except Exception as e:
+                logger.warning("Failed to fetch OHLCV for %s: %s", ticker, e)
+
+        if not frames:
+            from finer.errors import FinerExternalServiceError
+
+            raise FinerExternalServiceError(
+                code="F8_EXT_001",
+                message=f"No price data found for tickers {tickers} in [{start_date}, {end_date}]",
+                stage="F8",
+                operation="price_materialize",
+                retryable=True,
+                details={"tickers": tickers, "start_date": start_date, "end_date": end_date},
+            )
+
+
+        result = pd.concat(frames, ignore_index=True)
+        result = result.sort_values(["date", "ticker"]).reset_index(drop=True)
+        return result
+
+    def materialize_from_actions(
+        self,
+        actions: List[Dict[str, Any]],
+        lookback_days: int = 0,
+        lookahead_days: int = 0,
+    ) -> pd.DataFrame:
+        """Build price DataFrame auto-derived from trade action timestamps.
+
+        Expands the date range by lookback/lookahead days to cover
+        stop-loss, take-profit, and holding period scenarios.
+
+        Args:
+            actions: List of action dicts with 'timestamp' and 'ticker' keys.
+            lookback_days: Extra days before earliest action.
+            lookahead_days: Extra days after latest action.
+
+        Returns:
+            Price DataFrame covering all tickers and the expanded date range.
+        """
+        if not actions:
+            return pd.DataFrame(columns=["date", "ticker", "open", "high", "low", "close", "volume"])
+
+        tickers = sorted({a["ticker"] for a in actions if a.get("ticker")})
+        timestamps = [pd.Timestamp(a["timestamp"]) for a in actions if a.get("timestamp")]
+
+        if not timestamps or not tickers:
+            return pd.DataFrame(columns=["date", "ticker", "open", "high", "low", "close", "volume"])
+
+        start = (min(timestamps) - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+        end = (max(timestamps) + timedelta(days=lookahead_days)).strftime("%Y-%m-%d")
+
+        return self.materialize(tickers, start, end)

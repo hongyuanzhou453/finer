@@ -10,10 +10,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from finer.paths import DATA_ROOT
+from finer.errors.codes import ErrorCode
+from finer.errors.exceptions import FinerError
 from finer.schemas.trade_action import (
     ActionStep as TradeActionStep,
     TradeAction,
@@ -813,6 +815,6 @@ async def get_opinion_detail(opinion_id: str):
     opinion = _generate_mock_opinion(int(opinion_id.split("-")[-1]) if "-" in opinion_id else 0, now)
 
     if not opinion:
-        raise HTTPException(status_code=404, detail="Opinion not found")
+        raise FinerError(ErrorCode.F6_NTF_001, "Opinion not found", stage="F6", operation="get_opinion", retryable=False)
 
     return opinion

@@ -148,6 +148,11 @@ class TestMockPriceProvider:
 class TestCachedPriceProvider:
     """Test cached price provider."""
 
+    def test_default_no_fallback(self):
+        """Default CachedPriceProvider does not fall back to mock."""
+        provider = CachedPriceProvider()
+        assert provider._fallback_to_mock is False
+
     def test_fallback_to_mock(self):
         """Test fallback to mock when API unavailable."""
         provider = CachedPriceProvider(fallback_to_mock=True)
@@ -156,15 +161,15 @@ class TestCachedPriceProvider:
         assert price is not None
         assert price > 0
 
-    def test_no_fallback(self):
-        """Test without fallback returns None."""
+    def test_no_fallback_raises(self):
+        """Test without fallback raises FinerExternalServiceError."""
+        from finer.errors import FinerExternalServiceError
+
         provider = CachedPriceProvider(fallback_to_mock=False)
-        # This should return None since API is not available
-        # (But the test might pass if there's a valid cache)
-        # So we just check it doesn't crash
-        price = provider.get_price('AAPL', '2024-01-15')
-        # May be None or a cached value
-        assert price is None or price > 0
+        with pytest.raises(FinerExternalServiceError) as exc_info:
+            provider.get_price('AAPL', '2024-01-15')
+        assert exc_info.value.code.value == "F8_EXT_001"
+        assert "AAPL" in exc_info.value.message
 
     def test_get_prices(self):
         """Test getting price series."""
@@ -229,7 +234,8 @@ class TestMultiMarketPriceProvider:
 
     def test_get_price_routing(self):
         """Test price requests routed to correct provider."""
-        provider = MultiMarketPriceProvider()
+        us_mock = MockPriceProvider(base_prices={'AAPL': 175.0, 'MSFT': 380.0})
+        provider = MultiMarketPriceProvider(us_provider=us_mock)
 
         # US stock
         us_price = provider.get_price('AAPL', '2024-01-15')
@@ -249,7 +255,8 @@ class TestMultiMarketPriceProvider:
 
     def test_get_prices_routing(self):
         """Test price series routed to correct provider."""
-        provider = MultiMarketPriceProvider()
+        us_mock = MockPriceProvider(base_prices={'AAPL': 175.0})
+        provider = MultiMarketPriceProvider(us_provider=us_mock)
 
         us_prices = provider.get_prices('AAPL', '2024-01-01', '2024-01-10')
         assert len(us_prices) > 0

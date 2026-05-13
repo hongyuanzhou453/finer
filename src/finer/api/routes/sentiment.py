@@ -11,9 +11,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from finer.ml.sentiment.analyzer import SentimentAnalyzer
+from finer.errors.codes import ErrorCode
+from finer.errors.exceptions import FinerError
 from finer.ml.sentiment.schemas import (
     BatchSentimentRequest,
     BatchSentimentResult,
@@ -48,17 +50,17 @@ async def analyze_sentiment(request: SentimentRequest) -> SentimentResult:
         SentimentResult with sentiment type, score, confidence, keywords
 
     Raises:
-        HTTPException: If analysis fails
+        FinerError: If analysis fails
     """
     try:
         analyzer = get_analyzer(request.mode)
         result = analyzer.analyze(request.text, request.context)
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise FinerError(ErrorCode.API_IN_001, str(e), stage="F6", operation="sentiment_analyze", retryable=False, cause=e)
     except Exception as e:
         logger.error(f"Sentiment analysis failed: {e}")
-        raise HTTPException(status_code=500, detail="Analysis failed")
+        raise FinerError(ErrorCode.API_INT_001, "Analysis failed", stage="F6", operation="sentiment_analyze", retryable=False, cause=e)
 
 
 @router.post("/batch", response_model=BatchSentimentResult)
@@ -72,7 +74,7 @@ async def batch_analyze_sentiment(request: BatchSentimentRequest) -> BatchSentim
         BatchSentimentResult with all results and statistics
 
     Raises:
-        HTTPException: If analysis fails
+        FinerError: If analysis fails
     """
     if not request.texts:
         return BatchSentimentResult(results=[], summary={}, average_score=0.0)
@@ -82,10 +84,10 @@ async def batch_analyze_sentiment(request: BatchSentimentRequest) -> BatchSentim
         result = analyzer.batch_analyze(request.texts, request.context)
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise FinerError(ErrorCode.API_IN_001, str(e), stage="F6", operation="sentiment_batch", retryable=False, cause=e)
     except Exception as e:
         logger.error(f"Batch sentiment analysis failed: {e}")
-        raise HTTPException(status_code=500, detail="Analysis failed")
+        raise FinerError(ErrorCode.API_INT_001, "Analysis failed", stage="F6", operation="sentiment_batch", retryable=False, cause=e)
 
 
 @router.get("/config", response_model=SentimentConfigResponse)

@@ -207,6 +207,10 @@ function makeMetricRow(params: {
   };
 }
 
+/**
+ * @deprecated Use `backtestResultToViewModel` from `./adapters` instead.
+ * This function returns hard-coded mock data and will be removed in a future cleanup.
+ */
 export function createMockKOLBacktestViewModel(
   kolId: string,
 ): KOLBacktestViewModel {

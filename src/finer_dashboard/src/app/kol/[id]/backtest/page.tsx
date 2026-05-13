@@ -1,25 +1,30 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ArrowLeft, Download, SlidersHorizontal } from "lucide-react";
-import {
-  CumulativeReturnResearch,
-  KOLOverviewPanel,
-  MethodologyStrip,
-  MetricPercentileTable,
-  RiskReturnResearch,
-  TopCallsTable,
-} from "@/components/f8-charts";
-import { createMockKOLBacktestViewModel } from "@/lib/f8-visualization";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Loader2, LineChart } from "lucide-react";
+import { useAsyncData } from "@/lib/hooks/useAsyncData";
+import { listBacktestResults } from "@/lib/api-client";
 
-export default function KOLBacktestPage() {
+/**
+ * Redirect page: fetches backtest results for this KOL and
+ * redirects to the first one. Shows empty state if none exist.
+ */
+export default function KOLBacktestIndexPage() {
   const params = useParams<{ id: string }>();
-  const model = useMemo(
-    () => createMockKOLBacktestViewModel(params.id),
+  const router = useRouter();
+
+  const { data: results, loading } = useAsyncData(
+    () => listBacktestResults({ kol_id: params.id, limit: 1 }),
     [params.id],
   );
+
+  useEffect(() => {
+    if (results && results.length > 0) {
+      router.replace(`/kol/${params.id}/backtest/${results[0].backtest_id}`);
+    }
+  }, [results, params.id, router]);
 
   return (
     <main className="min-h-screen bg-[#f3efe7]">
@@ -32,60 +37,19 @@ export default function KOLBacktestPage() {
           返回 KOL 详情
         </Link>
 
-        <header className="mb-8 border-t-2 border-[#333333] bg-white px-6 py-5">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#a50032]">
-                F8 BACKTEST / KOL SIGNAL PERFORMANCE
-              </div>
-              <h1 className="text-2xl font-semibold tracking-normal text-[#1e1e1e]">
-                {model.subject.name} 的 KOL 收益结果审计
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5e5e5e]">
-                以 {model.benchmark.name} 为基准，比较 {model.cohort.name}，
-                覆盖 {model.dateRange.start} 至 {model.dateRange.end}。
-                每个图表必须同时展示主体、对照组、时间范围、指标方向和回测假设。
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button className="inline-flex items-center gap-2 border border-[#cccccc] bg-white px-3 py-2 text-xs font-semibold text-[#333333] hover:border-[#333333]">
-                <SlidersHorizontal className="h-4 w-4" />
-                基准 / 同类组
-              </button>
-              <button className="inline-flex items-center gap-2 border border-[#333333] bg-[#333333] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1e1e1e]">
-                <Download className="h-4 w-4" />
-                导出报告
-              </button>
+        {loading ? (
+          <div className="h-64 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-foreground/30" />
+          </div>
+        ) : !results || results.length === 0 ? (
+          <div className="h-64 flex items-center justify-center text-foreground/40">
+            <div className="text-center">
+              <LineChart className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-lg font-medium mb-2">暂无回测结果</p>
+              <p className="text-sm">该 KOL 尚未运行过回测。</p>
             </div>
           </div>
-        </header>
-
-        <div className="space-y-6">
-          <KOLOverviewPanel model={model} />
-          <CumulativeReturnResearch model={model} />
-
-          <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.82fr)]">
-            <div className="min-w-0">
-              <RiskReturnResearch model={model} />
-            </div>
-            <div className="min-w-0">
-              <MetricPercentileTable rows={model.metricRows} />
-            </div>
-          </div>
-
-          <TopCallsTable model={model} />
-          <MethodologyStrip model={model} />
-
-          <footer className="border-t border-[#cccccc] py-4 text-[11px] leading-5 text-[#5e5e5e]">
-            数据截止：{model.dataCutoff}。基准：{model.benchmark.name}。
-            同类组：{model.cohort.name}。假设：初始资金 $
-            {model.assumptions.initialCapital.toLocaleString()}，单笔仓位
-            {(model.assumptions.positionSize * 100).toFixed(0)}%，
-            {model.assumptions.executionDelay}，{model.assumptions.holdingRule}。
-            费用/滑点：{model.assumptions.feesIncluded ? "已计入" : "未计入"}。
-          </footer>
-        </div>
+        ) : null}
       </div>
     </main>
   );

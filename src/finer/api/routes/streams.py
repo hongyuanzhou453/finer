@@ -1,7 +1,9 @@
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, Response
 from finer.paths import REPO_ROOT, DATA_ROOT
+from finer.errors.codes import ErrorCode
+from finer.errors.exceptions import FinerError
 
 router = APIRouter()
 
@@ -23,10 +25,10 @@ async def stream_file(path: str = Query(...)):
             
         # Final security check
         if not str(requested_path).startswith(str(DATA_ROOT.resolve())):
-            raise HTTPException(status_code=403, detail="Path traversal detected or access outside data directory")
+            raise FinerError(ErrorCode.SYS_PERM_001, "Path traversal detected or access outside data directory", stage="F0", operation="download_file", retryable=False)
             
         if not requested_path.exists() or not requested_path.is_file():
-            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+            raise FinerError(ErrorCode.SYS_NTF_001, f"File not found: {path}", stage="F0", operation="download_file", retryable=False)
             
         # Determine media type for direct browser rendering
         ext = requested_path.suffix.lower()
@@ -53,7 +55,7 @@ async def stream_file(path: str = Query(...)):
             headers=headers
         )
         
+    except FinerError:
+        raise
     except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=str(e))
+        raise FinerError(ErrorCode.SYS_IO_001, str(e), stage="F0", operation="download_file", retryable=True, cause=e)

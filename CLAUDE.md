@@ -325,6 +325,14 @@ pytest tests/ -v
 docs/specs/2026-05-parallel-agent-execution.md
 ```
 
+每轮实现型并行任务启动前，必须先运行或读取 Line V 只读门控规范：
+
+```text
+docs/specs/2026-05-verification-snapshot-gate.md
+```
+
+Line V 的输出是当前仓库 baseline report；后续实现型 Agent 必须基于该报告声明 ownership、冲突文件和验证命令。
+
 并行任务启动前必须声明：
 
 1. parallel line（如 F0 Intake Repair、F3-F4-F5 Canonical Path、F8 Backtest）
@@ -337,6 +345,7 @@ docs/specs/2026-05-parallel-agent-execution.md
 强制规则：
 
 - 一个实现型 Agent 只能拥有一个 F-stage、一个明确 frontend surface，或一个只读 verification 任务。
+- Line V Verification Snapshot 是实现型并行任务的前置门控；它只能读文件、运行测试/build/rg/git diff，并输出 baseline report，不得修改任何文件。
 - 共享 contract 先冻结，再允许下游并行；渠道 Agent 不得私自扩展 `ContentRecord`。
 - 第一轮并行优先级：并行规范 -> ERR-0/ERR-1 错误反馈基础 -> A0 F0-Core -> A1 Project Memory contract -> A2 分渠道导入 -> A3 Import Console -> KOL Backtest MVP。
 - F0 只输出 `ContentRecord`、raw archive、import receipt/status、F0 local index；不得做 OCR、topic assembly、entity/time anchor、intent、TradeAction、backtest。

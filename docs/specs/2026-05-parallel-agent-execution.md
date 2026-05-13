@@ -110,10 +110,50 @@ codex/error-feedback-foundation
 codex/kol-backtest-mvp
 codex/f3-f4-f5-canonical
 codex/f8-backtest-chart
+codex/verification-snapshot
 codex/verification-gates
 ```
 
 ## 3. Parallel Lines
+
+### Line V: Verification Snapshot
+
+**Mission**
+
+在任何新一轮实现型 agent 开工前，先固化当前项目状态，形成只读 baseline report。Line V 不修复问题，只报告测试结果、worktree 状态、package lock 一致性、deprecated-path/mock/contract-only 缺口，以及后续 agent 的 ownership 冲突。
+
+**Type**: cross-stage read-only gate
+
+**Spec and prompt**
+
+详见 `docs/specs/2026-05-verification-snapshot-gate.md`。
+
+**Allowed behavior**
+
+- read files
+- run tests and build/type-check commands
+- run `rg`, `git status`, `git diff`, `git log`, and lockfile consistency checks
+- report file/line evidence and recommended owner
+
+**Forbidden behavior**
+
+- no file edits
+- no `apply_patch`
+- no source/doc/test/package/data changes
+- no git stage/commit/push/rebase/reset
+- no database schema creation, migration, rebuild, or data mutation
+- no cleanup of generated files
+
+**Output**
+
+Final response only:
+
+- gate result: `PASS`, `WARN`, or `BLOCKED`
+- command result table
+- current worktree snapshot
+- findings table by severity
+- parallel readiness table for B1, C1, D1, D2, A1, and F
+- next actions
 
 ### Line A: F0 Intake Repair + Project Memory + Import Console
 
@@ -849,6 +889,12 @@ rg -n "request_id|fix_hint|retryable|source_channel|stage" src/finer src/finer_d
 
 ```mermaid
 flowchart TD
+    V["V Verification Snapshot"] --> A0["A0 F0-Core Contract"]
+    V --> B["B KOL MVP Contract + Fixtures"]
+    V --> C["C F3-F4-F5 Canonical Path"]
+    V --> D["D F8 API + Revenue Curve"]
+    V --> A3["A3 Import Console"]
+
     A0["A0 F0-Core Contract"] --> A1["A1 F0 Project Memory"]
     A0 --> A2["A2a-A2e Channel Adapters"]
     A0 --> A3["A3 Import Console"]
@@ -883,6 +929,7 @@ Agents exchange artifacts through files, not private assumptions.
 
 | Producer | Artifact | Consumer |
 |---|---|---|
+| V | verification snapshot baseline report | all implementation agents |
 | A0 | F0 contract doc / schema tests | A1, A2, A3 |
 | A1 | F0 index contract / project memory health model | A3, A4 |
 | A2a-A2e | channel-specific `ContentRecord` fixtures | A4, future F1 |
@@ -921,12 +968,13 @@ Before finalizing:
 ## 7. Current P0 Ordering
 
 1. Freeze this parallel execution spec and sync mandatory rules into `CLAUDE.md`.
-2. Freeze Error Feedback Foundation task cards: ERR-0 -> ERR-4.
-3. Implement ERR-1 before ERR-2/ERR-3 so downstream agents share the same envelope helper.
-4. Implement or refine A0 F0-Core contract before channel work.
-5. Define A1 F0 Project Memory contract before frontend depends on it.
-6. Run A2a-A2e channel repair in parallel after A0/A1/ERR-1 are stable.
-7. Freeze KOL Backtest MVP artifacts.
-8. Close F3-F4-F5 canonical path.
-9. Wire F8/API/revenue curve.
-10. Run ERR-4, A4, and Line E verification gates.
+2. Run Line V Verification Snapshot and use its report as the baseline for all implementation agents.
+3. Freeze Error Feedback Foundation task cards: ERR-0 -> ERR-4.
+4. Implement ERR-1 before ERR-2/ERR-3 so downstream agents share the same envelope helper.
+5. Implement or refine A0 F0-Core contract before channel work.
+6. Define A1 F0 Project Memory contract before frontend depends on it.
+7. Run A2a-A2e channel repair in parallel after A0/A1/ERR-1 are stable.
+8. Freeze KOL Backtest MVP artifacts.
+9. Close F3-F4-F5 canonical path.
+10. Wire F8/API/revenue curve.
+11. Run ERR-4, A4, and Line E verification gates.

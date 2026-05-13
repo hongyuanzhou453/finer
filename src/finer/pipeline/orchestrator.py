@@ -1,18 +1,21 @@
-"""Pipeline Orchestrator — **LEGACY** L0-L8 implementation.
+"""Pipeline Orchestrator — **DEPRECATED** L0-L8 implementation.
+
+.. deprecated::
+    This module is deprecated. Use ``finer.pipeline.canonical_runner`` for
+    the canonical F3→F4→F5 pipeline, or the F0-F8 orchestrator when available.
 
 **IMPORTANT**: This orchestrator uses the deprecated L0-L8 naming and
 pipeline structure. The canonical F0-F8 pipeline (F3→F4→F5 in particular)
-is NOT yet implemented in this orchestrator.
+is implemented in ``canonical_runner.py``.
 
 - This module is preserved for backward compatibility with existing L0-L8
   data directories and ingestion workflows.
 - New features and canonical-path work MUST target the F0-F8 pipeline,
   not extend this orchestrator.
 - F3 Intent → F4 Policy → F5 Execute canonical chain lives in
-  `extraction/intent_extractor.py` + `policy/policy_mapper.py` +
-  `extraction/trade_action_extractor.py`, not through this orchestrator.
-- When the F0-F8 pipeline is production-ready, this file should be
-  deprecated and replaced.
+  ``canonical_runner.py`` (via ``run_canonical_extraction()``).
+- ``DEFAULT_STAGES`` below uses legacy L0-L8 naming. Canonical F0-F8
+  pipeline uses ``canonical_runner.run_canonical_extraction()``.
 
 Design principles:
 - Each stage failure does NOT block subsequent stages (logged, continued)
@@ -139,7 +142,8 @@ class PipelineOrchestrator:
     Each stage is independently callable and failures are non-blocking.
     """
 
-    # Legacy stage order (deprecated L0-L8; canonical F0-F8 not yet wired in)
+    # Legacy stage order (deprecated L0-L8).
+    # Canonical F0-F8 uses canonical_runner.run_canonical_extraction() instead.
     DEFAULT_STAGES = ["L0", "L1", "L3", "L4", "L5"]
 
     def __init__(

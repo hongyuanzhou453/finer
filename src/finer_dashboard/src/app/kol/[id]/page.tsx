@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -13,94 +13,12 @@ import {
   BarChart3,
   PieChart,
   Loader2,
-  FileText,
-  Tag,
+  AlertTriangle,
 } from "lucide-react";
-import type { KOL, KOLTimelineEvent, NameLineage } from "@/lib/contracts";
-
-type KOLDetail = KOL & {
-  stats: {
-    totalOpinions: number;
-    correctCount: number;
-    avgReturn: number;
-    maxReturn: number;
-    minReturn: number;
-    avgHoldingDays: number;
-  };
-  timeline: (KOLTimelineEvent & {
-    nameLineage?: NameLineage;
-    contentVersionId?: string;
-  })[];
-};
-
-const mockDetail: KOLDetail = {
-  id: "kol-1",
-  name: "投研老王",
-  platform: "wechat",
-  platformId: "xxx123",
-  overallScore: 4.2,
-  dimensionScores: {
-    accuracy: 4.5,
-    timeliness: 4.0,
-    clarity: 3.8,
-    depth: 4.2,
-    consistency: 4.3,
-  },
-  accuracy: 68,
-  avgReturn: 12.5,
-  totalOpinions: 156,
-  lastActive: "2026-04-23",
-  tags: ["科技", "半导体"],
-  enabled: true,
-  stats: {
-    totalOpinions: 156,
-    correctCount: 106,
-    avgReturn: 12.5,
-    maxReturn: 45.2,
-    minReturn: -15.3,
-    avgHoldingDays: 23,
-  },
-  timeline: [
-    {
-      id: "e1",
-      kolId: "kol-1",
-      date: "2026-04-20",
-      ticker: "NVDA",
-      direction: "bullish",
-      summary: "半导体周期底部已过，AI需求持续强劲",
-      return: 8.5,
-      contentVersionId: "cv-001",
-      nameLineage: {
-        originalFilename: "投研老王_20260420_半导体观点.xlsx",
-        f0DisplayName: "投研老王 - 半导体周期分析",
-        f1EnvelopeTitle: "半导体行业周期底部判断与AI需求展望",
-      },
-    },
-    {
-      id: "e2",
-      kolId: "kol-1",
-      date: "2026-04-15",
-      ticker: "AAPL",
-      direction: "neutral",
-      summary: "财报前观望，关注服务收入增速",
-      contentVersionId: "cv-002",
-    },
-    {
-      id: "e3",
-      kolId: "kol-1",
-      date: "2026-04-10",
-      ticker: "TSLA",
-      direction: "bearish",
-      summary: "估值过高，竞争加剧",
-      return: -5.2,
-      // No contentVersionId — tests graceful handling of missing version
-      nameLineage: {
-        originalFilename: "TSLA_analysis.pdf",
-        materializedFilename: "F1_TSLA_analysis_cv-003.json",
-      },
-    },
-  ],
-};
+import type { KOLDetail } from "@/lib/contracts";
+import { useAsyncData } from "@/lib/hooks/useAsyncData";
+import { getKOLRating } from "@/lib/api-client";
+import { kolRatingToDetail } from "@/lib/adapters";
 
 function getDirectionColor(direction: string): string {
   switch (direction) {
@@ -156,24 +74,50 @@ function NameLineageDisplay({ lineage }: { lineage: NameLineage }) {
 
 export default function KOLDetailPage() {
   const params = useParams();
-  const [kol, setKOL] = useState<KOLDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const kolId = params.id as string;
+
+  const {
+    data: kol,
+    loading,
+    error,
+    reload,
+  } = useAsyncData(
+    () => getKOLRating(kolId).then((r) => kolRatingToDetail(r, kolId)),
+    [kolId],
+  );
+
   const [activeTab, setActiveTab] = useState<"timeline" | "radar" | "returns">(
     "timeline"
   );
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setKOL(mockDetail);
-      setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [params.id]);
 
   if (loading) {
     return (
       <div className="container py-8 h-[80vh] flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-foreground/30" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container py-8">
+        <Link
+          href="/kol"
+          className="inline-flex items-center gap-2 text-sm text-foreground/60 hover:text-foreground mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          返回 KOL 列表
+        </Link>
+        <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>加载 KOL 数据失败：{error.message}</span>
+          <button
+            onClick={reload}
+            className="ml-auto shrink-0 underline hover:text-red-900"
+          >
+            重试
+          </button>
+        </div>
       </div>
     );
   }
@@ -378,7 +322,7 @@ export default function KOLDetailPage() {
       {/* Backtest Link */}
       <div className="mt-8 flex justify-end">
         <Link
-          href={`/kol/${params.id}/backtest`}
+          href={`/kol/${kolId}/backtest`}
           className="inline-flex items-center gap-2 px-4 py-2 bg-morningstar-red text-white rounded-md hover:bg-morningstar-red/90 transition-colors text-sm font-medium"
         >
           <Target className="w-4 h-4" />

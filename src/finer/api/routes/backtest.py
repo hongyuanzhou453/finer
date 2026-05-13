@@ -18,12 +18,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, Query
 from pydantic import BaseModel, Field
 
 from finer.paths import DATA_ROOT
 from finer.backtest.engine import BacktestConfig, BacktestEngine
 from finer.backtest.prices import CachedPriceProvider, MockPriceProvider
+from finer.errors.codes import ErrorCode
+from finer.errors.exceptions import FinerError
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +224,7 @@ async def run_backtest(request: BacktestRequest) -> Dict[str, Any]:
         Backtest result with performance metrics
     """
     if not request.actions:
-        raise HTTPException(status_code=400, detail="No actions provided")
+        raise FinerError(ErrorCode.F8_IN_001, "No actions provided", stage="F8", operation="backtest_run", retryable=False)
 
     try:
         # Create config
@@ -243,7 +245,7 @@ async def run_backtest(request: BacktestRequest) -> Dict[str, Any]:
         )
 
         if price_df.empty:
-            raise HTTPException(status_code=400, detail="No price data available")
+            raise FinerError(ErrorCode.F8_EXT_001, "No price data available", stage="F8", operation="price_fetch", retryable=True)
 
         # Create engine and run
         engine = BacktestEngine(config)
@@ -268,11 +270,11 @@ async def run_backtest(request: BacktestRequest) -> Dict[str, Any]:
             "saved_to": str(filepath),
         }
 
-    except HTTPException:
+    except FinerError:
         raise
     except Exception as e:
         logger.error(f"Backtest failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Backtest failed: {str(e)}")
+        raise FinerError(ErrorCode.F8_INT_001, f"Backtest failed: {str(e)}", stage="F8", operation="backtest_run", retryable=False, cause=e)
 
 
 @router.get("/results/{backtest_id}")
@@ -288,7 +290,7 @@ async def get_backtest_result(backtest_id: str) -> Dict[str, Any]:
     result = _load_backtest_result(backtest_id)
 
     if not result:
-        raise HTTPException(status_code=404, detail=f"Backtest not found: {backtest_id}")
+        raise FinerError(ErrorCode.F8_NTF_001, f"Backtest not found: {backtest_id}", stage="F8", operation="get_result", retryable=False)
 
     return {
         "ok": True,
@@ -382,7 +384,7 @@ async def delete_backtest_result(backtest_id: str) -> Dict[str, Any]:
             logger.error(f"Failed to delete {filepath}: {e}")
 
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Backtest not found: {backtest_id}")
+        raise FinerError(ErrorCode.F8_NTF_001, f"Backtest not found: {backtest_id}", stage="F8", operation="delete_result", retryable=False)
 
     return {
         "ok": True,
@@ -412,7 +414,7 @@ async def compare_strategies(
         Comparison results for all KOLs
     """
     if not kol_actions:
-        raise HTTPException(status_code=400, detail="No KOL actions provided")
+        raise FinerError(ErrorCode.F8_IN_001, "No KOL actions provided", stage="F8", operation="compare", retryable=False)
 
     results = {}
     all_actions = []
@@ -517,7 +519,7 @@ async def get_price_data(request: PriceDataRequest) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Failed to get prices: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get prices: {str(e)}")
+        raise FinerError(ErrorCode.F8_EXT_001, f"Failed to get prices: {str(e)}", stage="F8", operation="price_fetch", retryable=True, cause=e)
 
 
 @router.get("/health")

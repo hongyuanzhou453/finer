@@ -10,7 +10,7 @@
  * Mirrors backend error format from src/finer/errors/exceptions.py.
  */
 
-import type { ApiErrorDetails, ApiErrorEnvelope } from "./contracts";
+import type { ApiErrorDetails, ApiErrorEnvelope, BacktestResult, BacktestSummary, KOLListItemRaw, KOLRatingResponse } from "./contracts";
 import { isApiError } from "./contracts";
 
 // =============================================================================
@@ -342,4 +342,70 @@ export function apiDelete<T>(
   options?: Partial<ApiClientOptions>,
 ): Promise<T> {
   return apiFetch<T>(path, { method: "DELETE", clientOptions: options });
+}
+
+// =============================================================================
+// F8 Backtest API
+// =============================================================================
+
+/** Run a new backtest. */
+export async function runBacktest(params: {
+  trade_actions: Array<Record<string, unknown>>;
+  start_date?: string;
+  end_date?: string;
+  initial_capital?: number;
+  kol_id?: string;
+  backtest_name?: string;
+}): Promise<{ backtest_id: string; result: BacktestResult }> {
+  return apiFetch("/api/backtest/run", {
+    method: "POST",
+    body: params,
+  });
+}
+
+/** Get a specific backtest result by ID. */
+export async function getBacktestResult(
+  backtestId: string,
+): Promise<BacktestResult> {
+  return apiFetch(`/api/backtest/results/${backtestId}`);
+}
+
+/** List all backtest results (summaries). */
+export async function listBacktestResults(params?: {
+  kol_id?: string;
+  limit?: number;
+}): Promise<BacktestSummary[]> {
+  const query = new URLSearchParams();
+  if (params?.kol_id) query.set("kol_id", params.kol_id);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  const raw = await apiFetch<{ results: BacktestSummary[] }>(
+    `/api/backtest/results${qs ? `?${qs}` : ""}`,
+  );
+  return raw.results ?? [];
+}
+
+/** Delete a backtest result. */
+export async function deleteBacktestResult(
+  backtestId: string,
+): Promise<{ deleted: boolean }> {
+  return apiFetch(`/api/backtest/results/${backtestId}`, {
+    method: "DELETE",
+  });
+}
+
+// =============================================================================
+// KOL API
+// =============================================================================
+
+/** List all KOLs with enriched rating data. Returns raw backend shape — use kolListItemToKOL adapter. */
+export async function listKOLs(): Promise<KOLListItemRaw[]> {
+  return apiFetch("/api/kol/list/enriched");
+}
+
+/** Get detailed rating for a specific KOL. */
+export async function getKOLRating(
+  kolId: string,
+): Promise<KOLRatingResponse> {
+  return apiFetch(`/api/kol/rating/${kolId}`);
 }
