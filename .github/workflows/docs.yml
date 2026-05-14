@@ -17,21 +17,23 @@ permissions:
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate documentation artifact
+        run: test -d docs && find docs -type f | head -n 1
       - name: Setup Pages
+        if: ${{ vars.ENABLE_PAGES_DEPLOY == 'true' }}
         uses: actions/configure-pages@v4
         with:
           enablement: true
       - name: Upload artifact
+        if: ${{ vars.ENABLE_PAGES_DEPLOY == 'true' }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: './docs'
       - name: Deploy to GitHub Pages
+        if: ${{ vars.ENABLE_PAGES_DEPLOY == 'true' }}
         id: deployment
         uses: actions/deploy-pages@v4
