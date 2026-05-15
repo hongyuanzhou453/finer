@@ -181,6 +181,21 @@ export const ERROR_CODE_DESCRIPTIONS: Record<
     rootCause: "Source ingestion exceeded its timeout.",
     fixHint: "Retry with pagination or inspect the external source latency.",
   },
+  F0_INDEX_001: {
+    title: "F0 index unavailable",
+    rootCause: "The F0 SQLite index file does not exist or has not been loaded.",
+    fixHint: "Run POST /api/f0-index/rebuild to create the index.",
+  },
+  F0_INDEX_002: {
+    title: "F0 index query failed",
+    rootCause: "A query against the F0 SQLite index failed unexpectedly.",
+    fixHint: "Check index health via GET /api/f0-index/health. Rebuild if stale.",
+  },
+  F0_INDEX_003: {
+    title: "F0 index rebuild failed",
+    rootCause: "The F0 index rebuild process encountered an error.",
+    fixHint: "Check server logs for details. Ensure manifest files are valid JSON.",
+  },
   // F1 Standardize
   F1_IN_001: {
     title: "Invalid F1 input",

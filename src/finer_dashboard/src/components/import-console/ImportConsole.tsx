@@ -25,16 +25,9 @@ export function ImportConsole() {
       setHealth(data);
     } catch (err) {
       if (err instanceof ApiError) {
-        // 501 = contract-only, degrade silently
-        if (err.status === 501) {
-          setHealth(null);
-        } else {
-          setHealthError(err);
-          setHealth(null);
-        }
-      } else {
-        setHealth(null);
+        setHealthError(err);
       }
+      setHealth(null);
     } finally {
       setHealthLoading(false);
     }
@@ -48,15 +41,9 @@ export function ImportConsole() {
       setRecords(data ?? []);
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 501) {
-          setRecords([]);
-        } else {
-          setRecordsError(err);
-          setRecords([]);
-        }
-      } else {
-        setRecords([]);
+        setRecordsError(err);
       }
+      setRecords([]);
     } finally {
       setRecordsLoading(false);
     }
