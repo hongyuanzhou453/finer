@@ -146,12 +146,13 @@ Inspect current modified files and planned agent surfaces.
 
 Report which agents can safely run in parallel:
 
-- `B1` KOL fixture and end-to-end smoke,
-- `C1` canonical runner,
-- `D1` F8 backend API,
-- `D2` F8 frontend API adapter,
-- `A1` F0 Project Memory implementation only after user confirms SQLite schema,
-- `F` focused error verification/fixes.
+- `T1a` ModelRouter + PromptRegistry + F3 prompt (Phase 1, no dependencies),
+- `T3` F3 Intent LLM integration (Phase 2, depends on T1a),
+- `T5` ExecutionTiming extraction (DONE — committed at 9e0c878),
+- `T6` Golden Path Pipeline F3→F5 (Phase 3, depends on T3),
+- `T7` F8 Backtest E2E + frontend (Phase 4, depends on T6),
+- `T8a` Legacy dead code scan (Phase 1, read-only, no dependencies),
+- `T8b` F7 opinions mock cleanup (Phase 1, no dependencies).
 
 For each, report:
 
@@ -216,7 +217,7 @@ Repository root:
 /Users/zhouhongyuan/Desktop/finer
 
 Mandatory rules:
-- Read AGENTS.md, CLAUDE.md, and docs/specs/2026-05-parallel-agent-execution.md before running checks.
+- Read AGENTS.md, CLAUDE.md, docs/specs/2026-05-parallel-agent-execution.md, and docs/specs/2026-05-round3-task-matrix.md before running checks.
 - Declare: parallel line V, F-stage cross-stage verification, input repository state, output markdown baseline report.
 - Do not edit any file. Do not call apply_patch. Do not create, delete, rename, stage, commit, push, rebase, reset, migrate, or clean files.
 - Do not modify .env, tokens, CI/CD config, database schema, package manifests, lockfiles, or data.
@@ -261,8 +262,10 @@ Required checks:
    rg -n "request_id|fix_hint|retryable|source_channel|stage" src/finer src/finer_dashboard/src
 
 5. Ownership readiness:
-   Evaluate whether B1, C1, D1, D2, A1, and F agents can start now.
+   Evaluate whether T1a, T3, T6, T7, T8a, and T8b agents can start now.
+   T5 is DONE (committed at 9e0c878).
    For each, list likely owned files, conflict files, prerequisite checks, and readiness.
+   Reference: docs/specs/2026-05-round3-task-matrix.md
 
 Final report format:
 ## Verification Snapshot

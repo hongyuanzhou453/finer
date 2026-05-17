@@ -22,7 +22,7 @@ Coordinate the active agent windows without becoming a business-code worker.
 Primary goals:
 
 - keep every agent inside its declared ownership boundary,
-- maintain the dependency order between D1, C1, D2, A1, A2, and A3,
+- maintain the dependency order between T1a, T3, T5, T6, T7, T8a, and T8b (see docs/specs/2026-05-round3-task-matrix.md),
 - prevent conflicts in shared files such as `src/finer_dashboard/src/lib/contracts.ts`, `src/finer_dashboard/src/lib/api-client.ts`, `src/finer/api/routes/backtest.py`, `src/finer/api/routes/files.py`, and `src/finer/api/routes/integrations.py`,
 - collect each agent's result, changed files, tests, blockers, and handoff notes,
 - decide the merge and verification order.
@@ -38,6 +38,7 @@ AGENTS.md
 CLAUDE.md
 docs/specs/2026-05-parallel-agent-execution.md
 docs/specs/2026-05-verification-snapshot-gate.md
+docs/specs/2026-05-round3-task-matrix.md
 docs/specs/kol-backtest-mvp-contract.md
 docs/specs/project-memory-storage-v1.md
 ```
@@ -57,22 +58,23 @@ Rules for your internal team:
 
 - Every subagent is read-only unless explicitly updating coordination docs.
 - Do not ask subagents to edit business implementation files.
-- Do not duplicate implementation work assigned to D1, C1, D2, A1, A2, or A3.
+- Do not duplicate implementation work assigned to T1a, T3, T6, T7, T8a, or T8b.
 - Every subagent final note must include evidence file paths and a confidence level.
 
 ## Active Windows
 
-Track these windows:
+Track these windows (Round 3):
 
-| Window | Owner | Main risk |
-|---|---|---|
-| Line V | read-only verification | stale baseline |
-| D1 | F8 backend | F8 API contract, mock price leakage |
-| C1 | F3-F5 canonical runner | raw-text short circuit, rule/LLM comparison drift |
-| D2 | F8 frontend | request/response mismatch with D1 |
-| A1 | Project Memory storage | SQLite migration redline, startup scanning |
-| A2 | F0 WeChat/Bilibili | F0 boundary leakage into F1-F8 |
-| A3 | Import Console | frontend inventing backend fields |
+| Window | Owner | Phase | Main risk |
+|---|---|---|---|
+| Line V | read-only verification | 0 (done) | stale baseline |
+| T5 | ExecutionTiming extraction | 1 (done) | — |
+| T1a | ModelRouter + PromptRegistry + F3 prompt | 1 | LLMCallable signature change breaks existing tests |
+| T8a | Legacy dead code scan | 1 | false positive on active references |
+| T8b | F7 opinions mock cleanup | 1 | error envelope shape mismatch |
+| T3 | F3 Intent LLM integration | 2 | system_prompt not reaching LLM |
+| T6 | Golden Path Pipeline F3→F5 | 3 | canonical_trace_status assertion failure |
+| T7 | F8 Backtest E2E + frontend | 4 | mock data residue in f8-visualization.ts |
 
 ## Red Lines
 
@@ -129,6 +131,7 @@ Read first:
 - CLAUDE.md
 - docs/specs/2026-05-parallel-agent-execution.md
 - docs/specs/2026-05-verification-snapshot-gate.md
+- docs/specs/2026-05-round3-task-matrix.md
 - docs/specs/kol-backtest-mvp-contract.md
 - docs/specs/project-memory-storage-v1.md
 
@@ -137,21 +140,24 @@ Your role is coordination, not implementation.
 Use Agent Team capability:
 - Start a read-only Spec Steward to extract hard project constraints.
 - Start a read-only Conflict Watcher to inspect git status and likely file conflicts.
-- Start a read-only Dependency Planner to map D1/C1/D2/A1/A2/A3 handoffs.
+- Start a read-only Dependency Planner to map T1a/T3/T6/T7/T8a/T8b handoffs.
 - Start a read-only Verification Liaison to define what Line V or targeted checks must run after each merge.
 If Agent Team is unavailable, simulate these roles as separate sections in your own analysis.
 
 Do not modify src/**, tests/**, data/**, package files, env files, or CI/CD files.
 Only update docs/specs/** or docs/agent-prompts/** if a coordination spec must be corrected.
 
-Track these active windows:
-- Line V read-only verification
-- D1 F8 backend
-- C1 F3-F5 canonical runner and rule-vs-LLM comparison
-- D2 F8 frontend
-- A1 Project Memory storage
-- A2 F0 WeChat/Bilibili
-- A3 Import Console
+Track these active windows (Round 3):
+- Line V read-only verification (done)
+- T5 ExecutionTiming extraction (done)
+- T1a ModelRouter + PromptRegistry + F3 prompt (Phase 1)
+- T8a Legacy dead code scan (Phase 1, read-only)
+- T8b F7 opinions mock cleanup (Phase 1)
+- T3 F3 Intent LLM integration (Phase 2, depends on T1a)
+- T6 Golden Path Pipeline F3→F5 (Phase 3, depends on T3)
+- T7 F8 Backtest E2E + frontend (Phase 4, depends on T6)
+
+Reference: docs/specs/2026-05-round3-task-matrix.md
 
 Your final response must provide:
 1. active agent status table,
