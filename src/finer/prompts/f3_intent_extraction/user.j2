@@ -1,0 +1,22 @@
+Analyze the following KOL content and extract all investment intents.
+
+## Content Text
+{{ content_text }}
+
+## Context
+- Creator: {{ creator_name }} (ID: {{ creator_id }})
+- Source Type: {{ source_type }}
+- Published At: {{ published_at }}
+
+## Known Entities in Text
+{{ known_entities }}
+
+## Instructions
+1. Extract ALL investment intents expressed in this content.
+2. For each intent, provide the four axes: direction, actionability, position_delta_hint, conviction.
+3. Distinguish opinion from action — "看好" is NOT the same as "加仓".
+4. Do NOT generate position sizes, stop losses, take profits, or target prices.
+5. For ambiguous signals, include ambiguity_notes explaining the ambiguity.
+6. If no intents are found, return an empty "intents" array.
+
+Return ONLY the JSON object, no other text.

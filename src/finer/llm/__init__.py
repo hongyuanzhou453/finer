@@ -23,6 +23,7 @@ Usage:
 """
 
 from finer.llm.client import LLMClient
+from finer.llm.router import ModelRouter
 from finer.llm.deepseek_client import (
     DeepSeekAPIError,
     DeepSeekClient,
@@ -34,6 +35,7 @@ from finer.llm.deepseek_client import (
 
 __all__ = [
     "LLMClient",
+    "ModelRouter",
     "DeepSeekAPIError",
     "DeepSeekClient",
     "DeepSeekClientError",

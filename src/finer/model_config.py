@@ -134,9 +134,33 @@ class TextModelRegistry(BaseModelRegistry):
     ])
 
 
+@dataclass
+class ReasoningModelRegistry(BaseModelRegistry):
+    """Registry of reasoning/thinking models (MiMo-V2.5-Pro, etc.).
+
+    These models support extended reasoning and are used for tasks that
+    require deeper analysis (e.g., F3 intent extraction on complex content).
+    """
+
+    models: List[ModelConfig] = field(default_factory=lambda: [
+        ModelConfig(
+            name="mimo-v2.5-pro",
+            provider=ModelProvider.MIMO,
+            api_key_env="MIMO_API_KEY",
+            base_url="https://token-plan-cn.xiaomimimo.com/v1",
+            max_tokens=8192,
+            priority=0,
+            api_key_header="api-key",
+            api_key_scheme=None,
+            max_tokens_field="max_completion_tokens",
+        ),
+    ])
+
+
 # Global registry instances
 _vision_registry: Optional[VisionModelRegistry] = None
 _text_registry: Optional[TextModelRegistry] = None
+_reasoning_registry: Optional[ReasoningModelRegistry] = None
 
 
 def get_vision_registry() -> VisionModelRegistry:
@@ -153,3 +177,11 @@ def get_text_registry() -> TextModelRegistry:
     if _text_registry is None:
         _text_registry = TextModelRegistry()
     return _text_registry
+
+
+def get_reasoning_registry() -> ReasoningModelRegistry:
+    """Get or create the global reasoning model registry."""
+    global _reasoning_registry
+    if _reasoning_registry is None:
+        _reasoning_registry = ReasoningModelRegistry()
+    return _reasoning_registry
