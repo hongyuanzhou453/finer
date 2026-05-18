@@ -7,6 +7,16 @@
 
 AI-native 投研自动化流水线：将 KOL 社交媒体内容转化为结构化、可回测、可审计的投资事件。
 
+## 跨工具共享规范
+
+OpenADE、Codex、Claude Code 或其他多 Agent 管理器进入本仓库时，项目级规则以仓库内文件为准，不以某个客户端私有 skill/agent registry 为准。
+
+- Codex / OpenAI agent：优先读取并遵守 `AGENTS.md`。
+- Claude Code：优先读取并遵守 `CLAUDE.md`。
+- 两者出现冲突时，以更具体的目录级规范为准；同一目录内以 `AGENTS.md` 的 F-stage 架构边界和 `CLAUDE.md` 的工程纪律共同约束。
+- Codex skills（如 `~/.codex/skills`、`~/.agents/skills`）不会自动同步到 Claude Code；Claude Code agents/commands 也不会自动同步到 Codex。需要跨工具稳定执行的规则必须写进本仓库的 `AGENTS.md` / `CLAUDE.md`。
+- 子目录可放置更细的 `AGENTS.md` / `CLAUDE.md`，但不得放宽根目录的 F0-F8 架构约束、密钥安全约束和验证要求。
+
 ## F0-F8 Canonical Pipeline
 
 ```

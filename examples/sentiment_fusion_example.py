@@ -6,7 +6,6 @@ for multi-source sentiment aggregation.
 
 Requirements:
 - Set FINANCE_SKILLS_API_KEY environment variable
-- Set DASHSCOPE_API_KEY for text extraction
 """
 
 import asyncio
@@ -23,8 +22,6 @@ from finer.enrichment.sentiment_fusion import (
     DirectionAdjustment,
     get_sentiment_enricher,
 )
-from finer.enrichment.market_context import MarketContextEnricher
-from finer.extraction.enriched_extractor import EnrichedActionExtractor
 from finer.schemas.event import EventWithActions, TradingAction
 
 
@@ -34,13 +31,11 @@ async def example_basic_sentiment():
 
     enricher = SentimentFusionEnricher()
 
-    # Check if API key is set
     if not os.getenv("FINANCE_SKILLS_API_KEY"):
         print("Warning: FINANCE_SKILLS_API_KEY not set. Using mock mode.")
         print("Set the environment variable to test with real data.")
         return
 
-    # Fetch sentiment for a ticker
     print("Fetching sentiment for AAPL...")
     sentiment = await enricher.fetch_sentiment("AAPL")
 
@@ -66,7 +61,6 @@ async def example_direction_adjustment():
 
     enricher = SentimentFusionEnricher()
 
-    # Simulate different scenarios
     scenarios = [
         ("bullish", 0.8, 0.4),   # Bullish + extreme optimism
         ("bullish", -0.8, -0.4), # Bullish + extreme pessimism (contrarian)
@@ -79,7 +73,6 @@ async def example_direction_adjustment():
     print("-" * 60)
 
     for direction, sentiment_score, velocity in scenarios:
-        # Create mock sentiment snapshot
         from finer.schemas.enriched_event import SentimentSnapshot
         sentiment = SentimentSnapshot(
             ticker="TEST",
@@ -106,11 +99,10 @@ async def example_full_enrichment():
     """Example 3: Full event enrichment with sentiment."""
     print("\n=== Example 3: Full Event Enrichment ===\n")
 
-    # Create a mock event
     event = EventWithActions(
         ticker="TSLA",
         direction="bullish",
-        evidence_text="TSLA 在 200 附近有强支撑，突破 220 可看 250",
+        evidence_text="TSLA at 200 has strong support, break above 220 targets 250",
         action_chain=[
             TradingAction(
                 action_type="long",
@@ -141,48 +133,6 @@ async def example_full_enrichment():
         print(f"\nIssues: {issues}")
 
 
-async def example_integrated_extraction():
-    """Example 4: Integrated extraction with market + sentiment."""
-    print("\n=== Example 4: Integrated Extraction ===\n")
-
-    if not os.getenv("DASHSCOPE_API_KEY"):
-        print("Warning: DASHSCOPE_API_KEY not set. Skipping extraction example.")
-        return
-
-    extractor = EnrichedActionExtractor()
-
-    text = """
-    腾讯控股(0700.HK)近期在380港元附近震荡，技术面显示有企稳迹象。
-    如果能突破400港元，下一目标位在420-450区间。
-    建议在380附近分批建仓，跌破360止损。
-    """
-
-    print("Extracting and enriching events...")
-    print(f"Text: {text[:100]}...\n")
-
-    result = await extractor.extract_and_enrich(text)
-
-    print(f"Total Events: {len(result.events)}")
-    print(f"Stats: {result.enrichment_stats}")
-
-    for event in result.events:
-        print(f"\n--- Event: {event.ticker} ---")
-        print(f"Direction: {event.direction}")
-        print(f"Confidence: {event.overall_confidence:.2f}")
-
-        if event.market_snapshot:
-            print(f"Current Price: {event.market_snapshot.current_price}")
-
-        if event.sentiment_snapshot:
-            s = event.sentiment_snapshot
-            print(f"Sentiment: {s.overall_sentiment} ({s.aggregated_score:.2f})")
-            if s.contrarian_signal:
-                print("  ⚠️ Contrarian signal detected!")
-
-        if event.validation_issues:
-            print(f"Issues: {event.validation_issues}")
-
-
 async def main():
     """Run all examples."""
     print("=" * 60)
@@ -192,7 +142,6 @@ async def main():
     await example_basic_sentiment()
     await example_direction_adjustment()
     await example_full_enrichment()
-    await example_integrated_extraction()
 
     print("\n" + "=" * 60)
     print("Examples completed!")
