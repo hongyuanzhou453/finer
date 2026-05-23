@@ -307,3 +307,29 @@ Round 3 is complete when:
 3. Both equity curves render in frontend from real data (no mock)
 4. Every F-stage intermediate result is written to its `data/F{N}_*/` directory for human review
 5. All acceptance commands pass
+
+---
+
+## Open Issues / Known Gaps
+
+### GAP-1: F8 canonical reject 测试名实不符（需补真实测试）
+
+**位置**: `tests/test_backtest_canonical.py:197-224`
+**现状**: 四个 `test_engine_rejects_*` 测试只是删除字段后断言字段缺失，**没有实际调用 BacktestEngine 或 API route 验证 reject 行为**。测试内部注释承认："The engine itself doesn't validate canonical fields — this test documents that upstream validation must gate inputs."
+**风险**: 如果上游 validation 被绕过或 engine 接口变更，这些测试不会捕获回归。
+**需要补充**:
+1. API-level 测试：`POST /api/backtest/run` 传入缺少 `intent_id` / `policy_id` / `evidence_span_ids` / `execution_timing` 的 TradeAction，验证返回 422 或 canonical error envelope
+2. Engine-level 测试（如 engine 新增 canonical validation）：验证 engine 直接拒绝 non-canonical input
+3. 测试名应改为 `test_*_documents_gap` 或补上真正 reject 逻辑后恢复原名
+**优先级**: Round 4
+
+### GAP-2: F8 backtest record 不保留 F3→F5 trace fields
+
+**位置**: `scripts/run_backtest_e2e.py:65-72` (`_raw_action_to_record`)
+**现状**: canonical TradeAction 转换为 engine record 时，`intent_id`、`policy_id`、`evidence_span_ids`、`execution_timing` 被丢弃，只保留 `trade_action_id`、`ticker`、`direction`、`action_type`、`timestamp`、`kol_id`。
+**影响**: 回测结果（trades.json）无法反查到 F3 Intent → F4 Policy → F5 TradeAction 的完整 trace chain。审计回溯时丢失关键 lineage。
+**需要修复**:
+1. `_raw_action_to_record` 保留 `intent_id`、`policy_id`、`evidence_span_ids`
+2. BacktestEngine 输出的 trade record 携带这些 fields
+3. `trades.json` 和 `backtest_result.json` 中可追溯到原始 canonical action
+**优先级**: Round 4 F8 improvement
