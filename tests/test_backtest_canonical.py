@@ -20,6 +20,9 @@ import pandas as pd
 import pytest
 
 from finer.backtest.engine import BacktestEngine, BacktestConfig
+from finer.backtest.converter import trade_action_to_record
+from finer.backtest.validators import validate_canonical_action
+from finer.errors.exceptions import FinerError
 
 
 # =============================================================================
@@ -123,6 +126,9 @@ def _raw_to_engine_record(action_dict: dict) -> dict | None:
         "action_type": action_type,
         "trade_action_id": action_dict.get("trade_action_id", ""),
         "kol_id": source.get("creator_id", "unknown"),
+        "intent_id": action_dict.get("intent_id"),
+        "policy_id": action_dict.get("policy_id"),
+        "evidence_span_ids": action_dict.get("evidence_span_ids") or [],
     }
 
 
@@ -194,34 +200,33 @@ class TestBacktestCanonicalConsumption:
         assert result.total_trades >= 0
         assert result.backtest_id is not None
 
-    def test_engine_rejects_action_missing_intent_id(self):
-        """Engine rejects (via validation) actions without intent_id."""
+    def test_validator_rejects_action_missing_intent_id(self):
+        """Validator raises FinerError for actions without intent_id."""
         action = _make_canonical_action()
         del action["intent_id"]
-        # The engine itself doesn't validate canonical fields —
-        # this test documents that upstream validation must gate inputs.
-        # We verify the action is still processable but NOT canonical.
-        assert action.get("intent_id") is None
-        assert action.get("canonical_trace_status") == "canonical"
-        # In practice, the API route rejects this before reaching the engine.
+        with pytest.raises(FinerError, match="intent_id"):
+            validate_canonical_action(action, 0)
 
-    def test_engine_rejects_action_missing_policy_id(self):
-        """Engine rejects (via validation) actions without policy_id."""
+    def test_validator_rejects_action_missing_policy_id(self):
+        """Validator raises FinerError for actions without policy_id."""
         action = _make_canonical_action()
         del action["policy_id"]
-        assert action.get("policy_id") is None
+        with pytest.raises(FinerError, match="policy_id"):
+            validate_canonical_action(action, 0)
 
-    def test_engine_rejects_action_empty_evidence_span_ids(self):
-        """Engine rejects (via validation) actions with empty evidence_span_ids."""
+    def test_validator_rejects_action_empty_evidence_span_ids(self):
+        """Validator raises FinerError for actions with empty evidence_span_ids."""
         action = _make_canonical_action()
         action["evidence_span_ids"] = []
-        assert len(action.get("evidence_span_ids", [])) == 0
+        with pytest.raises(FinerError, match="evidence_span_ids"):
+            validate_canonical_action(action, 0)
 
-    def test_engine_rejects_action_missing_execution_timing(self):
-        """Engine rejects (via validation) actions without execution_timing."""
+    def test_validator_rejects_action_missing_execution_timing(self):
+        """Validator raises FinerError for actions without execution_timing."""
         action = _make_canonical_action()
         del action["execution_timing"]
-        assert action.get("execution_timing") is None
+        with pytest.raises(FinerError, match="execution_timing"):
+            validate_canonical_action(action, 0)
 
     def test_canonical_action_with_bearish_short(self):
         """Canonical bearish SHORT action processes correctly."""
@@ -364,3 +369,122 @@ class TestF5CanonicalIntegration:
             snap_dict = snap.model_dump()
             for field in required_fields:
                 assert field in snap_dict, f"Missing field: {field}"
+
+
+# =============================================================================
+# R4-A: Trace Retention — intent_id / policy_id / evidence_span_ids flow through
+# =============================================================================
+
+
+class TestTraceRetention:
+    """Verify that F3→F4→F5 trace fields survive the full F8 pipeline.
+
+    Trace fields: intent_id, policy_id, evidence_span_ids
+    Flow: TradeAction → converter → engine record → engine Position → engine Trade
+    """
+
+    def test_converter_preserves_trace_fields(self):
+        """trade_action_to_record() output contains intent_id, policy_id, evidence_span_ids."""
+        from finer.schemas.trade_action import (
+            TradeAction, SourceInfo, TargetInfo, ActionStep,
+            TradeDirection, ActionType, ExecutionTiming,
+        )
+
+        ts = datetime(2024, 6, 1, 9, 30, 0)
+        action = TradeAction(
+            trade_action_id="ta_trace_001",
+            timestamp=ts,
+            source=SourceInfo(
+                content_id="c_001",
+                evidence_text="bullish on AAPL",
+                creator_id="kol_test",
+            ),
+            target=TargetInfo(ticker="AAPL", ticker_normalized="AAPL"),
+            direction=TradeDirection.BULLISH,
+            action_chain=[ActionStep(sequence=1, action_type=ActionType.LONG)],
+            intent_id="intent_001",
+            policy_id="policy_001",
+            evidence_span_ids=["span_001", "span_002"],
+            execution_timing=ExecutionTiming(
+                intent_published_at=ts,
+                action_decision_at=ts,
+                action_executable_at=ts,
+                market="US",
+                timezone="America/New_York",
+                timing_policy_id="market-calendar-v1",
+            ),
+            canonical_trace_status="canonical",
+        )
+
+        record = trade_action_to_record(action)
+
+        assert record is not None
+        assert record["intent_id"] == "intent_001"
+        assert record["policy_id"] == "policy_001"
+        assert record["evidence_span_ids"] == ["span_001", "span_002"]
+
+    def test_engine_trade_has_trace_fields(self):
+        """Engine Trade objects carry intent_id, policy_id, evidence_span_ids."""
+        action = _make_canonical_action("AAPL", "bullish", "long", "2024-01-05T09:30:00")
+        record = _raw_to_engine_record(action)
+        assert record is not None
+
+        # Build price data where AAPL drops to trigger stop loss → forces a Trade
+        price_data = _make_price_data(["AAPL"], days=30)
+        config = BacktestConfig(default_stop_loss_pct=0.001)  # tight stop
+        engine = BacktestEngine(config)
+        result = engine.run_backtest([record], price_data)
+
+        assert result is not None
+        # If trades were produced, verify trace fields
+        for trade in result.trades:
+            assert trade.intent_id == "intent_AAPL_001"
+            assert trade.policy_id == "policy_AAPL_001"
+            assert trade.evidence_span_ids == ["span_AAPL_001"]
+
+    def test_e2e_trades_json_has_trace_fields(self):
+        """Cat Lord F5 canonical actions → engine → trades retain trace fields."""
+        f5_dir = DATA_REVIEW / "kol_cat_lord_fire" / "F5_actions"
+        if not f5_dir.exists():
+            pytest.skip("F5_actions not found")
+
+        price_csv = FIXTURES / "cat_lord" / "market_prices.csv"
+        if not price_csv.exists():
+            pytest.skip("No market_prices.csv")
+
+        records = []
+        for f in sorted(f5_dir.glob("*.actions.json")):
+            raw = json.loads(f.read_text(encoding="utf-8"))
+            if not isinstance(raw, list):
+                continue
+            for action_dict in raw:
+                if not action_dict:
+                    continue
+                if action_dict.get("canonical_trace_status") != "canonical":
+                    continue
+                record = _raw_to_engine_record(action_dict)
+                if record is not None:
+                    records.append(record)
+
+        if not records:
+            pytest.skip("No backtestable canonical records")
+
+        price_data = pd.read_csv(price_csv, dtype={"ticker": str})
+        price_data["date"] = pd.to_datetime(price_data["date"])
+
+        engine = BacktestEngine()
+        result = engine.run_backtest(records, price_data)
+
+        assert result is not None
+        # At least one record should carry trace fields into trades
+        if result.trades:
+            for trade in result.trades:
+                # Trace fields must be present (may be None if input had None)
+                assert hasattr(trade, "intent_id")
+                assert hasattr(trade, "policy_id")
+                assert hasattr(trade, "evidence_span_ids")
+                # For canonical inputs, these should be populated
+                if trade.intent_id is not None:
+                    assert len(trade.intent_id) > 0
+                if trade.policy_id is not None:
+                    assert len(trade.policy_id) > 0

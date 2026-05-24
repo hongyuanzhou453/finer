@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from finer.backtest.engine import BacktestEngine, BacktestConfig
+from finer.backtest.validators import validate_canonical_action
 
 FIXTURES = ROOT / "tests" / "fixtures" / "kol-backtest-mvp"
 DATA_REVIEW = ROOT / "data" / "review"
@@ -69,6 +70,10 @@ def _raw_action_to_record(action_dict: dict, kol_id: str) -> dict | None:
         "action_type": action_type,
         "trade_action_id": action_dict.get("trade_action_id", ""),
         "kol_id": action_kol_id,
+        # --- trace fields (R4-A) ---
+        "intent_id": action_dict.get("intent_id"),
+        "policy_id": action_dict.get("policy_id"),
+        "evidence_span_ids": action_dict.get("evidence_span_ids") or [],
     }
 
 
@@ -91,13 +96,21 @@ def load_canonical_f5_actions(kol_id: str) -> list[dict]:
         if not isinstance(raw, list):
             continue
 
-        for action_dict in raw:
+        for action_idx, action_dict in enumerate(raw):
             if not action_dict:
                 continue
             # Gate: only process canonical actions
             if action_dict.get("canonical_trace_status") != "canonical":
                 continue
             total_canonical += 1
+
+            # Validate canonical fields using shared validator
+            try:
+                validate_canonical_action(action_dict, action_idx)
+            except Exception as exc:
+                total_skipped += 1
+                print(f"  [SKIP] Canonical validation failed: {exc}")
+                continue
 
             record = _raw_action_to_record(action_dict, kol_id)
             if record is not None:
@@ -213,6 +226,9 @@ def run_kol_backtest(kol_id: str) -> bool:
             "holding_days": t.holding_days,
             "trade_action_id": t.trade_action_id,
             "kol_id": t.kol_id,
+            "intent_id": t.intent_id,
+            "policy_id": t.policy_id,
+            "evidence_span_ids": t.evidence_span_ids,
         })
     trades_path = out_dir / "trades.json"
     trades_path.write_text(

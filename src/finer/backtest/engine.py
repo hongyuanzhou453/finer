@@ -104,6 +104,11 @@ class Position(BaseModel):
     trade_action_id: Optional[str] = Field(None, description="Source trade action ID")
     kol_id: Optional[str] = Field(None, description="Source KOL ID")
 
+    # Trace fields (R4-A)
+    intent_id: Optional[str] = Field(None, description="Source F3 intent ID")
+    policy_id: Optional[str] = Field(None, description="Source F4 policy ID")
+    evidence_span_ids: List[str] = Field(default_factory=list, description="Source F2 evidence span IDs")
+
     def current_value(self, current_price: float) -> float:
         """Calculate current position value."""
         if self.side == PositionSide.LONG:
@@ -155,6 +160,11 @@ class Trade(BaseModel):
     # Metadata
     trade_action_id: Optional[str] = Field(None, description="Source trade action ID")
     kol_id: Optional[str] = Field(None, description="Source KOL ID")
+
+    # Trace fields (R4-A)
+    intent_id: Optional[str] = Field(None, description="Source F3 intent ID")
+    policy_id: Optional[str] = Field(None, description="Source F4 policy ID")
+    evidence_span_ids: List[str] = Field(default_factory=list, description="Source F2 evidence span IDs")
 
 
 class PortfolioSnapshot(BaseModel):
@@ -288,6 +298,9 @@ class PortfolioSimulator:
         take_profit_pct: Optional[float] = None,
         trade_action_id: Optional[str] = None,
         kol_id: Optional[str] = None,
+        intent_id: Optional[str] = None,
+        policy_id: Optional[str] = None,
+        evidence_span_ids: Optional[List[str]] = None,
     ) -> Optional[Position]:
         """Open a new position."""
         # Check if position already exists
@@ -349,6 +362,9 @@ class PortfolioSimulator:
             target_exit_date=date + timedelta(days=self.config.max_holding_days),
             trade_action_id=trade_action_id,
             kol_id=kol_id,
+            intent_id=intent_id,
+            policy_id=policy_id,
+            evidence_span_ids=evidence_span_ids or [],
         )
 
         self.positions[ticker] = position
@@ -420,6 +436,9 @@ class PortfolioSimulator:
             holding_days=(date - position.entry_date).days,
             trade_action_id=position.trade_action_id,
             kol_id=position.kol_id,
+            intent_id=position.intent_id,
+            policy_id=position.policy_id,
+            evidence_span_ids=position.evidence_span_ids,
         )
 
         # Remove position
@@ -605,6 +624,9 @@ class BacktestEngine:
                             date=current_date,
                             trade_action_id=action.get('trade_action_id'),
                             kol_id=action.get('kol_id'),
+                            intent_id=action.get('intent_id'),
+                            policy_id=action.get('policy_id'),
+                            evidence_span_ids=action.get('evidence_span_ids'),
                         )
                     elif direction == 'bearish' or action_type in ['short', 'buy_put']:
                         if self.config.allow_short_selling:
@@ -615,6 +637,9 @@ class BacktestEngine:
                                 date=current_date,
                                 trade_action_id=action.get('trade_action_id'),
                                 kol_id=action.get('kol_id'),
+                                intent_id=action.get('intent_id'),
+                                policy_id=action.get('policy_id'),
+                                evidence_span_ids=action.get('evidence_span_ids'),
                             )
                     elif action_type in ['close_long', 'close_short']:
                         if ticker in simulator.positions:

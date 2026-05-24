@@ -483,3 +483,78 @@ class TestBacktestE2E:
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
+
+
+class TestCompareEndpointReject:
+    """POST /compare rejects non-canonical TradeActions."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_app(self, tmp_path):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from finer.api.server import create_app
+
+        app = create_app()
+        self.client = TestClient(app)
+
+        with patch("finer.api.routes.backtest.F8_METRICS_DIR", tmp_path):
+            yield
+
+    def test_compare_rejects_missing_intent_id(self):
+        """POST /compare rejects actions missing intent_id."""
+        bad_action = _make_canonical_action()
+        del bad_action["intent_id"]
+
+        resp = self.client.post("/api/backtest/compare", json={
+            "kol_actions": {"kol_1": [bad_action]},
+            "price_data": _make_price_rows(["AAPL"], 10),
+        })
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["ok"] is False
+        assert body["error"]["code"] == "F8_IN_001"
+        assert "intent_id" in body["error"]["message"]
+
+    def test_compare_rejects_missing_policy_id(self):
+        """POST /compare rejects actions missing policy_id."""
+        bad_action = _make_canonical_action()
+        del bad_action["policy_id"]
+
+        resp = self.client.post("/api/backtest/compare", json={
+            "kol_actions": {"kol_1": [bad_action]},
+            "price_data": _make_price_rows(["AAPL"], 10),
+        })
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["ok"] is False
+        assert "policy_id" in body["error"]["message"]
+
+    def test_compare_rejects_empty_evidence_span_ids(self):
+        """POST /compare rejects actions with empty evidence_span_ids."""
+        bad_action = _make_canonical_action()
+        bad_action["evidence_span_ids"] = []
+
+        resp = self.client.post("/api/backtest/compare", json={
+            "kol_actions": {"kol_1": [bad_action]},
+            "price_data": _make_price_rows(["AAPL"], 10),
+        })
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert "evidence_span_ids" in body["error"]["message"]
+
+    def test_compare_rejects_missing_execution_timing(self):
+        """POST /compare rejects actions missing execution_timing."""
+        bad_action = _make_canonical_action()
+        del bad_action["execution_timing"]
+
+        resp = self.client.post("/api/backtest/compare", json={
+            "kol_actions": {"kol_1": [bad_action]},
+            "price_data": _make_price_rows(["AAPL"], 10),
+        })
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert "execution_timing" in body["error"]["message"]

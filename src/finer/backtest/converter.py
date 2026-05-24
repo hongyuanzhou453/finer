@@ -79,6 +79,10 @@ def trade_action_to_record(action: TradeAction) -> Optional[Dict[str, Any]]:
         "action_type": action_type,
         "trade_action_id": action.trade_action_id,
         "kol_id": action.source.creator_id,
+        # --- trace fields (R4-A) ---
+        "intent_id": action.intent_id,
+        "policy_id": action.policy_id,
+        "evidence_span_ids": action.evidence_span_ids or [],
     }
 
 
