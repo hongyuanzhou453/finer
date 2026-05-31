@@ -34,7 +34,7 @@ export default function KOLBacktestDetailPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#f3efe7]">
+      <main className="min-h-screen bg-[var(--background)]">
         <div className="container py-8 flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-foreground/30" />
         </div>
@@ -45,7 +45,7 @@ export default function KOLBacktestDetailPage() {
   if (error || !model) {
     const isApiErr = error instanceof ApiError;
     return (
-      <main className="min-h-screen bg-[#f3efe7]">
+      <main className="min-h-screen bg-[var(--background)]">
         <div className="container py-8">
           <Link
             href={`/kol/${params.id}`}
@@ -82,7 +82,7 @@ export default function KOLBacktestDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3efe7]">
+    <main className="min-h-screen bg-[var(--background)]">
       <div className="container py-8">
         <Link
           href={`/kol/${params.id}`}
@@ -92,16 +92,16 @@ export default function KOLBacktestDetailPage() {
           返回 KOL 详情
         </Link>
 
-        <header className="mb-8 border-t-2 border-[#333333] bg-white px-6 py-5">
+        <header className="mb-8 border-t-2 border-[var(--foreground)] bg-white px-6 py-5">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#a50032]">
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-morningstar-red">
                 F8 BACKTEST / KOL SIGNAL PERFORMANCE
               </div>
-              <h1 className="text-2xl font-semibold tracking-normal text-[#1e1e1e]">
+              <h1 className="text-2xl font-semibold tracking-normal text-[var(--foreground)]">
                 {model.subject.name} 的 KOL 收益结果审计
               </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5e5e5e]">
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--ink-soft)]">
                 以 {model.benchmark.name} 为基准，比较 {model.cohort.name}，
                 覆盖 {model.dateRange.start} 至 {model.dateRange.end}。
                 每个图表必须同时展示主体、对照组、时间范围、指标方向和回测假设。
@@ -109,11 +109,11 @@ export default function KOLBacktestDetailPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <button className="inline-flex items-center gap-2 border border-[#cccccc] bg-white px-3 py-2 text-xs font-semibold text-[#333333] hover:border-[#333333]">
+              <button className="inline-flex items-center gap-2 border border-[var(--table-border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--foreground)] hover:border-[var(--foreground)]">
                 <SlidersHorizontal className="h-4 w-4" />
                 基准 / 同类组
               </button>
-              <button className="inline-flex items-center gap-2 border border-[#333333] bg-[#333333] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1e1e1e]">
+              <button className="inline-flex items-center gap-2 border border-[var(--foreground)] bg-[var(--foreground)] px-3 py-2 text-xs font-semibold text-white hover:bg-foreground/90">
                 <Download className="h-4 w-4" />
                 导出报告
               </button>
@@ -137,7 +137,7 @@ export default function KOLBacktestDetailPage() {
           <TopCallsTable model={model} />
           <MethodologyStrip model={model} />
 
-          <footer className="border-t border-[#cccccc] py-4 text-[11px] leading-5 text-[#5e5e5e]">
+          <footer className="border-t border-[var(--table-border)] py-4 text-[11px] leading-5 text-[var(--ink-soft)]">
             数据截止：{model.dataCutoff}。基准：{model.benchmark.name}。
             同类组：{model.cohort.name}。假设：初始资金 $
             {model.assumptions.initialCapital.toLocaleString()}，单笔仓位

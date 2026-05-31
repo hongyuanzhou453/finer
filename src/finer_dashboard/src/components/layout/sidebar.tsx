@@ -117,7 +117,7 @@ export function Sidebar({
 
   return (
     <aside className="w-72 editorial-panel h-full flex flex-col z-20 transition-all duration-300">
-      <div className="px-8 pt-8 pb-6 border-b border-[rgba(95,67,40,0.12)]">
+      <div className="px-6 pt-6 pb-5 border-b border-[rgba(95,67,40,0.12)]">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-sm bg-morningstar-red flex items-center justify-center shadow-md">
             <Activity className="text-white w-5 h-5" strokeWidth={1.5} />
@@ -134,7 +134,7 @@ export function Sidebar({
       </div>
 
       <div className="px-6 pt-6">
-        <div className="rounded-2xl border border-[rgba(95,67,40,0.12)] bg-[rgba(255,252,247,0.74)] px-5 py-4 shadow-sm">
+        <div className="rounded-sm border border-[rgba(95,67,40,0.12)] bg-[rgba(255,252,247,0.74)] px-4 py-3 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="text-[10px] font-bold text-[var(--ink-soft)] uppercase tracking-[0.18em]">
               Current workflow
@@ -152,7 +152,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto finer-scrollbar px-5 py-6 space-y-8">
+      <nav className="flex-1 overflow-y-auto finer-scrollbar px-4 py-5 space-y-6">
         <div className="space-y-2">
           <div className="px-3 text-[10px] font-bold text-[var(--ink-soft)] uppercase tracking-[0.16em]">
             Workflow
@@ -167,7 +167,7 @@ export function Sidebar({
                   key={item.tier}
                   onClick={() => onTierChange(item.tier)}
                   className={cn(
-                    "w-full rounded-2xl border px-4 py-3 text-left transition-all duration-150",
+                    "w-full rounded-sm border px-3 py-2.5 text-left transition-all duration-150",
                     isActive
                       ? "border-[rgba(159,29,34,0.2)] bg-[rgba(159,29,34,0.06)] shadow-sm"
                       : "border-transparent bg-transparent hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
@@ -176,7 +176,7 @@ export function Sidebar({
                   <div className="flex items-start gap-3">
                     <div
                       className={cn(
-                        "mt-0.5 rounded-xl border p-2.5",
+                        "mt-0.5 rounded-sm border p-2",
                         isActive
                           ? "border-[rgba(159,29,34,0.16)] bg-white text-morningstar-red"
                           : "border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] text-[var(--ink-soft)]"
@@ -224,7 +224,7 @@ export function Sidebar({
                   key={item.tier}
                   onClick={() => onTierChange(item.tier)}
                   className={cn(
-                    "w-full rounded-2xl border px-4 py-3 text-left transition-all duration-150",
+                    "w-full rounded-sm border px-3 py-2.5 text-left transition-all duration-150",
                     isActive
                       ? "border-[rgba(159,29,34,0.2)] bg-[rgba(159,29,34,0.06)] shadow-sm"
                       : "border-transparent bg-transparent hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
@@ -233,7 +233,7 @@ export function Sidebar({
                   <div className="flex items-start gap-3">
                     <div
                       className={cn(
-                        "mt-0.5 rounded-xl border p-2.5",
+                        "mt-0.5 rounded-sm border p-2",
                         isActive
                           ? "border-[rgba(159,29,34,0.16)] bg-white text-morningstar-red"
                           : "border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] text-[var(--ink-soft)]"
@@ -272,7 +272,7 @@ export function Sidebar({
             Pipeline Pulse
           </div>
 
-          <div className="rounded-2xl border border-[rgba(95,67,40,0.12)] bg-[rgba(255,252,247,0.6)] p-4">
+          <div className="rounded-sm border border-[rgba(95,67,40,0.12)] bg-[rgba(255,252,247,0.6)] p-4">
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/70">
               <Radar className="w-4 h-4 text-morningstar-red" strokeWidth={1.6} />
               Active Asset Surface
@@ -282,7 +282,7 @@ export function Sidebar({
               {pulseItems.map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-xl border border-[rgba(95,67,40,0.1)] bg-white/80 px-3 py-3"
+                  className="rounded-sm border border-[rgba(95,67,40,0.1)] bg-white/80 px-2.5 py-2"
                 >
                   <div className={cn("text-lg font-bold tabular-nums", item.tone)}>
                     {item.value}
@@ -300,7 +300,7 @@ export function Sidebar({
           <div className="px-3 text-[10px] font-bold text-[var(--ink-soft)] uppercase tracking-[0.16em]">
             Provenance
           </div>
-          <div className="rounded-2xl border border-[rgba(95,67,40,0.12)] bg-[rgba(255,252,247,0.6)] p-4">
+          <div className="rounded-sm border border-[rgba(95,67,40,0.12)] bg-[rgba(255,252,247,0.6)] p-4">
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/70">
               <Binary className="w-4 h-4 text-[var(--accent-gold)]" strokeWidth={1.6} />
               Pipeline badges remain visible

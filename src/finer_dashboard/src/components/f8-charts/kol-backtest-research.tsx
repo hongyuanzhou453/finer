@@ -55,11 +55,11 @@ export function ResearchBlock({
         <h2 className="text-[17px] tracking-normal font-semibold text-[var(--foreground)]">
           {title}
         </h2>
-        <div className="text-xs font-medium text-[#5e5e5e]">{meta}</div>
+        <div className="text-xs font-medium text-[var(--ink-soft)]">{meta}</div>
       </div>
       <div className="research-panel-body">{children}</div>
       {note && (
-        <div className="border-t border-[var(--table-border)] px-5 py-3 text-[11px] leading-relaxed text-[#5e5e5e]">
+        <div className="border-t border-[var(--table-border)] px-5 py-3 text-[11px] leading-relaxed text-[var(--ink-soft)]">
           {note}
         </div>
       )}
@@ -81,26 +81,26 @@ export function KOLOverviewPanel({ model }: { model: KOLBacktestViewModel }) {
     >
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <div className="flex gap-4">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-sm bg-[#1f55af] text-xl font-bold text-white">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-sm bg-morningstar-red text-xl font-bold text-white">
             {model.subject.name.slice(0, 1)}
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-normal text-[#1e1e1e]">
+              <h1 className="text-xl font-semibold tracking-normal text-[var(--foreground)]">
                 {model.subject.name}
               </h1>
-              <span className="border border-[#cccccc] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#5e5e5e]">
+              <span className="border border-[var(--table-border)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
                 {model.subject.platform}
               </span>
             </div>
-            <p className="mt-2 line-clamp-3 text-sm leading-6 text-[#5e5e5e]">
+            <p className="mt-2 line-clamp-3 text-sm leading-6 text-[var(--ink-soft)]">
               {model.subject.biography}
             </p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {model.subject.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="border border-[#cccccc] px-2 py-0.5 text-[11px] text-[#333333]"
+                  className="border border-[var(--table-border)] px-2 py-0.5 text-[11px] text-[var(--foreground)]"
                 >
                   {tag}
                 </span>
@@ -112,7 +112,7 @@ export function KOLOverviewPanel({ model }: { model: KOLBacktestViewModel }) {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {model.keyStats.map((stat) => (
             <div key={stat.label} className="border-b border-[var(--table-border)] pb-3">
-              <div className="text-[11px] font-medium text-[#5e5e5e]">
+              <div className="text-[11px] font-medium text-[var(--ink-soft)]">
                 {stat.label}
               </div>
               <div
@@ -125,7 +125,7 @@ export function KOLOverviewPanel({ model }: { model: KOLBacktestViewModel }) {
               >
                 {stat.value}
               </div>
-              <div className="mt-1 text-[11px] text-[#5e5e5e]">
+              <div className="mt-1 text-[11px] text-[var(--ink-soft)]">
                 {stat.subLabel}
               </div>
             </div>
@@ -161,19 +161,19 @@ function CapabilityScale({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between text-xs">
-        <span className="font-medium text-[#1e1e1e]">{label}</span>
-        <span className="text-[#5e5e5e]">{markerLabel}</span>
+        <span className="font-medium text-[var(--foreground)]">{label}</span>
+        <span className="text-[var(--ink-soft)]">{markerLabel}</span>
       </div>
-      <div className="relative grid h-8 grid-cols-3 border border-[#cccccc]">
+      <div className="relative grid h-8 grid-cols-3 border border-[var(--table-border)]">
         <div className="bg-[#f3f3f3]" />
-        <div className="border-x border-[#cccccc] bg-white" />
+        <div className="border-x border-[var(--table-border)] bg-white" />
         <div className="bg-[#f8efe8]" />
         <div
-          className="absolute top-[-5px] h-0 w-0 border-x-[6px] border-t-[10px] border-x-transparent border-t-[#333333]"
+          className="absolute top-[-5px] h-0 w-0 border-x-[6px] border-t-[10px] border-x-transparent border-t-[var(--foreground)]"
           style={{ left: `calc(${percentile}% - 6px)` }}
         />
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-[#5e5e5e]">
+      <div className="mt-1 flex justify-between text-[10px] text-[var(--ink-soft)]">
         <span>后段</span>
         <span>中位</span>
         <span>前段</span>
@@ -303,7 +303,7 @@ export function CumulativeReturnResearch({
 function AnnualReturnTable({ model }: { model: KOLBacktestViewModel }) {
   return (
     <div className="overflow-hidden">
-      <div className="mb-2 text-xs font-semibold text-[#1e1e1e]">
+      <div className="mb-2 text-xs font-semibold text-[var(--foreground)]">
         年度审计表
       </div>
       <table className="top-rule-table">
@@ -423,7 +423,7 @@ export function RiskReturnResearch({ model }: { model: KOLBacktestViewModel }) {
     <ResearchBlock
       title="Risk Return Scatter"
       meta={`${model.cohort.peerCount} 位同类 KOL / 中位线为同类样本`}
-      note="横轴越低代表观点组合波动越小；纵轴越高代表年化收益越强。蓝点为当前 KOL，酒红点为同类样本。"
+      note="横轴越低代表观点组合波动越小；纵轴越高代表年化收益越强。酒红点为当前 KOL，深蓝点为同类样本。"
     >
       <BaseEChart
         option={option}
@@ -462,15 +462,15 @@ export function MetricPercentileTable({
                 <td>
                   <div className="flex items-center gap-1.5 font-medium text-[var(--foreground)]">
                     {row.metric}
-                    <Info className="h-3.5 w-3.5 text-[#ababab]" />
+                    <Info className="h-3.5 w-3.5 text-[var(--ink-soft)]" />
                   </div>
-                  <div className="mt-1 text-[11px] text-[#5e5e5e]">
+                  <div className="mt-1 text-[11px] text-[var(--ink-soft)]">
                     {row.direction === "higher_is_better" ? "越高越好" : "越低越好"}
                   </div>
                 </td>
                 <td className="text-[var(--foreground)]">
                   优于
-                  <span className="px-1 font-semibold text-[var(--chart-down)]">
+                  <span className="px-1 font-semibold text-[var(--foreground)]">
                     {row.percentile}%
                   </span>
                   同类
@@ -478,10 +478,10 @@ export function MetricPercentileTable({
                 <td className="text-right font-semibold tabular-nums text-[var(--foreground)]">
                   {row.subjectDisplay}
                 </td>
-                <td className="text-right tabular-nums text-[#5e5e5e]">
+                <td className="text-right tabular-nums text-[var(--ink-soft)]">
                   {row.cohortDisplay}
                 </td>
-                <td className="max-w-[280px] text-xs leading-5 text-[#5e5e5e]">
+                <td className="max-w-[280px] text-xs leading-5 text-[var(--ink-soft)]">
                   {row.note}
                 </td>
               </tr>
@@ -519,7 +519,7 @@ export function TopCallsTable({ model }: { model: KOLBacktestViewModel }) {
               <tr key={call.id}>
                 <td className="font-semibold text-[var(--foreground)]">{call.ticker}</td>
                 <td className="text-[var(--foreground)]">{call.name}</td>
-                <td className="text-[#5e5e5e]">{call.topic}</td>
+                <td className="text-[var(--ink-soft)]">{call.topic}</td>
                 <td>
                   <span className="inline-flex items-center gap-1 border border-[var(--table-border)] px-2 py-0.5 text-xs text-[var(--foreground)]">
                     {call.direction === "long" ? (
@@ -539,7 +539,7 @@ export function TopCallsTable({ model }: { model: KOLBacktestViewModel }) {
                 <td className={cn("font-semibold tabular-nums", returnTone(call.result))}>
                   {formatReturn(call.result)}
                 </td>
-                <td className="tabular-nums text-[#5e5e5e]">
+                <td className="tabular-nums text-[var(--ink-soft)]">
                   {call.updatedAt}
                 </td>
               </tr>
@@ -575,12 +575,12 @@ export function MethodologyStrip({ model }: { model: KOLBacktestViewModel }) {
       {items.map((item) => {
         const Icon = item.icon;
         return (
-          <div key={item.title} className="border-t-2 border-[#333333] bg-white p-5">
-            <Icon className="h-9 w-9 text-[#1e1e1e]" strokeWidth={1.4} />
-            <h3 className="mt-4 text-base font-semibold tracking-normal text-[#1e1e1e]">
+          <div key={item.title} className="border-t-2 border-[var(--foreground)] bg-white p-5">
+            <Icon className="h-9 w-9 text-[var(--foreground)]" strokeWidth={1.4} />
+            <h3 className="mt-4 text-base font-semibold tracking-normal text-[var(--foreground)]">
               {item.title}
             </h3>
-            <p className="mt-2 text-sm leading-6 text-[#5e5e5e]">{item.body}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">{item.body}</p>
           </div>
         );
       })}

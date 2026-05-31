@@ -22,6 +22,7 @@ import type { BacktestTask } from "@/lib/contracts";
 import { useAsyncData } from "@/lib/hooks/useAsyncData";
 import { listBacktestResults, deleteBacktestResult, ApiError } from "@/lib/api-client";
 import { backtestSummaryToTask } from "@/lib/adapters";
+import { returnToneClass } from "@/lib/finance-format";
 
 function getStatusIcon(status: BacktestTask["status"]) {
   switch (status) {
@@ -159,7 +160,7 @@ export default function BacktestManagePage() {
             return (
               <div
                 key={task.id}
-                className="bg-white border border-stone-200 rounded-lg p-4 hover:border-stone-300 transition-colors"
+                className="editorial-card p-4"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -198,17 +199,15 @@ export default function BacktestManagePage() {
 
                     {/* Metrics */}
                     {task.metrics && (
-                      <div className="flex items-center gap-6 mt-3 pt-3 border-t border-stone-100">
+                      <div className="flex items-center gap-6 mt-3 pt-3 border-t border-[var(--grid-line)]">
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-foreground/50">
                             总收益
                           </span>
                           <span
                             className={cn(
-                              "text-sm font-bold flex items-center gap-1",
-                              task.metrics.totalReturn >= 0
-                                ? "text-green-600"
-                                : "text-red-600",
+                              "text-sm font-bold tabular-nums flex items-center gap-1",
+                              returnToneClass(task.metrics.totalReturn),
                             )}
                           >
                             {task.metrics.totalReturn >= 0 ? (
@@ -223,7 +222,7 @@ export default function BacktestManagePage() {
                           <span className="text-xs text-foreground/50">
                             夏普
                           </span>
-                          <span className="text-sm font-bold">
+                          <span className="text-sm font-bold tabular-nums">
                             {task.metrics.sharpeRatio.toFixed(2)}
                           </span>
                         </div>
@@ -231,8 +230,8 @@ export default function BacktestManagePage() {
                           <span className="text-xs text-foreground/50">
                             最大回撤
                           </span>
-                          <span className="text-sm font-bold text-red-600">
-                            {task.metrics.maxDrawdown.toFixed(1)}%
+                          <span className="text-sm font-bold tabular-nums text-[color:var(--chart-down)]">
+                            -{Math.abs(task.metrics.maxDrawdown).toFixed(1)}%
                           </span>
                         </div>
                       </div>

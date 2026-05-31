@@ -27,7 +27,7 @@ export default function KOLBacktestIndexPage() {
   }, [results, params.id, router]);
 
   return (
-    <main className="min-h-screen bg-[#f3efe7]">
+    <main className="min-h-screen bg-[var(--background)]">
       <div className="container py-8">
         <Link
           href={`/kol/${params.id}`}

@@ -20,28 +20,7 @@ import type { NameLineage } from "@/lib/contracts";
 import { useAsyncData } from "@/lib/hooks/useAsyncData";
 import { getKOLRating } from "@/lib/api-client";
 import { kolRatingToDetail } from "@/lib/adapters";
-
-function getDirectionColor(direction: string): string {
-  switch (direction) {
-    case "bullish":
-      return "text-green-600 bg-green-50";
-    case "bearish":
-      return "text-red-600 bg-red-50";
-    default:
-      return "text-amber-600 bg-amber-50";
-  }
-}
-
-function getDirectionLabel(direction: string): string {
-  switch (direction) {
-    case "bullish":
-      return "看多";
-    case "bearish":
-      return "看空";
-    default:
-      return "中性";
-  }
-}
+import { directionStyle, returnToneClass } from "@/lib/finance-format";
 
 /** Display name lineage for an asset, showing all known names across pipeline stages. */
 function NameLineageDisplay({ lineage }: { lineage: NameLineage }) {
@@ -151,8 +130,8 @@ export default function KOLDetailPage() {
           </p>
         </div>
         <div className="text-right">
-          <div className="text-3xl font-bold">{kol.overallScore.toFixed(1)}</div>
-          <div className="text-xs text-foreground/50 uppercase tracking-wider">
+          <div className="text-3xl font-bold tabular-nums">{kol.overallScore.toFixed(1)}</div>
+          <div className="text-[10px] text-foreground/45 uppercase tracking-[0.16em] font-bold">
             综合评分
           </div>
         </div>
@@ -160,22 +139,22 @@ export default function KOLDetailPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white border border-stone-200 rounded-lg p-4">
-          <div className="text-xs text-foreground/50 uppercase tracking-wider mb-2">
+        <div className="bg-white border border-[var(--table-border)] rounded-sm p-4">
+          <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-2 font-bold">
             准确率
           </div>
-          <div className="text-2xl font-bold">
+          <div className="text-2xl font-bold tabular-nums">
             {((kol.stats.correctCount / kol.stats.totalOpinions) * 100).toFixed(1)}%
           </div>
         </div>
-        <div className="bg-white border border-stone-200 rounded-lg p-4">
-          <div className="text-xs text-foreground/50 uppercase tracking-wider mb-2">
+        <div className="bg-white border border-[var(--table-border)] rounded-sm p-4">
+          <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-2 font-bold">
             平均收益
           </div>
           <div
             className={cn(
-              "text-2xl font-bold flex items-center gap-2",
-              kol.stats.avgReturn >= 0 ? "text-green-600" : "text-red-600"
+              "text-2xl font-bold tabular-nums flex items-center gap-2",
+              returnToneClass(kol.stats.avgReturn)
             )}
           >
             {kol.stats.avgReturn >= 0 ? (
@@ -186,19 +165,19 @@ export default function KOLDetailPage() {
             {kol.stats.avgReturn.toFixed(1)}%
           </div>
         </div>
-        <div className="bg-white border border-stone-200 rounded-lg p-4">
-          <div className="text-xs text-foreground/50 uppercase tracking-wider mb-2">
+        <div className="bg-white border border-[var(--table-border)] rounded-sm p-4">
+          <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-2 font-bold">
             最大收益
           </div>
-          <div className="text-2xl font-bold text-green-600">
+          <div className={cn("text-2xl font-bold tabular-nums", returnToneClass(kol.stats.maxReturn))}>
             +{kol.stats.maxReturn.toFixed(1)}%
           </div>
         </div>
-        <div className="bg-white border border-stone-200 rounded-lg p-4">
-          <div className="text-xs text-foreground/50 uppercase tracking-wider mb-2">
+        <div className="bg-white border border-[var(--table-border)] rounded-sm p-4">
+          <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-2 font-bold">
             平均持仓
           </div>
-          <div className="text-2xl font-bold">{kol.stats.avgHoldingDays} 天</div>
+          <div className="text-2xl font-bold tabular-nums">{kol.stats.avgHoldingDays} 天</div>
         </div>
       </div>
 
@@ -231,26 +210,28 @@ export default function KOLDetailPage() {
       {/* Tab Content */}
       {activeTab === "timeline" && (
         <div className="space-y-4">
-          {kol.timeline.map((event) => (
+          {kol.timeline.map((event) => {
+            const dir = directionStyle(event.direction);
+            return (
             <div
               key={event.id}
-              className="bg-white border border-stone-200 rounded-lg p-4 hover:border-stone-300 transition-colors"
+              className="bg-white border border-[var(--table-border)] rounded-sm p-4 hover:border-foreground/20 transition-colors"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <span className="font-bold">{event.ticker}</span>
+                    <span className="font-bold tabular-nums">{event.ticker}</span>
                     <span
                       className={cn(
-                        "px-2 py-0.5 text-xs font-medium rounded",
-                        getDirectionColor(event.direction)
+                        "px-2 py-0.5 text-xs font-semibold rounded-sm",
+                        dir.cls
                       )}
                     >
-                      {getDirectionLabel(event.direction)}
+                      {dir.label}
                     </span>
-                    <span className="text-xs text-foreground/50">{event.date}</span>
+                    <span className="text-xs text-foreground/50 tabular-nums">{event.date}</span>
                     {event.contentVersionId && (
-                      <span className="text-[10px] font-mono text-foreground/30 px-1.5 py-0.5 bg-stone-50 rounded">
+                      <span className="text-[10px] font-mono text-foreground/30 px-1.5 py-0.5 bg-[var(--surface-muted)] rounded-sm">
                         {event.contentVersionId}
                       </span>
                     )}
@@ -264,8 +245,8 @@ export default function KOLDetailPage() {
                 {event.return !== undefined && (
                   <div
                     className={cn(
-                      "text-lg font-bold ml-4",
-                      event.return >= 0 ? "text-green-600" : "text-red-600"
+                      "text-lg font-bold tabular-nums ml-4",
+                      returnToneClass(event.return)
                     )}
                   >
                     {event.return >= 0 ? "+" : ""}
@@ -274,7 +255,8 @@ export default function KOLDetailPage() {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -293,7 +275,7 @@ export default function KOLDetailPage() {
                 <div key={key}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium">{labels[key]}</span>
-                    <span className="text-sm font-bold">{value.toFixed(1)}</span>
+                    <span className="text-sm font-bold tabular-nums">{value.toFixed(1)}</span>
                   </div>
                   <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
                     <div

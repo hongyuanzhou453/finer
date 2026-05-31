@@ -379,7 +379,7 @@ export default function Home() {
             </span>
           </div>
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-6">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
             {files.map((file) => {
                const isSelected = selectedAsset?.id === file.id;
                const isExpanded = expandedEntities.has(file.id);
@@ -399,13 +399,13 @@ export default function Home() {
                        }
                      }}
                      className={cn(
-                       "editorial-card group min-h-[198px] overflow-hidden p-5 border cursor-pointer relative",
-                       isSelected ? "border-morningstar-red/30 shadow-md ring-1 ring-morningstar-red/10" : "border-stone-200"
+                       "editorial-card group min-h-0 overflow-hidden p-4 border cursor-pointer relative",
+                       isSelected ? "border-morningstar-red/30 shadow-md ring-1 ring-morningstar-red/10" : "border-[var(--table-border)]"
                      )}
                    >
-                     <div className="flex items-start justify-between gap-3 mb-7">
+                     <div className="flex items-start justify-between gap-3 mb-4">
                        <div className="relative shrink-0">
-                         <div className={cn("p-3.5 rounded-sm shadow-sm", getFileColorClass(file.type))}>
+                         <div className={cn("p-2.5 rounded-sm shadow-sm", getFileColorClass(file.type))}>
                            {getFileIcon(file.type)}
                          </div>
                          {fileTime && (
@@ -416,7 +416,7 @@ export default function Home() {
                        </div>
                          <div className="flex min-w-0 items-center gap-2">
                          {isFolder && tier === "F2" && (
-                           <div className="p-1 rounded hover:bg-stone-100 transition-colors">
+                           <div className="p-1 rounded hover:bg-[var(--surface-muted)] transition-colors">
                              {isExpanded ? (
                                <ChevronDown className="w-4 h-4 text-foreground/50" />
                              ) : (
@@ -425,40 +425,40 @@ export default function Home() {
                            </div>
                          )}
                          <div className={cn(
-                           "max-w-[7.5rem] truncate px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border shadow-sm",
+                           "max-w-[7.5rem] truncate px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border shadow-sm",
                            tier === "F5" || tier === "F6" ? "border-morningstar-red/20 text-morningstar-red bg-morningstar-red/5" :
-                           "border-stone-200 text-foreground/50 bg-white"
+                           "border-[var(--table-border)] text-foreground/50 bg-white"
                          )}>
                            {file.status}
                          </div>
                        </div>
                      </div>
 
-                     <div className="space-y-3">
-                       <h3 className="text-[15px] font-bold leading-tight break-words group-hover:text-morningstar-red transition-colors line-clamp-2">
+                     <div className="space-y-2">
+                       <h3 className="text-[14px] font-bold leading-tight break-words group-hover:text-morningstar-red transition-colors line-clamp-2">
                          {file.semanticTitle || file.name}
                        </h3>
                        <div className="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-foreground/40 font-bold tabular-nums uppercase">
                          {file.fileType && (
                            <>
                              <span className="shrink-0 text-foreground/60">{file.fileType}</span>
-                             <span className="h-1 w-1 shrink-0 rounded-full bg-stone-300" />
+                             <span className="h-1 w-1 shrink-0 rounded-full bg-foreground/20" />
                            </>
                          )}
                          {file.sourceName && (
                            <>
                              <span className="min-w-0 max-w-[9rem] truncate">{file.sourceName}</span>
-                             <span className="h-1 w-1 shrink-0 rounded-full bg-stone-300" />
+                             <span className="h-1 w-1 shrink-0 rounded-full bg-foreground/20" />
                            </>
                          )}
                          <span className="shrink-0">{file.date}</span>
-                         <span className="h-1 w-1 shrink-0 rounded-full bg-stone-300" />
+                         <span className="h-1 w-1 shrink-0 rounded-full bg-foreground/20" />
                          <span className="shrink-0">{file.size}</span>
                        </div>
                      </div>
 
                      <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity translate-x-2 group-hover:translate-x-0 duration-300">
-                       <div className="w-8 h-8 rounded-full bg-white shadow-md border border-stone-100 flex items-center justify-center">
+                       <div className="w-8 h-8 rounded-full bg-white shadow-md border border-[var(--grid-line)] flex items-center justify-center">
                          <ChevronRight className="w-4 h-4 text-morningstar-red" strokeWidth={2} />
                        </div>
                      </div>
@@ -488,7 +488,7 @@ export default function Home() {
                                  manifestPath: content.manifestPath,
                                });
                              }}
-                             className="flex items-center gap-3 p-3 bg-white/80 border border-stone-200 rounded cursor-pointer hover:bg-white hover:border-morningstar-red/20 transition-all"
+                             className="flex items-center gap-3 p-3 bg-white/80 border border-[var(--table-border)] rounded cursor-pointer hover:bg-white hover:border-morningstar-red/20 transition-all"
                            >
                              <div className={cn("p-2 rounded-sm", getFileColorClass(content.type))}>
                                {getFileIcon(content.type)}
@@ -527,8 +527,8 @@ export default function Home() {
                       }
                     }}
                     className={cn(
-                      "flex items-center p-4 border rounded-sm cursor-pointer transition-all group",
-                      isSelected ? "border-morningstar-red/30 shadow-md ring-1 ring-morningstar-red/10 bg-white" : "border-stone-200 bg-white/60 hover:bg-white"
+                      "flex items-center p-3 border rounded-sm cursor-pointer transition-all group",
+                      isSelected ? "border-morningstar-red/30 shadow-md ring-1 ring-morningstar-red/10 bg-white" : "border-[var(--table-border)] bg-white/60 hover:bg-white"
                     )}
                   >
                     <div className="relative">
@@ -546,15 +546,15 @@ export default function Home() {
                         {file.semanticTitle || file.name}
                       </h3>
                       <span className="text-[11px] text-foreground/40 font-bold tabular-nums uppercase mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                        {file.fileType && <><span className="shrink-0">{file.fileType}</span> <span className="h-1 w-1 shrink-0 rounded-full bg-stone-300" /></>}
-                        {file.sourceName && <><span className="min-w-0 max-w-[10rem] truncate">{file.sourceName}</span> <span className="h-1 w-1 shrink-0 rounded-full bg-stone-300" /></>}
-                        <span className="shrink-0">{file.date}</span> <span className="h-1 w-1 shrink-0 rounded-full bg-stone-300" /> <span className="shrink-0">{file.size}</span>
+                        {file.fileType && <><span className="shrink-0">{file.fileType}</span> <span className="h-1 w-1 shrink-0 rounded-full bg-foreground/20" /></>}
+                        {file.sourceName && <><span className="min-w-0 max-w-[10rem] truncate">{file.sourceName}</span> <span className="h-1 w-1 shrink-0 rounded-full bg-foreground/20" /></>}
+                        <span className="shrink-0">{file.date}</span> <span className="h-1 w-1 shrink-0 rounded-full bg-foreground/20" /> <span className="shrink-0">{file.size}</span>
                       </span>
                     </div>
 
-                    <div className="px-4 flex items-center justify-end w-32 border-l border-stone-100 mr-4">
+                    <div className="px-4 flex items-center justify-end w-32 border-l border-[var(--grid-line)] mr-4">
                       {isFolder && tier === "F2" && (
-                        <div className="mr-2 p-1 rounded hover:bg-stone-100 transition-colors">
+                        <div className="mr-2 p-1 rounded hover:bg-[var(--surface-muted)] transition-colors">
                           {isExpanded ? (
                             <ChevronDown className="w-4 h-4 text-foreground/50" />
                           ) : (
@@ -562,7 +562,7 @@ export default function Home() {
                           )}
                         </div>
                       )}
-                      <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border shadow-sm border-stone-200 text-foreground/50 bg-stone-50">
+                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border shadow-sm border-[var(--table-border)] text-foreground/50 bg-[var(--surface-muted)]">
                         {file.status}
                       </span>
                     </div>
@@ -596,7 +596,7 @@ export default function Home() {
                                 manifestPath: content.manifestPath,
                               });
                             }}
-                            className="flex items-center gap-3 p-2 bg-white/80 border border-stone-200 rounded cursor-pointer hover:bg-white hover:border-morningstar-red/20 transition-all"
+                            className="flex items-center gap-3 p-2 bg-white/80 border border-[var(--table-border)] rounded cursor-pointer hover:bg-white hover:border-morningstar-red/20 transition-all"
                           >
                             <div className={cn("p-1.5 rounded-sm", getFileColorClass(content.type))}>
                               {getFileIcon(content.type)}

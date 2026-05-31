@@ -14,22 +14,7 @@ import {
 import { useAsyncData } from "@/lib/hooks/useAsyncData";
 import { listKOLs } from "@/lib/api-client";
 import { kolListItemToKOL } from "@/lib/adapters";
-
-function getScoreColor(score: number): string {
-  if (score >= 4.5) return "text-green-600";
-  if (score >= 4.0) return "text-blue-600";
-  if (score >= 3.5) return "text-amber-600";
-  return "text-stone-500";
-}
-
-function getPlatformLabel(platform: string): string {
-  const labels: Record<string, string> = {
-    wechat: "微信公众号",
-    bilibili: "B站",
-    feishu: "飞书",
-  };
-  return labels[platform] || platform;
-}
+import { platformLabel, returnToneClass, scoreToneClass } from "@/lib/finance-format";
 
 export default function KOLListPage() {
   const [sortBy, setSortBy] = useState<"score" | "accuracy" | "return">("score");
@@ -127,44 +112,44 @@ export default function KOLListPage() {
             <Link
               key={kol.id}
               href={`/kol/${kol.id}`}
-              className="group bg-white border border-stone-200 rounded-lg p-6 hover:border-morningstar-red/30 hover:shadow-md transition-all"
+              className="editorial-card group block p-5"
             >
               {/* Header */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-stone-100 rounded-full flex items-center justify-center">
-                    <Users className="w-6 h-6 text-stone-400" />
+                  <div className="w-12 h-12 bg-[var(--surface-muted)] rounded-sm flex items-center justify-center">
+                    <Users className="w-6 h-6 text-foreground/35" strokeWidth={1.5} />
                   </div>
                   <div>
                     <h3 className="font-bold group-hover:text-morningstar-red transition-colors">
                       {kol.name}
                     </h3>
                     <span className="text-xs text-foreground/50">
-                      {getPlatformLabel(kol.platform)}
+                      {platformLabel(kol.platform)}
                     </span>
                   </div>
                 </div>
-                <div className={cn("text-2xl font-bold", getScoreColor(kol.overallScore))}>
+                <div className={cn("text-2xl font-bold tabular-nums", scoreToneClass(kol.overallScore))}>
                   {kol.overallScore.toFixed(1)}
                 </div>
               </div>
 
               {/* Stats */}
-              <div className="grid grid-cols-3 gap-4 py-4 border-t border-stone-100">
+              <div className="grid grid-cols-3 gap-4 py-4 border-t border-[var(--grid-line)]">
                 <div>
-                  <div className="text-xs text-foreground/50 uppercase tracking-wider mb-1">
+                  <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-1 font-bold">
                     准确率
                   </div>
-                  <div className="text-lg font-bold">{kol.accuracy}%</div>
+                  <div className="text-lg font-bold tabular-nums">{kol.accuracy}%</div>
                 </div>
                 <div>
-                  <div className="text-xs text-foreground/50 uppercase tracking-wider mb-1">
+                  <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-1 font-bold">
                     平均收益
                   </div>
                   <div
                     className={cn(
-                      "text-lg font-bold flex items-center gap-1",
-                      kol.avgReturn >= 0 ? "text-green-600" : "text-red-600"
+                      "text-lg font-bold tabular-nums flex items-center gap-1",
+                      returnToneClass(kol.avgReturn)
                     )}
                   >
                     {kol.avgReturn >= 0 ? (
@@ -176,26 +161,26 @@ export default function KOLListPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-foreground/50 uppercase tracking-wider mb-1">
+                  <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-1 font-bold">
                     观点数
                   </div>
-                  <div className="text-lg font-bold">{kol.totalOpinions}</div>
+                  <div className="text-lg font-bold tabular-nums">{kol.totalOpinions}</div>
                 </div>
               </div>
 
               {/* Tags & Activity */}
-              <div className="flex items-center justify-between pt-4 border-t border-stone-100">
+              <div className="flex items-center justify-between pt-4 border-t border-[var(--grid-line)]">
                 <div className="flex gap-1.5 flex-wrap">
                   {kol.tags.slice(0, 2).map((tag) => (
                     <span
                       key={tag}
-                      className="px-2 py-0.5 text-[10px] font-medium bg-stone-100 text-foreground/60 rounded"
+                      className="px-2 py-0.5 text-[10px] font-medium bg-[var(--surface-muted)] text-foreground/60 rounded-sm"
                     >
                       {tag}
                     </span>
                   ))}
                 </div>
-                <div className="flex items-center gap-1 text-xs text-foreground/40">
+                <div className="flex items-center gap-1 text-xs text-foreground/40 tabular-nums">
                   <Calendar className="w-3 h-3" />
                   {kol.lastActive}
                 </div>

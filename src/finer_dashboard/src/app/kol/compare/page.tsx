@@ -12,6 +12,7 @@ import {
   TrendingDown,
 } from "lucide-react";
 import type { KOL } from "@/lib/contracts";
+import { returnToneClass } from "@/lib/finance-format";
 
 const availableKOLs: KOL[] = [
   { id: "kol-1", name: "投研老王", platform: "wechat", platformId: "xxx123", overallScore: 4.2, dimensionScores: { accuracy: 4.5, timeliness: 4.0, clarity: 3.8, depth: 4.2, consistency: 4.3 }, accuracy: 68, avgReturn: 12.5, totalOpinions: 156, lastActive: "2026-04-23", tags: ["科技", "半导体"], enabled: true },
@@ -130,29 +131,29 @@ export default function KOLComparePage() {
               <Link
                 key={kol.id}
                 href={`/kol/${kol.id}`}
-                className="bg-white border border-stone-200 rounded-lg p-4 hover:border-morningstar-red/30 hover:shadow-md transition-all"
+                className="editorial-card block p-4"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center">
-                    <Users className="w-5 h-5 text-stone-400" />
+                  <div className="w-10 h-10 bg-[var(--surface-muted)] rounded-sm flex items-center justify-center">
+                    <Users className="w-5 h-5 text-foreground/35" strokeWidth={1.5} />
                   </div>
                   <div className="font-bold">{kol.name}</div>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-foreground/60">评分</span>
-                    <span className="font-bold">{kol.overallScore.toFixed(1)}</span>
+                    <span className="font-bold tabular-nums">{kol.overallScore.toFixed(1)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-foreground/60">准确率</span>
-                    <span className="font-bold">{kol.accuracy}%</span>
+                    <span className="font-bold tabular-nums">{kol.accuracy}%</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-foreground/60">平均收益</span>
                     <span
                       className={cn(
-                        "font-bold flex items-center gap-1",
-                        kol.avgReturn >= 0 ? "text-green-600" : "text-red-600"
+                        "font-bold tabular-nums flex items-center gap-1",
+                        returnToneClass(kol.avgReturn)
                       )}
                     >
                       {kol.avgReturn >= 0 ? (
@@ -169,9 +170,9 @@ export default function KOLComparePage() {
           </div>
 
           {/* Comparison Table */}
-          <div className="bg-white border border-stone-200 rounded-lg overflow-hidden mb-8">
+          <div className="bg-white border border-[var(--table-border)] rounded-sm overflow-hidden mb-8">
             <table className="w-full text-sm">
-              <thead className="bg-stone-50 border-b border-stone-200">
+              <thead className="bg-[var(--table-header-bg)] border-b border-[var(--table-border)]">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium text-foreground/60">
                     指标
@@ -187,7 +188,7 @@ export default function KOLComparePage() {
                 {metrics.map((metric) => {
                   const best = getBestKOL(metric);
                   return (
-                    <tr key={metric} className="border-b border-stone-100 last:border-0">
+                    <tr key={metric} className="border-b border-[var(--grid-line)] last:border-0">
                       <td className="px-4 py-3 text-foreground/60">
                         {metricLabels[metric]}
                       </td>
@@ -195,8 +196,8 @@ export default function KOLComparePage() {
                         <td
                           key={kol.id}
                           className={cn(
-                            "px-4 py-3 text-center font-bold",
-                            kol.id === best.id && "text-green-600"
+                            "px-4 py-3 text-center font-bold tabular-nums",
+                            kol.id === best.id && "text-morningstar-red"
                           )}
                         >
                           {metric === "overallScore"
