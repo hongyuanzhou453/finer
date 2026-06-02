@@ -235,6 +235,17 @@ async def run_canonical_extraction(
     # F1: Build minimal ContentEnvelope from raw text (legacy path)
     envelope = _build_envelope(text, context)
 
+    # Quality Gate: reject envelopes that fail quality gate before F3
+    from finer.services.quality_gate import evaluate_envelope_quality
+
+    gate_result = evaluate_envelope_quality(envelope)
+    if gate_result.status == "reject":
+        logger.info(
+            "Envelope %s rejected by quality gate (score=%.2f, reasons=%s)",
+            envelope.envelope_id, gate_result.score, gate_result.reasons,
+        )
+        return []
+
     # F3: Intent extraction
     from finer.extraction.intent_extractor import RuleBasedIntentExtractor
 

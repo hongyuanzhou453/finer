@@ -320,8 +320,9 @@ class TestTradeActionExtractor:
             llm_client=None,
             finance_client=mock_finance_client,
         )
-
-        result = await extractor.extract_from_text("Test text")
+        # Mock get_text_registry to prevent auto-creating a client
+        with patch("finer.model_config.get_text_registry", side_effect=RuntimeError("no registry in test")):
+            result = await extractor.extract_from_text("Test text")
 
         assert result.success is False
         assert "No LLM client" in result.error

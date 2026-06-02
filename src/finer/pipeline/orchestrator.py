@@ -649,6 +649,7 @@ class PipelineOrchestrator:
         try:
             from finer.extraction.trade_action_extractor import TradeActionExtractor
 
+            # DEPRECATED: Use canonical_action_builder via golden_path.py instead
             extractor = TradeActionExtractor(enable_enrichment=True)
             context = {
                 "source_id": content_id,

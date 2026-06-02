@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import re
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -449,6 +450,11 @@ class TradeActionExtractor:
         Returns:
             ExtractionResult with extracted actions
         """
+        warnings.warn(
+            "extract_from_text is deprecated — use CanonicalActionBuilder via F3→F4→F5 canonical pipeline",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         llm = await self._ensure_llm_client()
         if not llm:
             logger.error("No LLM client available")
@@ -541,6 +547,11 @@ class TradeActionExtractor:
         Returns:
             ExtractionResult with extracted actions
         """
+        warnings.warn(
+            "extract_from_file is deprecated — use CanonicalActionBuilder via F3→F4→F5 canonical pipeline",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         path = Path(file_path)
 
         if not path.exists():
@@ -592,6 +603,11 @@ class TradeActionExtractor:
         Returns:
             List of ExtractionResult in same order as input
         """
+        warnings.warn(
+            "batch_extract is deprecated — use CanonicalActionBuilder via F3→F4→F5 canonical pipeline",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not parallel:
             # Sequential processing
             results = []
@@ -775,8 +791,15 @@ class TradeActionExtractor:
         Returns:
             TradeActionBatch with all actions
         """
-        # Step 1: Extract
-        result = await self.extract_from_text(text, context)
+        warnings.warn(
+            "extract_with_enrichment is deprecated — use CanonicalActionBuilder via F3→F4→F5 canonical pipeline",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Step 1: Extract (suppress inner DeprecationWarning to avoid double-warn)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            result = await self.extract_from_text(text, context)
 
         if not result.success or not result.actions:
             return TradeActionBatch(

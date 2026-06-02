@@ -143,6 +143,7 @@ def test_delete_requires_sensitive_auth(app_with_api_key):
 
 def test_jwt_auth():
     """Test JWT token authentication."""
+    pytest.importorskip("jwt", reason="pyjwt not installed")
     app = FastAPI()
 
     @app.get("/api/protected")

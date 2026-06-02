@@ -321,6 +321,9 @@ cd src/finer_dashboard && npx tsc --noEmit
 ## 9. 启动命令参考
 
 ```bash
+# 安装（含行情数据可选依赖）
+pip install -e '.[dev,market-data]'
+
 # 后端 API
 uvicorn finer.api.server:app --reload --port 8000
 

@@ -66,6 +66,17 @@ def run_golden_path(
     """
     data_root = Path(data_root)
 
+    # ── Quality Gate: reject envelopes that fail quality gate before F3 ──────
+    from finer.services.quality_gate import evaluate_envelope_quality
+
+    gate_result = evaluate_envelope_quality(envelope)
+    if gate_result.status == "reject":
+        raise ValueError(
+            f"Envelope {envelope.envelope_id} rejected by quality gate "
+            f"(score={gate_result.score:.2f}, reasons={gate_result.reasons}). "
+            f"Cannot proceed to F3 intent extraction."
+        )
+
     # ── F3: Intent Extraction ────────────────────────────────────────────────
     extractor = LLMIntentExtractor(
         router=ModelRouter(),

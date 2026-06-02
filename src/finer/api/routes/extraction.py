@@ -186,6 +186,7 @@ async def extract_trade_actions(request: ExtractionRequest):
 
 @router.post("/batch", response_model=List[ExtractionResponse])
 async def batch_extract(request: BatchExtractionRequest):
+    # DEPRECATED: Legacy extraction endpoint. New code should use canonical F3→F4→F5 pipeline.
     """批量提取 Trade Actions.
 
     Args:

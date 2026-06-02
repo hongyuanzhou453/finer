@@ -62,3 +62,6 @@ src/*.png
 src/finer_dashboard/*.png
 src/finer_dashboard/*.txt
 .mcp.json
+
+# External Go project with sensitive certs (TD-01)
+scripts/wx_channels_download/

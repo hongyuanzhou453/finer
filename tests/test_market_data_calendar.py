@@ -8,6 +8,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+# Skip entire module if market-data optional deps are missing
+pytest.importorskip("duckdb", reason="market-data extras not installed (pip install 'finer[market-data]')")
+pytest.importorskip("pyarrow", reason="market-data extras not installed")
+
 from finer.market_data.providers import TushareCalendarProvider
 from finer.market_data.storage import write_trade_cal
 
