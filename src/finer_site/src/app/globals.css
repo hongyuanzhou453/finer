@@ -1,0 +1,205 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-morningstar-red: #e11b22;
+  --color-success: #10b981;
+  --color-border: #e2e8f0;
+}
+
+:root {
+  --font-ui-sans: "Inter", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial;
+  --font-ui-mono: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo;
+  --font-display-serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "STSong";
+  --background: #f3efe7;
+  --foreground: #181512;
+  --card-bg: rgba(255, 252, 247, 0.86);
+  --surface-muted: rgba(99, 76, 55, 0.06);
+  --surface-strong: rgba(255, 255, 255, 0.88);
+  --grid-line: rgba(54, 38, 24, 0.1);
+  --ink-soft: rgba(24, 21, 18, 0.64);
+  --morningstar-red: #9f1d22;
+  --accent-gold: #9b7b45;
+  --accent-teal: #1f6a67;
+  --shadow-soft: 0 12px 30px rgba(64, 44, 27, 0.08);
+  --shadow-panel: 0 18px 48px rgba(56, 39, 24, 0.1);
+  /* Morningstar Chart & Data Tokens */
+  --chart-benchmark: #1e293b;
+  --chart-peer: #94a3b8;
+  --chart-drawdown: rgba(159, 29, 34, 0.15);
+  --chart-up: #e11b22;
+  --chart-down: #10b981;
+  --table-border: #cbd5e1;
+  --table-header-bg: #f8fafc;
+}
+
+/* Base Body Styles */
+html {
+  background-color: #f4f6f8;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-ui-sans), "PingFang SC", "Hiragino Sans GB", sans-serif;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, transparent 0, transparent calc(100% - 1px), var(--grid-line) calc(100% - 1px)),
+    linear-gradient(to bottom, transparent 0, transparent calc(100% - 1px), var(--grid-line) calc(100% - 1px));
+  background-size: 48px 48px;
+  opacity: 0.15;
+  mix-blend-mode: multiply;
+}
+
+/* Financial Typography */
+h1, h2, h3, h4 {
+  font-family: var(--font-display-serif), "Songti SC", "STSong", serif;
+  font-weight: 600;
+  color: #12100d;
+  letter-spacing: -0.02em;
+}
+
+.tabular-nums {
+  font-family: var(--font-ui-mono), "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Morningstar Styled Panels */
+.editorial-panel {
+  background: var(--surface-strong);
+  border: 1px solid var(--table-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.editorial-card {
+  background: var(--surface-strong);
+  border: 1px solid var(--table-border);
+  border-top: 3px solid transparent;
+  transition: border-color 0.22s ease;
+}
+
+.editorial-card:hover {
+  border-top-color: var(--morningstar-red);
+}
+
+::selection {
+  background: rgba(159, 29, 34, 0.16);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* Custom Scrollbar */
+.finer-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.finer-scrollbar::-webkit-scrollbar-track {
+  background: rgba(110, 88, 60, 0.06);
+}
+.finer-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(88, 63, 35, 0.22);
+  border-radius: 10px;
+}
+.finer-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(88, 63, 35, 0.36);
+}
+
+/* Container for new pages */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+/* Data Table & Top Rule Styles */
+.top-rule-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.2;
+}
+
+.top-rule-table th,
+.top-rule-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.top-rule-table thead {
+  border-top: 2px solid var(--foreground);
+  border-bottom: 1px solid var(--foreground);
+  background-color: var(--table-header-bg);
+}
+
+.top-rule-table th {
+  font-weight: 600;
+  color: var(--foreground);
+  text-align: left;
+}
+
+.top-rule-table .text-right {
+  text-align: right;
+}
+
+.top-rule-table td.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Segmented Controls */
+.segmented-control {
+  display: inline-flex;
+  background-color: #e2e8f0;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.segmented-control button {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.segmented-control button[aria-selected="true"] {
+  background-color: #ffffff;
+  color: var(--foreground);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Research Panel */
+.research-panel {
+  background: #ffffff;
+  border: 1px solid var(--table-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.research-panel-header {
+  border-bottom: 1px solid var(--table-border);
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  background-color: var(--table-header-bg);
+}
+.research-panel-body {
+  padding: 1rem;
+}
