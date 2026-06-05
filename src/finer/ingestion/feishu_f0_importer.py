@@ -233,6 +233,65 @@ def import_feishu_transcript(
     )
 
 
+def import_feishu_export_all(
+    *,
+    source_path: Path | str,
+    chat_id: str,
+    chat_name: str,
+    creator_id: str = "maodaren",
+    creator_name: str = "猫大人FIRE",
+    canonical_creator_id: str = "kol_cat_lord_fire",
+    data_root: Path | str = Path("data"),
+    collected_at: datetime | None = None,
+) -> FeishuF0ImportResult:
+    """Import *every* parsed message from a Feishu export into F0 records.
+
+    Convenience wrapper over :func:`import_feishu_transcript` that auto-builds a
+    selection for each parsed message (so the live sync path does not have to
+    enumerate selections by hand). Returns an empty-items result if the export
+    contains no parseable messages.
+    """
+    messages = parse_feishu_export(source_path)
+    selections = [
+        FeishuMessageSelection(
+            timestamp=message.timestamp,
+            sender_id=message.sender_id,
+            message_type=message.message_type,
+            occurrence=message.occurrence,
+        )
+        for message in messages
+    ]
+    if not selections:
+        source = Path(source_path)
+        source_bytes = source.read_bytes()
+        source_hash = _sha256_bytes(source_bytes)
+        archived_export_path = _archive_export(
+            source=source,
+            source_hash=source_hash,
+            data_root=Path(data_root),
+            chat_id=chat_id,
+        )
+        return FeishuF0ImportResult(
+            chat_id=chat_id,
+            source_export_path=source,
+            archived_export_path=archived_export_path,
+            source_export_sha256=source_hash,
+            items=[],
+        )
+
+    return import_feishu_transcript(
+        source_path=source_path,
+        selections=selections,
+        chat_id=chat_id,
+        chat_name=chat_name,
+        creator_id=creator_id,
+        creator_name=creator_name,
+        canonical_creator_id=canonical_creator_id,
+        data_root=data_root,
+        collected_at=collected_at,
+    )
+
+
 def freeze_feishu_f0_pack(
     *,
     result: FeishuF0ImportResult,

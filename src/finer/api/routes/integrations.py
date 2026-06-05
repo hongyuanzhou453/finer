@@ -2,17 +2,26 @@ from fastapi import APIRouter
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from pathlib import Path
+import hashlib
+import json
+import logging
 import os
 import shutil
+import subprocess
 from datetime import datetime
 
 from finer.config import load_feishu_config
-from finer.ingestion.feishu_poller import FeishuPoller, SyncState
 from finer.ingestion.classifier import FileClassifier
-from finer.ingestion.vision_utils import VisionDescriptor, get_vision_transcript_path
+from finer.ingestion.feishu_poller import FeishuPoller, SyncState
+from finer.ingestion.nlm_sync import resolve_nlm_cli
 from finer.manifests import ContentManifest, _infer_file_type, build_content_id, write_manifest, register_file
-from finer.paths import REPO_ROOT, DATA_ROOT
+from finer.paths import REPO_ROOT, DATA_ROOT, f0_raw_dir, f0_record_path, f0_receipt_path
+from finer.schemas.content import ContentRecord
+from finer.schemas.import_receipt import ImportReceipt
+from finer.utils.time import now_utc
 from finer.errors import FinerError, ErrorCode
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -43,6 +52,214 @@ class NLMFetchRequest(BaseModel):
 class ImportRequest(BaseModel):
     filenames: List[str]
     pool_type: str = "feishu"  # feishu or nlm
+
+
+# ── NotebookLM F0 constants (GATE canonical) ───────────────────────────────
+# A NotebookLM source is intake source_type ``nlm_note`` on platform ``nlm``.
+# The ImportReceipt routes under the coarse ``notebooklm`` channel; the finer
+# per-channel kind is ``nlm_note``.
+NLM_PLATFORM = "nlm"
+NLM_SOURCE_TYPE = "nlm_note"
+NLM_SOURCE_CHANNEL = "notebooklm"
+NLM_SOURCE_KIND = "nlm_note"
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _register_f0_index(record: ContentRecord, receipt: ImportReceipt) -> None:
+    """Best-effort Project Memory registration for a successful F0 import.
+
+    Idempotent (``F0IndexWriter.record_imported`` uses INSERT OR IGNORE). Any
+    failure (PM DB missing/locked) is logged and swallowed so an import is never
+    lost just because the hot index could not be updated. Tests patch this to a
+    no-op to avoid writing to the live project database.
+    """
+    try:
+        from finer.ingestion.f0_index_writer import F0IndexWriter
+
+        F0IndexWriter().record_imported(record, receipt)
+    except Exception as exc:  # pragma: no cover - PM availability is environmental
+        logger.warning(
+            "Project Memory registration skipped for %s: %s",
+            record.content_id,
+            exc,
+        )
+
+
+def _build_nlm_receipt(
+    *,
+    record: ContentRecord,
+    record_path: Path,
+    raw_path: str,
+    raw_sha256: str,
+    status: str = "completed",
+    records_created: int = 1,
+    records_skipped: int = 0,
+) -> ImportReceipt:
+    """Build the GATE ImportReceipt for one fetched NotebookLM source."""
+    finished = now_utc()
+    return ImportReceipt(
+        run_id=f"nlm_{record.content_id}",
+        source_channel=NLM_SOURCE_CHANNEL,
+        source_kind=NLM_SOURCE_KIND,
+        status=status,
+        content_id=record.content_id,
+        external_source_id=record.external_source_id,
+        dedupe_fingerprint=record.dedupe_fingerprint,
+        collected_at=record.collected_at,
+        started_at=finished,
+        finished_at=finished,
+        raw_sha256={"nlm_markdown": raw_sha256},
+        raw_paths={"nlm_markdown": raw_path},
+        record_path=str(record_path),
+        records_created=records_created,
+        records_skipped=records_skipped,
+    )
+
+
+def _fetch_nlm_notebook_core(notebook_id: str) -> Dict[str, Any]:
+    """Fetch all sources of a NotebookLM notebook into F0 (ContentRecord + PM).
+
+    Shared by ``POST /nlm/fetch`` and the NotebookLM branch of
+    ``POST /api/sources/refresh`` so both produce canonical F0 output with
+    dedupe + Project Memory registration. Raises ``FinerError`` on upstream
+    failure; per-source errors are counted, not raised.
+    """
+    config = load_feishu_config(REPO_ROOT)
+    nlm_cli_path = resolve_nlm_cli(config.get("notebooklm", {}).get("nlm_cli_path"))
+
+    try:
+        res = subprocess.run(
+            [nlm_cli_path, "source", "list", notebook_id, "--json"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        sources = json.loads(res.stdout)
+    except FileNotFoundError as e:
+        raise FinerError(
+            ErrorCode.NLM_EXT_001,
+            f"nlm CLI not found at '{nlm_cli_path}'. Install nlm or set "
+            "notebooklm.nlm_cli_path.",
+            stage="F0",
+            operation="nlm_fetch",
+            source_channel=NLM_SOURCE_CHANNEL,
+            retryable=False,
+            cause=e,
+        ) from e
+    except Exception as e:
+        raise FinerError(
+            ErrorCode.NLM_EXT_001,
+            f"Error listing NLM sources: {e}",
+            stage="F0",
+            operation="nlm_fetch",
+            source_channel=NLM_SOURCE_CHANNEL,
+            retryable=True,
+            cause=e,
+        ) from e
+
+    downloaded: List[str] = []
+    skipped: List[str] = []
+    errors = 0
+    record_dir = f0_record_path(NLM_PLATFORM, "_").parent
+    raw_dir = f0_raw_dir(NLM_PLATFORM, notebook_id)
+    record_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    for source in sources:
+        source_id = source.get("id")
+        title = source.get("title", f"Unknown_Source_{source_id}")
+        # NotebookLM source_id is a stable platform-native id -> external_source_id
+        external_source_id = f"nlm:{notebook_id}:{source_id}"
+        content_id = f"nlm_{hashlib.sha256(external_source_id.encode('utf-8')).hexdigest()[:24]}"
+
+        record_path = f0_record_path(NLM_PLATFORM, content_id)
+        if record_path.exists():
+            # Dedupe: this NLM source already imported as an F0 ContentRecord.
+            skipped.append(title)
+            continue
+
+        try:
+            content_res = subprocess.run(
+                [nlm_cli_path, "source", "content", source_id],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            source_data = json.loads(content_res.stdout)
+            content_text = source_data.get("value", {}).get("content", "")
+            if not content_text:
+                continue
+
+            nlm_source_type = source_data.get("value", {}).get("source_type", "unknown")
+            md_content = (
+                f"# {title}\n\n"
+                f"- **Notebook ID**: {notebook_id}\n"
+                f"- **Source ID**: {source_id}\n"
+                f"- **Type**: {nlm_source_type}\n\n"
+                "---\n\n"
+                f"{content_text}"
+            )
+            raw_bytes = md_content.encode("utf-8")
+            raw_sha256 = _sha256_bytes(raw_bytes)
+            raw_path = raw_dir / f"{content_id}.md"
+            raw_path.write_bytes(raw_bytes)
+
+            collected = now_utc()
+            record = ContentRecord(
+                content_id=content_id,
+                source_type=NLM_SOURCE_TYPE,
+                source_platform=NLM_PLATFORM,
+                creator_id="notebooklm",
+                creator_name="notebooklm",
+                published_at=None,
+                collected_at=collected,
+                title=title,
+                raw_path=str(raw_path),
+                file_type=_infer_file_type(raw_path.suffix),
+                metadata={
+                    "nlm_notebook_id": notebook_id,
+                    "nlm_source_id": source_id,
+                    "nlm_source_type": nlm_source_type,
+                    "registered_via": "nlm-fetch",
+                    "raw_sha256": raw_sha256,
+                },
+                external_source_id=external_source_id,
+                dedupe_fingerprint=_sha256_bytes(
+                    external_source_id.encode("utf-8") + b"\0" + raw_bytes
+                ),
+                language="zh",
+                market_scope=["US", "HK", "A"],
+            )
+            record_path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
+
+            receipt = _build_nlm_receipt(
+                record=record,
+                record_path=record_path,
+                raw_path=str(raw_path),
+                raw_sha256=raw_sha256,
+            )
+            receipt_path = f0_receipt_path(NLM_PLATFORM, content_id)
+            receipt_path.write_text(receipt.model_dump_json(indent=2), encoding="utf-8")
+
+            _register_f0_index(record, receipt)
+            downloaded.append(title)
+
+        except Exception as inner_e:
+            errors += 1
+            logger.error("Error fetching NLM source %s: %s", source_id, inner_e)
+            continue
+
+    return {
+        "status": "ok",
+        "sources_scanned": len(sources),
+        "downloaded": len(downloaded),
+        "skipped": len(skipped),
+        "errors": errors,
+        "files": downloaded,
+    }
 
 
 @router.get("/feishu/chats")
@@ -151,118 +368,46 @@ async def fetch_feishu_chat(req: FetchRequest):
         )
 
 
-import subprocess
-import json
-
 @router.get("/nlm/notebooks")
 async def get_nlm_notebooks():
     """Returns a list of accessible NotebookLM notebooks."""
+    config = load_feishu_config(REPO_ROOT)
+    nlm_cli_path = resolve_nlm_cli(config.get("notebooklm", {}).get("nlm_cli_path"))
     try:
-        config = load_feishu_config(REPO_ROOT)
-        nlm_cli_path = config.get("notebooklm", {}).get("nlm_cli_path", "/Users/zhouhongyuan/.local/bin/nlm")
         res = subprocess.run([nlm_cli_path, "notebook", "list", "--json"], capture_output=True, text=True, check=True)
         notebooks = json.loads(res.stdout)
         return {"notebooks": notebooks}
+    except FileNotFoundError as e:
+        raise FinerError(
+            ErrorCode.NLM_EXT_001,
+            f"nlm CLI not found at '{nlm_cli_path}'. Install nlm or set notebooklm.nlm_cli_path.",
+            stage="F0",
+            operation="nlm_list_notebooks",
+            source_channel=NLM_SOURCE_CHANNEL,
+            retryable=False,
+            cause=e,
+        ) from e
     except Exception as e:
         raise FinerError(
             ErrorCode.NLM_EXT_001,
             f"Failed to list notebooks: {e}",
             stage="F0",
             operation="nlm_list_notebooks",
-            source_channel="nlm",
+            source_channel=NLM_SOURCE_CHANNEL,
             retryable=True,
             cause=e,
-        )
+        ) from e
 
 @router.post("/nlm/fetch")
 async def fetch_nlm_notebook(req: NLMFetchRequest):
+    """Fetch a NotebookLM notebook's sources into F0.
+
+    Each source becomes a canonical ``ContentRecord`` (source_type
+    ``nlm_note``) plus an ``ImportReceipt``, archived under data/raw/nlm and
+    registered in Project Memory. Re-fetching a source whose ContentRecord
+    already exists is skipped (dedupe by nlm source id).
     """
-    Downloads sources from a NotebookLM notebook into the nlm_sync_pool.
-    """
-    config = load_feishu_config(REPO_ROOT)
-    nlm_cli_path = config.get("notebooklm", {}).get("nlm_cli_path", "/Users/zhouhongyuan/.local/bin/nlm")
-    
-    try:
-        # Get source list
-        res = subprocess.run([nlm_cli_path, "source", "list", req.notebook_id, "--json"], capture_output=True, text=True, check=True)
-        sources = json.loads(res.stdout)
-        
-        downloaded = []
-        for source in sources:
-            source_id = source.get("id")
-            title = source.get("title", f"Unknown_Source_{source_id}")
-
-            # Sanitize filename
-            safe_title = "".join([c if c.isalnum() or c in (" ", "-", "_") else "_" for c in title]).strip()
-
-            try:
-                content_res = subprocess.run([nlm_cli_path, "source", "content", source_id], capture_output=True, text=True, check=True)
-                source_data = json.loads(content_res.stdout)
-
-                content_text = source_data.get("value", {}).get("content", "")
-                if content_text:
-                    filename = f"NLM_{safe_title}.md"
-                    target_path = NLM_POOL_DIR / filename
-
-                    md_content = f"# {title}\n\n"
-                    md_content += f"- **Notebook ID**: {req.notebook_id}\n"
-                    md_content += f"- **Source ID**: {source_id}\n"
-                    md_content += f"- **Type**: {source_data.get('value', {}).get('source_type', 'unknown')}\n\n"
-                    md_content += "---\n\n"
-                    md_content += content_text
-
-                    target_path.write_text(md_content, encoding="utf-8")
-
-                    # Create manifest for NLM source
-                    content_id = build_content_id("notebooklm", "nlm_source", filename)
-                    manifest = ContentManifest(
-                        content_id=content_id,
-                        source_type="nlm_source",
-                        source_platform="notebooklm",
-                        creator_id="notebooklm",
-                        creator_name="notebooklm",
-                        published_at=datetime.utcnow().isoformat(),
-                        collected_at=datetime.utcnow().replace(microsecond=0).isoformat(),
-                        title=title,
-                        raw_path=str(target_path),
-                        file_type=_infer_file_type(target_path.suffix),
-                        metadata={
-                            "nlm_notebook_id": req.notebook_id,
-                            "nlm_source_id": source_id,
-                            "nlm_notebook_name": req.notebook_id,
-                            "source_type": source_data.get("value", {}).get("source_type", "unknown"),
-                        },
-                        source_url=None,
-                        external_source_id=None,
-                        dedupe_fingerprint=None,
-                        language="zh",
-                        market_scope=["US", "HK", "A"],
-                    )
-                    write_manifest(REPO_ROOT, manifest)
-
-                    downloaded.append(filename)
-
-            except Exception as inner_e:
-                print(f"Error fetching source {source_id}: {inner_e}")
-                continue
-                
-        return {
-            "status": "ok",
-            "sources_scanned": len(sources),
-            "downloaded": len(downloaded),
-            "files": downloaded
-        }
-        
-    except Exception as e:
-        raise FinerError(
-            ErrorCode.NLM_EXT_001,
-            f"Error fetching NLM data: {e}",
-            stage="F0",
-            operation="nlm_fetch",
-            source_channel="nlm",
-            retryable=True,
-            cause=e,
-        )
+    return _fetch_nlm_notebook_core(req.notebook_id)
 
 
 @router.get("/pool")

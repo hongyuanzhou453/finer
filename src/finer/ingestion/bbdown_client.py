@@ -61,6 +61,20 @@ class BBDownNotInstalledError(BBDownError):
     pass
 
 
+class BBDownUnavailableError(BBDownError):
+    """BBDown CLI cannot run in this environment (missing binary or .NET runtime).
+
+    Raised when the F0 download layer cannot even start BBDown — either the
+    ``BBDown`` binary is not on PATH, or it is present but its required .NET
+    runtime is missing/incompatible (BBDown needs .NET 8). This is an external
+    dependency failure (retryable once the runtime is installed), not bad user
+    input, so callers map it onto a canonical ``F0_EXT_001`` error envelope
+    instead of letting the raw failure crash F0 intake.
+    """
+
+    fix_hint = "install .NET 8 runtime"
+
+
 @dataclass
 class BBDownConfig:
     """BBDown configuration."""
@@ -70,6 +84,27 @@ class BBDownConfig:
     download_dir: Path = field(default_factory=lambda: Path("data/raw/bilibili"))
     cookie: Optional[str] = None  # For premium content
     auto_start: bool = True  # Auto-start BBDown if not running
+
+
+@dataclass
+class BilibiliRawArtifacts:
+    """Raw artifact set produced by an F0 BBDown download (R-10).
+
+    Pure F0 provenance: raw media bytes on disk + a source-info JSON, plus the
+    parsed BBDown video info. Contains NO transcript / ASR output — F0 download
+    must never depend on transcription. The route layer turns this into a
+    ``ContentRecord`` + ``ImportReceipt``.
+    """
+
+    bvid: str
+    info: "BBDownVideoInfo"
+    raw_dir: Path
+    source_info_path: Path
+    audio_path: Optional[Path] = None
+    video_path: Optional[Path] = None
+    subtitle_path: Optional[Path] = None
+    # Map of artifact role -> filesystem path (only present roles included).
+    artifact_paths: Dict[str, Path] = field(default_factory=dict)
 
 
 class BBDownClient:
@@ -472,17 +507,58 @@ class BBDownAdapter:
         cookie = self._cookie()
         return ["-c", cookie] if cookie else []
 
+    # Markers BBDown / the .NET host emit when the required runtime is missing or
+    # the wrong major version (BBDown targets .NET 8). Matched case-insensitively
+    # against combined stdout+stderr to detect a "BBDown can't even start" failure.
+    _DOTNET_MISSING_MARKERS = (
+        "you must install or update .net",
+        "to run this application, you must install .net",
+        "no .net runtimes were found",
+        "the framework 'microsoft.netcore.app'",
+        "framework: 'microsoft.netcore.app'",
+        "not found",  # "...was not found." emitted by the .NET host
+    )
+
+    @classmethod
+    def _is_dotnet_missing_output(cls, output: str) -> bool:
+        """Detect a .NET-runtime-missing failure from BBDown/host CLI output."""
+        lowered = output.lower()
+        if "microsoft.netcore.app" in lowered or "download the .net runtime" in lowered:
+            return True
+        return any(marker in lowered for marker in cls._DOTNET_MISSING_MARKERS)
+
     def _run_cli(self, args: list[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess[str]:
-        """Run BBDown CLI and return the completed process."""
+        """Run BBDown CLI and return the completed process.
+
+        Raises :class:`BBDownUnavailableError` (mapped to ``F0_EXT_001`` upstream)
+        when BBDown cannot run at all — the binary is missing from PATH, or it is
+        present but its required .NET runtime is absent/incompatible. This keeps
+        F0 intake from crashing on a missing external dependency (R-02).
+        """
         env = self._cli_env(self._cookie())
-        return subprocess.run(
-            ["BBDown", *args],
-            cwd=str(cwd) if cwd else None,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["BBDown", *args],
+                cwd=str(cwd) if cwd else None,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise BBDownUnavailableError(
+                "BBDown binary not found on PATH. Install BBDown (requires .NET 8 "
+                "runtime): dotnet tool install --global BBDown"
+            ) from exc
+
+        if result.returncode != 0 and self._is_dotnet_missing_output(
+            self._combined_output(result)
+        ):
+            raise BBDownUnavailableError(
+                "BBDown could not start: required .NET 8 runtime is missing or "
+                "incompatible on this host."
+            )
+        return result
 
     @staticmethod
     def _combined_output(result: subprocess.CompletedProcess[str]) -> str:
@@ -748,6 +824,129 @@ class BBDownAdapter:
         hours, minutes, seconds, millis = map(int, parts)
         return hours * 3600 + minutes * 60 + seconds + millis / 1000
 
+    async def download_raw_artifacts(
+        self,
+        bvid_or_url: str,
+        *,
+        output_dir: Optional[Path] = None,
+        download_video: bool = False,
+        download_audio: bool = True,
+        download_subtitle: bool = True,
+    ) -> BilibiliRawArtifacts:
+        """F0 download: fetch raw media + source JSON for one B站 video (R-10).
+
+        This is the canonical F0 entrypoint for the bilibili channel. It pulls
+        the raw artifact set only — audio and/or video, the CC subtitle when one
+        exists, and a ``{bvid}.source.json`` capturing BBDown's parsed video
+        info — and never invokes ASR or any F1 transcription. The route layer
+        turns the returned :class:`BilibiliRawArtifacts` into a ``ContentRecord``
+        + ``ImportReceipt`` + Project Memory row, with no dependency on a
+        transcript existing first (the old ``/sync``-after-``/transcribe`` gate).
+
+        Raises:
+            BBDownUnavailableError: BBDown / its .NET 8 runtime is unavailable.
+                Surfaced upstream as a canonical ``F0_EXT_001`` error envelope.
+            BBDownError: BBDown ran but the download itself failed.
+        """
+        raw_dir = Path(output_dir or self.config.download_dir)
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        bvid = self._extract_bvid(bvid_or_url)
+
+        # 1. Source metadata (also the first point BBDown unavailability surfaces).
+        info = await self.get_video_info(bvid_or_url)
+
+        artifact_paths: dict[str, Path] = {}
+
+        # 2. Raw media. Audio is the default ASR-feeding payload; video optional.
+        audio_path: Optional[Path] = None
+        video_path: Optional[Path] = None
+        if download_audio:
+            audio_path = await self.download_audio(bvid_or_url, raw_dir)
+            if audio_path is not None:
+                artifact_paths["audio"] = audio_path
+        if download_video:
+            video_path = await self._download_video(bvid_or_url, raw_dir)
+            if video_path is not None:
+                artifact_paths["video"] = video_path
+
+        # 3. CC subtitle — best effort; many videos have none, which is not fatal.
+        subtitle_path: Optional[Path] = None
+        if download_subtitle:
+            try:
+                subtitle = await self.download_subtitle(bvid_or_url)
+            except BBDownUnavailableError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("Subtitle fetch during raw download failed: %s", exc)
+                subtitle = None
+            if subtitle is not None and subtitle.content:
+                subtitle_path = raw_dir / f"{bvid}.{subtitle.language}.{subtitle.format.value}"
+                subtitle_path.write_text(subtitle.content, encoding="utf-8")
+                artifact_paths["subtitle"] = subtitle_path
+
+        # 4. Source-info JSON (raw provenance for rebuilding the ContentRecord).
+        source_info_path = raw_dir / f"{bvid}.source.json"
+        source_info = {
+            "bvid": info.bvid,
+            "aid": info.aid,
+            "title": info.title,
+            "uploader": info.uploader,
+            "uploader_id": info.uploader_id,
+            "publish_time": info.publish_time.isoformat(),
+            "duration": info.duration,
+            "description": info.description,
+            "cover_url": info.cover_url,
+            "page_count": info.page_count,
+            "tags": info.tags,
+            "source_url": f"https://www.bilibili.com/video/{info.bvid}",
+            "artifacts": {role: str(path) for role, path in artifact_paths.items()},
+        }
+        source_info_path.write_text(
+            json.dumps(source_info, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        artifact_paths["source_info"] = source_info_path
+
+        return BilibiliRawArtifacts(
+            bvid=bvid,
+            info=info,
+            raw_dir=raw_dir,
+            source_info_path=source_info_path,
+            audio_path=audio_path,
+            video_path=video_path,
+            subtitle_path=subtitle_path,
+            artifact_paths=artifact_paths,
+        )
+
+    async def _download_video(
+        self,
+        bvid_or_url: str,
+        output_dir: Path,
+    ) -> Optional[Path]:
+        """Download the raw video file (F0). No ASR; raw bytes only."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        bvid = self._extract_bvid(bvid_or_url)
+
+        result = self._run_cli([
+            bvid_or_url,
+            "--skip-cover",
+            "--skip-subtitle",
+            "--skip-ai",
+            "-F",
+            "<bvid>",
+            "--work-dir",
+            str(output_dir),
+            *self._cookie_args(),
+        ])
+        if result.returncode != 0:
+            raise BBDownError(f"Video download failed: {self._combined_output(result).strip()}")
+
+        for ext in [".mp4", ".mkv", ".flv", ".mov"]:
+            files = list(output_dir.glob(f"*{bvid}*{ext}"))
+            if files:
+                return max(files, key=lambda p: p.stat().st_mtime)
+        return None
+
     async def transcribe_video(
         self,
         bvid_or_url: str,
@@ -832,21 +1031,27 @@ async def transcribe_bilibili_video(
     bvid_or_url: str,
     prefer_subtitle: bool = True,
     language: str = "zh",
+    asr_client: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Transcribe Bilibili video.
+    """Transcribe Bilibili video (F1-adjacent convenience helper).
+
+    Cross-layer note (R-11): this download module is F0 and must NOT import the
+    F1 ASR client (``finer.parsing.mimo_asr_client``). Transcription is an F1
+    concern, so when the caller wants the ASR fallback it must inject an
+    ``asr_client`` (the F1 caller owns building/wiring it). With no ``asr_client``
+    only the CC-subtitle path is available; if a video has no subtitle the
+    underlying adapter raises, surfacing the missing F1 dependency to the caller
+    rather than reaching across the F0/F1 boundary here.
 
     Args:
         bvid_or_url: BV ID 或 B站 URL
         prefer_subtitle: 优先使用 CC 字幕
         language: 语言
+        asr_client: F1-owned ASR client (e.g. MiMoASRClient), injected by caller.
 
     Returns:
         转录结果
     """
-    from finer.parsing.mimo_asr_client import MiMoASRClient
-
     config = BBDownConfig()
-    asr_client = MiMoASRClient()
-
     adapter = BBDownAdapter(config, asr_client)
     return await adapter.transcribe_video(bvid_or_url, prefer_subtitle, language)

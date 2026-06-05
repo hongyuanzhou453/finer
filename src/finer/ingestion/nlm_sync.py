@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,9 +16,30 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_NLM_CLI = "/usr/local/bin/nlm"
+# Last-resort fallback only. Real resolution prefers an explicit config path,
+# then ``shutil.which("nlm")`` so a Homebrew / ~/.local install is found wherever
+# it lives instead of assuming a hardcoded ``/usr/local/bin/nlm`` that may not
+# exist on this machine.
+_FALLBACK_NLM_CLI = "/usr/local/bin/nlm"
 
 DEFAULT_SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".docx"}
+
+
+def resolve_nlm_cli(config_path: str | None = None) -> str:
+    """Resolve the ``nlm`` CLI executable path.
+
+    Resolution order:
+    1. An explicit *config_path* (from ``notebooklm.nlm_cli_path``), if set.
+    2. ``shutil.which("nlm")`` — finds it on ``PATH`` regardless of install dir.
+    3. A static fallback (legacy ``/usr/local/bin/nlm``) so callers always get a
+       path; whether it exists is checked by the caller / subprocess layer.
+    """
+    if config_path:
+        return config_path
+    found = shutil.which("nlm")
+    if found:
+        return found
+    return _FALLBACK_NLM_CLI
 
 
 @dataclass
@@ -39,8 +61,8 @@ class NLMSync:
             nlm_config.get("supported_extensions", DEFAULT_SUPPORTED_EXTENSIONS)
         )
         self.wait_for_processing = nlm_config.get("wait_for_processing", True)
-        self.nlm_cli_path = nlm_config.get("nlm_cli_path", DEFAULT_NLM_CLI)
-        
+        self.nlm_cli_path = resolve_nlm_cli(nlm_config.get("nlm_cli_path"))
+
         # Track synced files to avoid duplicates
         self._synced_registry: dict[str, str] = {}  # path → source_id
 

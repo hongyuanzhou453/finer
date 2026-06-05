@@ -10,15 +10,49 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
+from finer.errors import ErrorCode, FinerError
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_LARK_CLI = "/opt/homebrew/bin/lark-cli"
+
+# Substrings (case-insensitive) in lark-cli stderr that indicate an expired /
+# missing user token or insufficient permission rather than a transient upstream
+# error. When matched, F0 returns a canonical FEISHU_AUTH_001 with a fix hint
+# instead of a bare RuntimeError, so the Import Console can render an actionable
+# "run lark-cli auth login" message.
+_LARK_AUTH_FAILURE_MARKERS = (
+    "token",
+    "unauthorized",
+    "permission denied",
+    "permission_denied",
+    "not logged in",
+    "login expired",
+    "access denied",
+    "invalid credentials",
+    "auth",
+    "99991",  # Feishu invalid/expired access token codes
+    "99992",
+    "99663",  # invalid user access token
+)
+
+# Stderr is never surfaced verbatim (it can echo back tokens/auth headers). We
+# only ever expose a coarse classification string in error details.
+_LARK_AUTH_FIX_HINT = "run lark-cli auth login"
+
+
+def _classify_lark_failure(stderr: str) -> bool:
+    """Return True if *stderr* looks like an auth/permission/token failure."""
+    haystack = (stderr or "").lower()
+    return any(marker in haystack for marker in _LARK_AUTH_FAILURE_MARKERS)
 
 
 @dataclass
@@ -48,19 +82,78 @@ class DownloadedFile:
 
 
 def _run_lark_cli(lark_cli: str, args: list[str], timeout: int = 60) -> dict[str, Any]:
-    """Execute a lark-cli command and return parsed JSON output."""
+    """Execute a lark-cli command and return parsed JSON output.
+
+    Failures are translated into canonical :class:`FinerError` envelopes so the
+    F0 import path degrades gracefully instead of crashing with a bare
+    ``RuntimeError``:
+
+    - missing binary -> ``FEISHU_EXT_001`` (not retryable: fix the install path)
+    - timeout -> ``FEISHU_TMO_001`` (retryable)
+    - expired/invalid token or permission denied -> ``FEISHU_AUTH_001``
+      (retryable, ``fix_hint="run lark-cli auth login"``)
+    - any other non-zero exit -> ``FEISHU_EXT_001`` (retryable)
+
+    ``operation`` is the lark-cli subcommand (args[0..1]) so logs/UI can tell
+    which call failed without echoing the full argv (which may contain ids).
+    """
     cmd = [lark_cli] + args
+    operation = "lark_cli:" + " ".join(args[:2]) if args else "lark_cli"
     logger.debug("Running: %s", " ".join(cmd))
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        raise FinerError(
+            ErrorCode.FEISHU_EXT_001,
+            f"lark-cli not found at '{lark_cli}'. Install lark-cli or set "
+            "feishu.lark_cli_path in configs/feishu.yaml.",
+            stage="F0",
+            operation=operation,
+            source_channel="feishu",
+            retryable=False,
+            cause=exc,
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise FinerError(
+            ErrorCode.FEISHU_TMO_001,
+            f"lark-cli timed out after {timeout}s.",
+            stage="F0",
+            operation=operation,
+            source_channel="feishu",
+            retryable=True,
+            cause=exc,
+        ) from exc
+
     if result.returncode != 0:
-        logger.error("lark-cli error: %s", result.stderr)
-        raise RuntimeError(f"lark-cli failed: {result.stderr}")
-    
+        # Never surface stderr verbatim — it can echo back tokens/auth headers.
+        logger.error("lark-cli error (rc=%s): %s", result.returncode, result.stderr)
+        if _classify_lark_failure(result.stderr):
+            raise FinerError(
+                ErrorCode.FEISHU_AUTH_001,
+                "Feishu authentication failed (lark-cli token expired or "
+                "missing permission).",
+                stage="F0",
+                operation=operation,
+                source_channel="feishu",
+                retryable=True,
+                fix_hint=_LARK_AUTH_FIX_HINT,
+                failure_kind="auth",
+            )
+        raise FinerError(
+            ErrorCode.FEISHU_EXT_001,
+            "lark-cli command failed.",
+            stage="F0",
+            operation=operation,
+            source_channel="feishu",
+            retryable=True,
+            failure_kind="upstream",
+        )
+
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError:

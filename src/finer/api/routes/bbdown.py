@@ -19,7 +19,14 @@ from finer.schemas.bbdown import (
     BBDownTranscribeRequest,
     BBDownTranscribeResult,
 )
-from finer.ingestion.bbdown_client import BBDownAdapter, BBDownConfig, BBDownError
+from finer.errors.codes import ErrorCode
+from finer.errors.exceptions import FinerError
+from finer.ingestion.bbdown_client import (
+    BBDownAdapter,
+    BBDownConfig,
+    BBDownError,
+    BBDownUnavailableError,
+)
 from finer.paths import DATA_ROOT
 
 logger = logging.getLogger(__name__)
@@ -30,15 +37,20 @@ _adapter: Optional[BBDownAdapter] = None
 
 
 def get_adapter() -> BBDownAdapter:
-    """Get or create BBDown adapter singleton."""
+    """Get or create the F0 BBDown download adapter singleton.
+
+    F0/F1 boundary (R-11): this builds a download-only adapter and deliberately
+    does NOT import or wire the F1 ASR client (``finer.parsing.mimo_asr_client``).
+    The ASR client is an F1 dependency; it is injected lazily, only by the
+    F1-adjacent ``/transcribe`` endpoint via :func:`_resolve_asr_client`, so the
+    F0 download surface never depends on F1.
+    """
     global _adapter
     if _adapter is None:
-        from finer.config import load_bbdown_config, load_mimo_asr_config
+        from finer.config import load_bbdown_config
         from finer.paths import REPO_ROOT
-        from finer.parsing.mimo_asr_client import MiMoASRClient
 
         bbdown_cfg = load_bbdown_config(REPO_ROOT)
-        mimo_cfg = load_mimo_asr_config(REPO_ROOT)
 
         _adapter = BBDownAdapter(
             config=BBDownConfig(
@@ -47,9 +59,39 @@ def get_adapter() -> BBDownAdapter:
                 cookie=bbdown_cfg.cookie,
                 download_dir=Path(bbdown_cfg.download_dir),
             ),
-            asr_client=MiMoASRClient(mimo_cfg),
         )
     return _adapter
+
+
+def _resolve_asr_client():
+    """Lazily build the F1 ASR client for the F1-adjacent transcribe path.
+
+    R-11: keep this F0 download router free of any static ``finer.parsing``
+    import. ASR is owned by F1; the transcribe endpoint resolves it at call time
+    through ``importlib`` so the F0 module never statically depends on F1.
+    """
+    import importlib
+
+    from finer.config import load_mimo_asr_config
+    from finer.paths import REPO_ROOT
+
+    asr_module = importlib.import_module("finer.parsing.mimo_asr_client")
+    mimo_cfg = load_mimo_asr_config(REPO_ROOT)
+    return asr_module.MiMoASRClient(mimo_cfg)
+
+
+def _bbdown_unavailable_error(operation: str, exc: BBDownUnavailableError) -> FinerError:
+    """Map a BBDown-unavailable failure onto the canonical F0_EXT_001 envelope."""
+    return FinerError(
+        ErrorCode.F0_EXT_001,
+        str(exc),
+        stage="F0",
+        operation=operation,
+        source_channel="bilibili",
+        retryable=True,
+        fix_hint=getattr(exc, "fix_hint", "install .NET 8 runtime"),
+        cause=exc,
+    )
 
 
 @router.get("/video/{bvid}", response_model=BBDownVideoInfo)
@@ -65,6 +107,8 @@ async def get_video_info(bvid: str):
     adapter = get_adapter()
     try:
         return await adapter.get_video_info(bvid)
+    except BBDownUnavailableError as e:
+        raise _bbdown_unavailable_error("bbdown_video_info", e)
     except BBDownError as e:
         logger.error(f"Failed to get video info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -101,6 +145,8 @@ async def create_download_task(request: BBDownDownloadRequest):
             async with BBDownClient(adapter.config) as client:
                 task = await client.add_download_task(request)
                 return task
+    except BBDownUnavailableError as e:
+        raise _bbdown_unavailable_error("bbdown_download", e)
     except BBDownError as e:
         logger.error(f"Download failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -117,6 +163,11 @@ async def transcribe_video(
 ):
     """Transcribe video using subtitle or ASR.
 
+    F1-adjacent (NOT an F0 acceptance path): transcription is downstream of F0
+    intake. F0 only owns raw download + ContentRecord (see ``/api/bilibili/import``).
+    The F1 ASR client is injected lazily here (R-11) so the F0 download surface
+    stays free of any F1 dependency.
+
     Priority:
     1. CC subtitle (if available and prefer_subtitle=True)
     2. MiMo ASR (if configured)
@@ -130,9 +181,17 @@ async def transcribe_video(
         Transcription result with segments
     """
     adapter = get_adapter()
+    # Inject the F1-owned ASR client only for this F1-adjacent path.
+    if adapter.asr_client is None:
+        try:
+            adapter.asr_client = _resolve_asr_client()
+        except Exception as e:  # ASR optional; subtitle path may still succeed
+            logger.warning(f"ASR client unavailable, subtitle-only transcribe: {e}")
     try:
         result = await adapter.transcribe_video(bvid, prefer_subtitle, language)
         return BBDownTranscribeResult(**result)
+    except BBDownUnavailableError as e:
+        raise _bbdown_unavailable_error("bbdown_transcribe", e)
     except BBDownError as e:
         logger.error(f"Transcription failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

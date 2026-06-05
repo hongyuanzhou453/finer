@@ -489,7 +489,14 @@ class ParaformerTranscriber:
 
 
 class BilibiliAdapter:
-    """Main adapter for B站 video download and transcription."""
+    """Main adapter for B站 video download and transcription.
+
+    F0 scope (R-09): constructing this adapter is a pure F0 operation — it only
+    wires up the B站 metadata/download client and never requires a transcription
+    credential. The Paraformer transcriber (DashScope-backed) is F1-adjacent and
+    is built lazily the first time :meth:`transcribe` runs, so a missing
+    ``DASHSCOPE_API_KEY`` can no longer crash F0 intake at construction time.
+    """
 
     def __init__(
         self,
@@ -497,8 +504,23 @@ class BilibiliAdapter:
         output_dir: Optional[Path] = None,
     ):
         self.client = BilibiliClient()
-        self.transcriber = ParaformerTranscriber(api_key)
+        # Defer the DASHSCOPE_API_KEY requirement to transcribe time (F1-adjacent),
+        # so F0 download/import paths never crash just because ASR is unconfigured.
+        self._api_key = api_key
+        self._transcriber: Optional[ParaformerTranscriber] = None
         self.output_dir = output_dir or Path("data/raw/bilibili")
+
+    @property
+    def transcriber(self) -> ParaformerTranscriber:
+        """Lazily build the Paraformer transcriber (requires DASHSCOPE_API_KEY).
+
+        Accessing this property is F1-adjacent: it is the point where the
+        DashScope credential is actually required. F0 download/import code paths
+        must not touch it.
+        """
+        if self._transcriber is None:
+            self._transcriber = ParaformerTranscriber(self._api_key)
+        return self._transcriber
 
     def get_video_info(self, bvid_or_url: str) -> BilibiliVideoInfo:
         """Get video information."""

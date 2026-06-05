@@ -1,6 +1,6 @@
 """Sources API — manage external sources (Feishu, NotebookLM) and trigger refresh."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
@@ -11,6 +11,7 @@ from finer.config import load_feishu_config
 from finer.ingestion.feishu_poller import FeishuPoller, SyncState
 from finer.ingestion.orchestrator import sync_chat
 from finer.paths import REPO_ROOT, DATA_ROOT
+from finer.errors import FinerError, ErrorCode
 
 router = APIRouter()
 
@@ -75,7 +76,15 @@ async def get_source_groups():
     except FileNotFoundError:
         pass
     except Exception as e:
-        raise HTTPException(500, f"Failed to load source groups: {e}")
+        raise FinerError(
+            ErrorCode.SYS_CFG_001,
+            f"Failed to load source groups: {e}",
+            stage="F0",
+            operation="sources_list_groups",
+            source_channel="feishu",
+            retryable=True,
+            cause=e,
+        ) from e
 
     # Count total files by source type
     return {
@@ -136,18 +145,78 @@ async def refresh_source(req: RefreshRequest):
                 from finer.api.routes.files_utils import _assets_cache
                 _assets_cache.clear()
 
-        except FileNotFoundError:
-            raise HTTPException(400, "Feishu configuration not found")
+        except FileNotFoundError as e:
+            raise FinerError(
+                ErrorCode.SYS_CFG_001,
+                "Feishu configuration not found",
+                stage="F0",
+                operation="sources_refresh",
+                source_channel="feishu",
+                retryable=False,
+                cause=e,
+            ) from e
+        except FinerError:
+            raise
         except Exception as e:
-            raise HTTPException(500, f"Refresh failed: {e}")
+            raise FinerError(
+                ErrorCode.F0_EXT_001,
+                f"Refresh failed: {e}",
+                stage="F0",
+                operation="sources_refresh",
+                source_channel="feishu",
+                retryable=True,
+                cause=e,
+            ) from e
 
     elif req.source_type == "notebooklm":
-        # NotebookLM refresh would go here
-        # Currently placeholder - would need NLM CLI integration
-        results.append(RefreshResult(
-            status="not_implemented",
-            errors=["NotebookLM refresh not yet implemented"],
-        ))
+        # Real NotebookLM refresh: fetch each configured notebook's sources into
+        # F0 (canonical ContentRecord + ImportReceipt + PM). Notebook ids come
+        # from watched_chats[].notebook_id; if group_id is given it is treated as
+        # a notebook id filter.
+        from finer.api.routes.integrations import _fetch_nlm_notebook_core
+
+        try:
+            config = load_feishu_config(REPO_ROOT)
+        except FileNotFoundError as e:
+            raise FinerError(
+                ErrorCode.SYS_CFG_001,
+                "NotebookLM configuration not found",
+                stage="F0",
+                operation="sources_refresh",
+                source_channel="notebooklm",
+                retryable=False,
+                cause=e,
+            ) from e
+
+        feishu_cfg = config.get("feishu", {})
+        notebook_ids = [
+            c["notebook_id"]
+            for c in feishu_cfg.get("watched_chats", [])
+            if c.get("notebook_id")
+        ]
+        if req.group_id:
+            notebook_ids = [nb for nb in notebook_ids if nb == req.group_id]
+        # Dedupe while preserving order
+        notebook_ids = list(dict.fromkeys(notebook_ids))
+
+        if not notebook_ids:
+            results.append(RefreshResult(
+                status="ok",
+                errors=["No NotebookLM notebooks configured to refresh"],
+            ))
+        for notebook_id in notebook_ids:
+            try:
+                fetched = _fetch_nlm_notebook_core(notebook_id)
+                results.append(RefreshResult(
+                    status="ok",
+                    messages_scanned=fetched.get("sources_scanned", 0),
+                    files_processed=fetched.get("downloaded", 0),
+                    errors=[],
+                ))
+            except FinerError as e:
+                results.append(RefreshResult(status="error", errors=[e.message]))
+            except Exception as e:
+                results.append(RefreshResult(status="error", errors=[str(e)]))
 
     else:
         results.append(RefreshResult(
@@ -183,4 +252,12 @@ async def get_sync_status():
     except FileNotFoundError:
         return {"lastSyncByChat": {}, "pollInterval": 300}
     except Exception as e:
-        raise HTTPException(500, f"Failed to get sync status: {e}")
+        raise FinerError(
+            ErrorCode.SYS_CFG_001,
+            f"Failed to get sync status: {e}",
+            stage="F0",
+            operation="sources_status",
+            source_channel="feishu",
+            retryable=True,
+            cause=e,
+        ) from e
