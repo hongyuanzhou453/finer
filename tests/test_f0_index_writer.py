@@ -146,3 +146,43 @@ class TestRecordImported:
         F0IndexWriter(conn).record_imported(_record(), _receipt())
         violations = conn.execute("PRAGMA foreign_key_check").fetchall()
         assert violations == []
+
+
+class TestArtifactRegistration:
+    def test_record_imported_writes_artifacts(self, conn: sqlite3.Connection) -> None:
+        """raw_sha256 on receipt triggers storage_object + artifact writes."""
+        receipt = _receipt(raw_sha256={"video": "aabbccdd" * 8}, raw_paths={"video": "data/raw/wechat/cnt_w001/video.mp4"})
+        F0IndexWriter(conn).record_imported(_record(), receipt)
+
+        assert _count(conn, "storage_objects") == 1
+        assert _count(conn, "artifacts", "content_id = ? AND role = 'video'", ("cnt_w001",)) == 1
+        row = conn.execute("SELECT is_canonical FROM artifacts WHERE content_id = 'cnt_w001'").fetchone()
+        assert row["is_canonical"] == 1
+
+    def test_artifacts_idempotent(self, conn: sqlite3.Connection) -> None:
+        """Calling record_imported twice with same raw_sha256 produces stable artifact count."""
+        receipt = _receipt(raw_sha256={"video": "aabbccdd" * 8}, raw_paths={"video": "data/raw/wechat/cnt_w001/video.mp4"})
+        writer = F0IndexWriter(conn)
+        writer.record_imported(_record(), receipt)
+        writer.record_imported(_record(), receipt)
+
+        assert _count(conn, "storage_objects") == 1
+        assert _count(conn, "artifacts", "content_id = ?", ("cnt_w001",)) == 1
+
+    def test_no_raw_sha256_skips_artifacts(self, conn: sqlite3.Connection) -> None:
+        """Empty raw_sha256 produces no artifact rows (backward compat)."""
+        F0IndexWriter(conn).record_imported(_record(), _receipt())
+
+        assert _count(conn, "storage_objects") == 0
+        assert _count(conn, "artifacts") == 0
+
+    def test_two_roles_two_artifacts(self, conn: sqlite3.Connection) -> None:
+        """Multiple roles produce multiple artifact rows."""
+        receipt = _receipt(
+            raw_sha256={"video": "aabbccdd" * 8, "document": "11223344" * 8},
+            raw_paths={"video": "data/raw/wechat/cnt_w001/video.mp4", "document": "data/raw/wechat/cnt_w001/doc.pdf"},
+        )
+        F0IndexWriter(conn).record_imported(_record(), receipt)
+
+        assert _count(conn, "storage_objects") == 2
+        assert _count(conn, "artifacts", "content_id = ?", ("cnt_w001",)) == 2

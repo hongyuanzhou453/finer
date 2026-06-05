@@ -19,10 +19,12 @@
 | `3f3ad4bd` | Phase 2 Batch A（BK4 本地上传 / BK2 微信 / FE2 前端入口）| ✅ DONE |
 | `b32e7286` | Phase 2 Batch B（BK1 飞书+NLM / BK3 B站，收口+优雅降级）| ✅ DONE |
 | `b1ce1495` | 文档收口 | ✅ DONE |
+| *(无新 commit)* | P3-LOCAL 本地上传 E2E 验证通过（纯验证，无代码变更）| ✅ DONE |
+| *(无新 commit)* | Line V §7 验证债核实（5 项仍开放，无一阻塞 Phase 3）| ✅ DONE |
 
 - **R-01 ~ R-33 代码层全部解决**（详见 06-04 文档 §10）。全量 `pytest tests/` = 2764 passed / 1 pre-existing F8 失败（`test_get_price_routing`，与 F0 无关）。
 - **6 渠道终态**：本地上传可立即 E2E；微信视频号/公众号、飞书、NotebookLM、B站 代码已收口，E2E 待用户修环境（见 §6）。
-- **下一步入口**：Phase 3（E2E 联调）/ Phase 4（IDP-01）/ Phase 6（合并）——见下，按用户选择派发。
+- **下一步入口**：Phase 3 剩余 P3 卡（需用户完成环境清单 §8）/ Phase 4（IDP-01）/ Phase 6（合并）——见下，按用户选择派发。
 
 > ⚠️ 注：本仓库 live 的 TaskCreate 任务列表（#7-18）是 BK1/BK3 subagent 的内部子任务，**已全部完成但状态显示 stale**，以本文件为准。
 
@@ -58,7 +60,7 @@ from finer.utils.time import now_utc
 > 前置：用户完成 §6 环境清单的对应项。每张卡是**只读/轻验证为主**，发现真实 bug 才改对应渠道 owned 文件。可并行（不同渠道），但每渠道串行验证。
 
 ### 卡 P3-LOCAL — 本地上传 E2E（无外部依赖，可立即）
-- F-stage F0 / 实现+验证 / 状态 PENDING / 依赖：无
+- F-stage F0 / 实现+验证 / 状态 ✅ DONE / 依赖：无 / 验证日期：2026-06-05
 - 目标：起 `uvicorn` + `npm run dev`，实测上传 → 确认产 ContentRecord+receipt+PM 行、Import Console/文件列表出现该文件、sourceRecordId 非空、路径穿越文件名被拦。
 - allowed：`api/routes/files.py`、`files_utils.py`（仅修实测暴露的 bug）；forbidden：其它渠道、frozen。
 - 验收：TestClient 或真实 HTTP 上传一次 → 贴 response + asset_index 行数 +1；`pytest tests/test_files_upload_f0.py -q`。
@@ -146,14 +148,17 @@ from finer.utils.time import now_utc
 
 ---
 
-## 7. 验证债 / 待确认残留（下一轮先 Line V 核实）
+## 7. 验证债 / 待确认残留（✅ 已 Line V 核实 2026-06-05）
 
-派 Phase 3 前，建议先一个只读 agent 核实这几项是否真闭合（06-04 报告声明已解决，但值得端到端确认）：
-- **R-33**：`WeChatSyncResult.l0_triggered` legacy 命名（前端 contract）是否已改为 `f0_*`；前端是否消费该字段。
-- **wechat_adapter.py** 未物理拆分（1667 行，公众号 1-1246 / 视频号 1248-end）——是否需要拆（可选，非阻塞）。
-- **search_videos()** B站 stub——已标注 placeholder，是否要接真实 API。
-- **classifier.py** 硬编码 `/opt/homebrew/bin/gemini`（R 报告 P3 项）——是否迁到项目 LLM 注册表。
-- 各渠道 `_register_f0_index` best-effort 吞错是否会掩盖 PM 写失败（P4-COVERAGE 一并查）。
+> 核实结论：5 项均仍开放，**无一阻塞 Phase 3**。建议 Batch 2 处理项 1+5，项 2/3/4 推后。
+
+| # | 项目 | 状态 | 阻塞 | 建议 |
+|---|------|------|------|------|
+| R-33 | `l0_triggered` legacy 命名 | 仍开放（前端不消费该字段） | 否 | 改名 `f0_triggered`（schema+contract+route 各一处） |
+| — | wechat_adapter.py 1726 行未拆 | 技术债 | 否 | 可拆 `wechat_mp_adapter` + `wechat_channels_adapter` |
+| — | search_videos() B站 stub | 仍开放（F0 import 不走此路径） | 否 | 后续接 B站搜索 API |
+| — | classifier.py 硬编码 `/opt/homebrew/bin/gemini` | 仍开放（AI 分类 fallback 降级） | 否 | 迁 LLM 注册表或 `shutil.which` |
+| — | `_register_f0_index` 吞错无返回值 | 仍开放（by design） | 否 | 返回 `bool`，P4-COVERAGE 端到端确认 |
 
 ---
 

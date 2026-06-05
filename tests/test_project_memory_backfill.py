@@ -391,6 +391,32 @@ def test_backfill_idempotent(tmp_data: Path, db_conn: sqlite3.Connection) -> Non
     assert count >= 3
 
 
+def test_backfill_deterministic_artifact_ids(tmp_data: Path, db_conn: sqlite3.Connection) -> None:
+    """Running backfill twice produces stable artifact row count (no duplicates)."""
+    storage_root = tmp_data.parent / "storage"
+    storage_root.mkdir(parents=True, exist_ok=True)
+
+    for _ in range(2):
+        engine = BackfillEngine(
+            conn=db_conn,
+            data_root=tmp_data,
+            storage_root=storage_root,
+            dry_run=False,
+        )
+        inventory = engine.phase1_inventory()
+        engine.phase2_sources(inventory)
+        engine.phase3_content_identity(inventory)
+        engine.phase4_contents(inventory)
+        engine.phase5_objects(inventory)
+        engine.phase6_artifacts(inventory)
+
+    # Artifacts should not duplicate — deterministic IDs make second run a no-op
+    artifact_count = db_conn.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0]
+    # Canonical artifacts should all be is_canonical=1 (no stale 0 rows)
+    canonical_count = db_conn.execute("SELECT COUNT(*) FROM artifacts WHERE is_canonical = 1").fetchone()[0]
+    assert artifact_count == canonical_count, f"Found {artifact_count - canonical_count} non-canonical stale rows"
+
+
 def test_backfill_integrity_clean(
     tmp_data: Path, db_conn: sqlite3.Connection
 ) -> None:

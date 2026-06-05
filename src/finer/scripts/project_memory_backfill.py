@@ -173,6 +173,13 @@ def _random_id(prefix: str = "id") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:16]}"
 
 
+def _det_id(prefix: str, *parts: str) -> str:
+    """Deterministic, collision-resistant id from prefix + parts (sha256/16)."""
+    raw = ":".join((prefix, *parts))
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}_{digest}"
+
+
 def _mime_for_path(path: Path) -> str:
     return _MIME_MAP.get(path.suffix.lower(), "application/octet-stream")
 
@@ -1115,7 +1122,7 @@ class BackfillEngine:
         if content_hash in self._object_ids:
             return self._object_ids[content_hash]
 
-        object_id = f"sha256:{content_hash}"
+        object_id = _det_id("obj", content_hash) if content_hash else _random_id("obj")
         self._object_ids[content_hash] = object_id
 
         if not self._dry_run:
@@ -1164,7 +1171,7 @@ class BackfillEngine:
         metadata: Optional[dict[str, Any]] = None,
     ) -> str:
         """Create an artifact and mark it canonical. Returns artifact_id."""
-        artifact_id = _random_id("art")
+        artifact_id = _det_id("art", content_id, stage, artifact_type, role, object_id)
         self.stats.artifacts += 1
         self._created_artifact_ids.add(artifact_id)
 
@@ -1181,13 +1188,13 @@ class BackfillEngine:
             ).fetchone()
             next_version = (row[0] if row else 0) + 1
 
-            # Insert as non-canonical first
-            self._conn.execute(
+            # Idempotent insert: skip entirely if deterministic id already exists
+            inserted = self._conn.execute(
                 """
-                INSERT INTO artifacts
+                INSERT OR IGNORE INTO artifacts
                     (artifact_id, content_id, stage, artifact_type, role, object_id,
                      schema_name, artifact_version, is_canonical, created_at, metadata_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
                 (
                     artifact_id, content_id, stage, artifact_type, role, object_id,
@@ -1195,20 +1202,16 @@ class BackfillEngine:
                     _json.dumps(metadata) if metadata else None,
                 ),
             )
-
-            # Mark canonical: clear siblings, then set this one
-            self._conn.execute(
-                """
-                UPDATE artifacts SET is_canonical = 0
-                WHERE content_id = ? AND stage = ? AND artifact_type = ?
-                  AND artifact_id != ?
-                """,
-                (content_id, stage, artifact_type, artifact_id),
-            )
-            self._conn.execute(
-                "UPDATE artifacts SET is_canonical = 1 WHERE artifact_id = ?",
-                (artifact_id,),
-            )
+            if inserted.rowcount > 0:
+                # Mark canonical: clear siblings, then set this one
+                self._conn.execute(
+                    """
+                    UPDATE artifacts SET is_canonical = 0
+                    WHERE content_id = ? AND stage = ? AND artifact_type = ?
+                      AND artifact_id != ?
+                    """,
+                    (content_id, stage, artifact_type, artifact_id),
+                )
             self._conn.commit()
 
         return artifact_id

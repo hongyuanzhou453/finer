@@ -16,14 +16,15 @@ appear in the frontend ``asset_index``:
       └─ contents              (FK: content_id -> content_identities)
            ├─ source_content_links  (links source_record <-> content)
            ├─ stage_status (F0, 'ready')   (asset_index rebuild reads this)
-           └─ asset_index (F0)             (the hot frontend index)
+           ├─ asset_index (F0)             (the hot frontend index)
+           ├─ storage_objects              (one per raw_sha256 role)
+           └─ artifacts                    (one canonical per role, F0 stage)
 
-It deliberately does **not** write ``artifacts`` / ``storage_objects``. The
-backfill artifact writer mints non-deterministic ``art_<uuid>`` ids and would
-accumulate a new history row on every call, which violates the idempotency this
-writer guarantees. Object/artifact registration for live imports is left to a
-follow-up Project Memory task; raw payload provenance is still captured on the
-``ImportReceipt`` (raw_sha256 / raw_paths) and on disk.
+It **also** writes ``artifacts`` / ``storage_objects`` for every raw payload
+entry in the receipt (``raw_sha256`` keys), using deterministic
+``sha256-derived`` ids so repeated calls are idempotent. The receipt's
+``raw_sha256`` / ``raw_paths`` carry the provenance; each role gets one
+``storage_object`` + one canonical ``artifact`` row.
 
 All identity keys are deterministic (sha256-derived), and all inserts use
 ``INSERT OR IGNORE`` / ``ON CONFLICT``, so calling ``record_imported`` twice for
@@ -70,8 +71,8 @@ class F0IndexWriter:
         """Register one successfully imported ContentRecord in Project Memory.
 
         Writes the minimal contents + source_record + asset_index chain (see
-        module docstring). Idempotent: safe to call repeatedly for the same
-        ``record.content_id``.
+        module docstring), plus storage_objects + artifacts for every
+        ``receipt.raw_sha256`` entry (deterministic ids, idempotent).
         """
         conn = self._conn
         now = now_utc().isoformat()
@@ -210,3 +211,25 @@ class F0IndexWriter:
             status="ready",
             sort_key=record.collected_at.isoformat(),
         )
+
+        # 7. raw artifact + storage_object registration (idempotent)
+        for role, sha256_hex in receipt.raw_sha256.items():
+            raw_path = receipt.raw_paths.get(role, "")
+            object_id = _det_id("obj", content_id, role, sha256_hex)
+            artifact_id = _det_id("art", content_id, role, sha256_hex)
+
+            conn.execute(
+                """INSERT OR IGNORE INTO storage_objects
+                       (object_id, sha256, storage_uri, byte_size, created_at)
+                   VALUES (?, ?, ?, 0, ?)""",
+                (object_id, sha256_hex, raw_path, now),
+            )
+            conn.execute(
+                """INSERT OR IGNORE INTO artifacts
+                       (artifact_id, content_id, stage, artifact_type, role,
+                        object_id, artifact_version, is_canonical, created_at)
+                   VALUES (?, ?, 'F0', 'raw_payload', ?, ?, 1, 1, ?)""",
+                (artifact_id, content_id, role, object_id, now),
+            )
+
+        conn.commit()
