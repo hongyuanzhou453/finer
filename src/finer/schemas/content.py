@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Any, Optional, List, Literal
 from datetime import datetime
+
+from finer.utils.time import ensure_aware_utc, now_utc
 
 
 class ContentRecord(BaseModel):
@@ -32,6 +34,7 @@ class ContentRecord(BaseModel):
         "daily_pre",
         "daily_post",
         "research_report",
+        "wechat_channels_video",
         "unclassified",
     ] = Field(..., description="Canonical intake source type")
     source_platform: str = Field(..., description="Platform where the content originated (feishu, bilibili, wechat, local, nlm)")
@@ -42,7 +45,17 @@ class ContentRecord(BaseModel):
 
     # --- timestamps ---
     published_at: Optional[datetime] = Field(None, description="Original publication time (may be unknown)")
-    collected_at: datetime = Field(default_factory=datetime.utcnow, description="Time the content was collected/ingested")
+    collected_at: datetime = Field(default_factory=now_utc, description="Time the content was collected/ingested (timezone-aware UTC)")
+
+    @field_validator("collected_at", mode="after")
+    @classmethod
+    def _coerce_collected_at_aware_utc(cls, value: datetime) -> datetime:
+        """Force collected_at to aware UTC; naive legacy inputs are tagged, not shifted.
+
+        published_at is intentionally left as-provided to avoid changing the
+        ContentManifest serialization shape that downstream stages already rely on.
+        """
+        return ensure_aware_utc(value)
 
     # --- content metadata ---
     title: Optional[str] = Field(None, description="Optional title of the content")

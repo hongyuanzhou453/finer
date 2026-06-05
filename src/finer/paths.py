@@ -71,3 +71,46 @@ STORAGE_ROOT = DATA_ROOT / "storage"
 MARKET_DATA_ROOT = DATA_ROOT / "market" / "tushare"
 MARKET_PARQUET_DIR = MARKET_DATA_ROOT / "parquet"
 MARKET_DUCKDB_PATH = MARKET_DATA_ROOT / "meta.duckdb"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# F0 canonical landing rules (shared contract — GATE freeze)
+#
+# Every channel adapter MUST land F0 outputs through these helpers so the disk
+# layout is uniform across feishu / local upload / NotebookLM / wechat /
+# wechat_channels / bilibili:
+#
+#   raw archive   -> data/raw/{platform}/...
+#   ContentRecord -> data/F0_intake/{platform}/{content_id}.json
+#   ImportReceipt -> data/F0_intake/{platform}/{content_id}.receipt.json
+#
+# These are pure path helpers: they DO NOT migrate existing data, create dirs,
+# or write files. Callers decide when to mkdir/persist.
+# ─────────────────────────────────────────────────────────────────────────────
+
+RAW_ROOT = DATA_ROOT / "raw"
+F0_INTAKE_ROOT = DATA_ROOT / "F0_intake"
+
+
+def f0_raw_dir(platform: str, *subparts: str) -> Path:
+    """Canonical raw-archive directory for a channel: ``data/raw/{platform}/<subparts...>``.
+
+    ``subparts`` lets a channel namespace its raw payloads (e.g. creator id,
+    media kind) without inventing its own root.
+    """
+    return RAW_ROOT.joinpath(platform, *subparts)
+
+
+def f0_intake_dir(platform: str) -> Path:
+    """Canonical F0 intake directory for a channel: ``data/F0_intake/{platform}``."""
+    return F0_INTAKE_ROOT / platform
+
+
+def f0_record_path(platform: str, content_id: str) -> Path:
+    """Canonical ContentRecord path: ``data/F0_intake/{platform}/{content_id}.json``."""
+    return f0_intake_dir(platform) / f"{content_id}.json"
+
+
+def f0_receipt_path(platform: str, content_id: str) -> Path:
+    """Canonical ImportReceipt path: ``data/F0_intake/{platform}/{content_id}.receipt.json``."""
+    return f0_intake_dir(platform) / f"{content_id}.receipt.json"

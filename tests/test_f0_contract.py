@@ -32,7 +32,8 @@ class TestContentRecordSchema:
         expected = {
             "feishu_chat", "bilibili_video", "wechat_article", "manual_upload", "nlm_note",
             "chat_transcript", "chat_export", "livestream_audio",
-            "weekly_strategy", "daily_pre", "daily_post", "research_report", "unclassified",
+            "weekly_strategy", "daily_pre", "daily_post", "research_report",
+            "wechat_channels_video", "unclassified",
         }
         assert set(field_info.annotation.__args__) == expected
 
@@ -84,7 +85,9 @@ class TestContentRecordSchema:
         assert record.metadata == {}
 
     def test_collected_at_auto_populated(self) -> None:
-        before = datetime.utcnow()
+        from datetime import timedelta, timezone
+
+        before = datetime.now(timezone.utc)
         record = ContentRecord(
             content_id="test-004",
             source_type="nlm_note",
@@ -92,10 +95,12 @@ class TestContentRecordSchema:
             raw_path="data/raw/note.txt",
             file_type="text",
         )
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
         assert record.collected_at is not None
-        assert record.collected_at >= before.replace(microsecond=0)
-        assert record.collected_at <= after.replace(microsecond=0, second=after.second + 1)
+        # collected_at is now timezone-aware UTC (GATE freeze)
+        assert record.collected_at.tzinfo is not None
+        assert record.collected_at >= before - timedelta(seconds=1)
+        assert record.collected_at <= after + timedelta(seconds=1)
 
     def test_all_source_type_values_accepted(self) -> None:
         for st in ("feishu_chat", "bilibili_video", "wechat_article", "manual_upload", "nlm_note"):
