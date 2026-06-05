@@ -21,6 +21,8 @@
 | `b1ce1495` | 文档收口 | ✅ DONE |
 | *(无新 commit)* | P3-LOCAL 本地上传 E2E 验证通过（纯验证，无代码变更）| ✅ DONE |
 | *(无新 commit)* | Line V §7 验证债核实（5 项仍开放，无一阻塞 Phase 3）| ✅ DONE |
+| `6e86b2a5` | P4-IDP01 artifacts 确定性去重键 + backfill 修复 | ✅ DONE |
+| `c9892ffb` | §7 项 1+5 修复（f0_triggered 改名 + _register_f0_index 返回 bool）| ✅ DONE |
 
 - **R-01 ~ R-33 代码层全部解决**（详见 06-04 文档 §10）。全量 `pytest tests/` = 2764 passed / 1 pre-existing F8 失败（`test_get_price_routing`，与 F0 无关）。
 - **6 渠道终态**：本地上传可立即 E2E；微信视频号/公众号、飞书、NotebookLM、B站 代码已收口，E2E 待用户修环境（见 §6）。
@@ -150,15 +152,15 @@ from finer.utils.time import now_utc
 
 ## 7. 验证债 / 待确认残留（✅ 已 Line V 核实 2026-06-05）
 
-> 核实结论：5 项均仍开放，**无一阻塞 Phase 3**。建议 Batch 2 处理项 1+5，项 2/3/4 推后。
+> 核实结论：5 项均仍开放，**无一阻塞 Phase 3**。项 1+5 已修复（commit `c9892ffb`），项 2/3/4 推后。
 
 | # | 项目 | 状态 | 阻塞 | 建议 |
 |---|------|------|------|------|
-| R-33 | `l0_triggered` legacy 命名 | 仍开放（前端不消费该字段） | 否 | 改名 `f0_triggered`（schema+contract+route 各一处） |
+| R-33 | `l0_triggered` legacy 命名 | ✅ 已修复 → `f0_triggered` | — | — |
 | — | wechat_adapter.py 1726 行未拆 | 技术债 | 否 | 可拆 `wechat_mp_adapter` + `wechat_channels_adapter` |
 | — | search_videos() B站 stub | 仍开放（F0 import 不走此路径） | 否 | 后续接 B站搜索 API |
 | — | classifier.py 硬编码 `/opt/homebrew/bin/gemini` | 仍开放（AI 分类 fallback 降级） | 否 | 迁 LLM 注册表或 `shutil.which` |
-| — | `_register_f0_index` 吞错无返回值 | 仍开放（by design） | 否 | 返回 `bool`，P4-COVERAGE 端到端确认 |
+| — | `_register_f0_index` 吞错无返回值 | ✅ 已修复 → 返回 `bool` | — | P4-COVERAGE 端到端确认各渠道 |
 
 ---
 
