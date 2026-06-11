@@ -265,6 +265,46 @@ class TestMultiMarketPriceProvider:
         assert len(hk_prices) > 0
 
 
+class TestBuildCnProvider:
+    """Test _build_cn_provider fallback logic for unsynced parquet directories."""
+
+    def test_empty_parquet_dir_falls_back_to_mock(self, tmp_path, monkeypatch):
+        """Parquet dir exists but has no daily_kline → MockPriceProvider."""
+        import finer.paths
+        from finer.backtest.prices import _build_cn_provider
+
+        monkeypatch.setattr(finer.paths, 'MARKET_PARQUET_DIR', tmp_path)
+
+        provider = _build_cn_provider()
+        assert isinstance(provider, MockPriceProvider)
+        assert provider.get_price('000001.SZ', '2024-01-15') is not None
+
+    def test_empty_daily_kline_falls_back_to_mock(self, tmp_path, monkeypatch):
+        """daily_kline dir exists but contains no partitions → MockPriceProvider."""
+        import finer.paths
+        from finer.backtest.prices import _build_cn_provider
+
+        (tmp_path / 'daily_kline').mkdir()
+        monkeypatch.setattr(finer.paths, 'MARKET_PARQUET_DIR', tmp_path)
+
+        provider = _build_cn_provider()
+        assert isinstance(provider, MockPriceProvider)
+        assert provider.get_price('000001.SZ', '2024-01-15') is not None
+
+    def test_synced_daily_kline_uses_tushare_provider(self, tmp_path, monkeypatch):
+        """daily_kline with at least one partition → TusharePriceProvider."""
+        import finer.paths
+        from finer.backtest.prices import _build_cn_provider
+        from finer.market_data.providers import TusharePriceProvider
+
+        partition = tmp_path / 'daily_kline' / 'date=20240115'
+        partition.mkdir(parents=True)
+        monkeypatch.setattr(finer.paths, 'MARKET_PARQUET_DIR', tmp_path)
+
+        provider = _build_cn_provider()
+        assert isinstance(provider, TusharePriceProvider)
+
+
 class TestBacktestIntegration:
     """Integration tests for backtest module."""
 
