@@ -9,6 +9,7 @@ import {
   GitCompare,
   LineChart,
   ClipboardCheck,
+  GraduationCap,
   Settings,
   Database,
 } from "lucide-react";
@@ -19,6 +20,7 @@ const navItems = [
   { href: "/kol/compare", label: "对比", icon: GitCompare },
   { href: "/backtest", label: "回测", icon: LineChart },
   { href: "/annotation", label: "标注", icon: ClipboardCheck },
+  { href: "/training", label: "训练数据", icon: GraduationCap },
   { href: "/settings", label: "设置", icon: Settings },
 ];
 
