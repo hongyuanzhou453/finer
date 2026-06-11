@@ -75,6 +75,12 @@ def main():
         action="store_true",
         help="Include metadata in output (for debugging)",
     )
+    parser.add_argument(
+        "--format",
+        choices=["hf", "bailian", "both"],
+        default="hf",
+        help="输出格式: hf=HuggingFace train.jsonl(本地TRL) / bailian=百炼 DPO ChatML data.jsonl / both",
+    )
 
     # Validation
     parser.add_argument(
@@ -146,22 +152,31 @@ def main():
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save in HuggingFace format
-    paths = exporter.save_huggingface_format(items, output_dir)
     print(f"\n{'='*50}")
     print("Exported Files")
     print(f"{'='*50}")
-    for name, path in paths.items():
-        print(f"  {name}: {path}")
 
-    # Also save with metadata if requested
-    if args.include_metadata:
-        metadata_path = output_dir / "train_with_metadata.jsonl"
-        exporter.save_jsonl(items, metadata_path, include_metadata=True)
-        print(f"  train_with_metadata: {metadata_path}")
+    # HuggingFace format (train.jsonl) — 本地 TRL 训练用
+    if args.format in ("hf", "both"):
+        paths = exporter.save_huggingface_format(items, output_dir)
+        for name, path in paths.items():
+            print(f"  {name}: {path}")
+        if args.include_metadata:
+            metadata_path = output_dir / "train_with_metadata.jsonl"
+            exporter.save_jsonl(items, metadata_path, include_metadata=True)
+            print(f"  train_with_metadata: {metadata_path}")
 
-    print(f"\nDataset ready for training:")
-    print(f"  python scripts/train_dpo.py --data_dir {output_dir} --output_dir ./models/dpo_finetuned")
+    # Bailian DPO ChatML (data.jsonl) — 上传百炼做 DPO LoRA(qwen3-8b)
+    if args.format in ("bailian", "both"):
+        bailian_path = output_dir / "data.jsonl"
+        n = exporter.save_bailian_format(items, bailian_path)
+        print(f"  bailian(data.jsonl): {bailian_path}  ({n} 行 ChatML)")
+
+    print(f"\nNext:")
+    if args.format in ("hf", "both"):
+        print(f"  本地 TRL: python scripts/train_dpo.py --data_dir {output_dir} --output_dir ./models/dpo_finetuned")
+    if args.format in ("bailian", "both"):
+        print(f"  百炼: 上传 {output_dir / 'data.jsonl'} → qwen3-8b → DPO LoRA → 部署")
 
 
 if __name__ == "__main__":

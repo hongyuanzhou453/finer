@@ -118,7 +118,9 @@ TRADE_ACTION_USER_TEMPLATE = """从以下文本提取 TradeAction：
    - target_price_low/target_price_high: 目标价格区间
    - sequence_order: 执行顺序
 4. 判断时间周期（time_horizon）
-5. 给出提取置信度（0-1）
+5. 判断整体信念强度 conviction（0-1）：证据充分/语气强烈≈0.7-0.9；谨慎/证据有限≈0.2-0.4。
+   证据不足时应**降低 conviction**，而非强行给中性——保留方向、用低 conviction 表达谨慎。
+6. 给出提取置信度 confidence（0-1）
 
 ## 输出格式
 严格按照以下 JSON Schema 输出：
@@ -127,6 +129,7 @@ TRADE_ACTION_USER_TEMPLATE = """从以下文本提取 TradeAction：
 {{
   "ticker": "股票代码",
   "direction": "方向",
+  "conviction": 信念强度0到1,
   "action_chain": [
     {{
       "action_type": "动作类型",
@@ -156,6 +159,12 @@ TRADE_ACTION_JSON_SCHEMA = """{
       "type": "string",
       "enum": ["bullish", "bearish", "neutral", "watchlist", "risk_warning"],
       "description": "整体方向判断"
+    },
+    "conviction": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "整体信念强度（0-1）。证据充分/强烈≈0.7-0.9，谨慎/证据有限≈0.2-0.4。证据不足时降低 conviction 而非清空方向"
     },
     "action_chain": {
       "type": "array",
@@ -226,6 +235,33 @@ def format_dpo_prompt(evidence_text: str, include_schema: bool = False) -> str:
         prompt += f"\n\n## JSON Schema 参考\n```json\n{TRADE_ACTION_JSON_SCHEMA}\n```"
 
     return prompt
+
+
+def to_bailian_record(
+    prompt: str,
+    chosen: Any,
+    rejected: Any,
+    system: Optional[str] = TRADE_ACTION_SYSTEM_PROMPT,
+) -> Dict[str, Any]:
+    """Convert an internal (prompt, chosen, rejected) triple into Alibaba Bailian
+    (Model Studio) DPO ChatML format.
+
+    百炼 DPO 要求 ChatML，且 chosen/rejected 是 {role, content} **对象**（非字符串）。
+    映射：system=抽取系统提示，user=prompt，chosen/rejected.content=对应 JSON 串。
+    详见 docs/specs/2026-06-07-dpo-bailian-training-line.md §6 与 §14。
+    """
+    def _content(x: Any) -> str:
+        return x if isinstance(x, str) else json.dumps(x, ensure_ascii=False)
+
+    messages: List[Dict[str, str]] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    return {
+        "messages": messages,
+        "chosen": {"role": "assistant", "content": _content(chosen)},
+        "rejected": {"role": "assistant", "content": _content(rejected)},
+    }
 
 
 # ============================================================================
@@ -670,6 +706,28 @@ class DPOExporter:
             "train": train_path,
             "metadata": metadata_path,
         }
+
+    def save_bailian_format(
+        self,
+        items: List[DPOTrainingItem],
+        output_path: Path,
+        system: Optional[str] = TRADE_ACTION_SYSTEM_PROMPT,
+    ) -> int:
+        """Save DPO items in Bailian (Model Studio) DPO ChatML format (data.jsonl).
+
+        与 save_huggingface_format 的区别：输出百炼 ChatML（chosen/rejected 为
+        {role, content} 对象），可直接上传百炼做 DPO LoRA（qwen3-8b）。
+        """
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        n = 0
+        with open(output_path, "w", encoding="utf-8") as f:
+            for item in items:
+                rec = to_bailian_record(item.prompt, item.chosen, item.rejected, system=system)
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                n += 1
+        logger.info(f"Saved {n} Bailian DPO ChatML items to {output_path}")
+        return n
 
     def compute_stats(self, items: List[DPOTrainingItem]) -> DPODatasetStats:
         """Compute statistics for a dataset.

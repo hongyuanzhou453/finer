@@ -17,6 +17,7 @@ import re
 
 from finer.schemas.event import TradingAction
 from finer.paths import REPO_ROOT, DATA_ROOT
+from finer.services.rlhf_assembler import build_preference
 
 router = APIRouter()
 RLHF_DIR = DATA_ROOT / "rlhf"
@@ -114,8 +115,26 @@ class RLHFFeedback(BaseModel):
     )
 
 
+class ReviewCorrections(BaseModel):
+    """人工审核的逐字段修正（前端 RLHFReviewPanel 提交）。
+
+    用于后端 build_preference 组装 DPO Preference。action_chain 为整链替换。
+    """
+    ticker: Optional[str] = Field(None, description="修正后的 ticker")
+    direction: Optional[str] = Field(None, description="修正后的 direction")
+    action_chain: Optional[List[Dict[str, Any]]] = Field(
+        None, description="修正后的完整 action_chain（替换原链）"
+    )
+
+
 class RLHFFeedbackCreate(BaseModel):
-    """Request body for creating a new feedback."""
+    """Request body for creating a new feedback.
+
+    两种提供 preference 的方式（二选一）：
+    1. 直接给 `preference`（向后兼容）。
+    2. 给 `corrections` + `original_extraction`（+ `flagged_as_error`），后端
+       自动用 build_preference 组装 —— 前端 RLHFReviewPanel 走此路径。
+    """
     trade_action_id: str
     event_id: Optional[str] = None
     content_id: Optional[str] = None
@@ -130,6 +149,9 @@ class RLHFFeedbackCreate(BaseModel):
     reviewer_id: Optional[str] = None
     preference: Optional[Preference] = None
     original_extraction: Optional[Dict[str, Any]] = None
+    # corrections-based preference assembly (环 B 桥)
+    corrections: Optional[ReviewCorrections] = None
+    flagged_as_error: bool = False
 
 
 class RLHFFeedbackUpdate(BaseModel):
@@ -296,9 +318,32 @@ async def submit_feedback(body: RLHFFeedbackCreate):
     """
     ensure_directories()
 
+    # 组装 DPO preference：优先用直接提供的 preference；否则用 corrections + original 组装（环 B 桥）
+    preference = body.preference
+    if preference is None and (body.corrections is not None or body.original_extraction):
+        pref_dict = build_preference(
+            body.original_extraction,
+            body.corrections.model_dump() if body.corrections else None,
+            body.flagged_as_error,
+        )
+        preference = Preference(**pref_dict)
+
     feedback = RLHFFeedback(
-        **body.model_dump(),
-        reviewed_at=datetime.now()
+        trade_action_id=body.trade_action_id,
+        event_id=body.event_id,
+        content_id=body.content_id,
+        rating=body.rating,
+        ticker_correct=body.ticker_correct,
+        ticker_correction=body.ticker_correction,
+        direction_correct=body.direction_correct,
+        direction_correction=body.direction_correction,
+        action_chain_feedback=body.action_chain_feedback,
+        quick_tags=body.quick_tags,
+        notes=body.notes,
+        reviewer_id=body.reviewer_id,
+        preference=preference,
+        original_extraction=body.original_extraction,
+        reviewed_at=datetime.now(),
     )
 
     # Save feedback file

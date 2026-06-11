@@ -209,16 +209,40 @@ export function RLHFReviewPanel({ isOpen, onClose, onComplete }: RLHFReviewPanel
 
     setSubmitting(true);
     try {
+      // 映射前端 camelCase action chain → 后端 snake_case 抽取格式
+      const mapChain = (chain?: ActionChainItem[]) =>
+        (chain ?? []).map((a) => ({
+          action_type: a.actionType,
+          instrument_type: a.instrumentType,
+          trigger_condition: a.triggerCondition,
+          target_price_low: a.targetPriceLow ? Number(a.targetPriceLow) : undefined,
+          target_price_high: a.targetPriceHigh ? Number(a.targetPriceHigh) : undefined,
+        }));
+
+      // 与后端 RLHFFeedbackCreate 对齐：trade_action_id / quick_tags / original_extraction / corrections / flagged_as_error
+      // 后端 build_preference 用 original_extraction + corrections 组装 DPO preference（环 B 桥）
       const res = await fetch("/api/rlhf/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          itemId: currentItem.id,
+          trade_action_id: currentItem.id,
           rating,
-          tags: selectedTags,
+          quick_tags: selectedTags,
           notes,
-          corrections,
-          flaggedAsError
+          original_extraction: {
+            ticker: currentItem.ticker,
+            direction: currentItem.direction,
+            action_chain: mapChain(currentItem.actionChain),
+            time_horizon: currentItem.timeHorizon,
+            rationale: currentItem.rationale,
+            evidence_text: currentItem.originalText,
+          },
+          corrections: {
+            ticker: corrections.ticker,
+            direction: corrections.direction,
+            action_chain: corrections.actionChain ? mapChain(corrections.actionChain) : undefined,
+          },
+          flagged_as_error: flaggedAsError,
         })
       });
 
