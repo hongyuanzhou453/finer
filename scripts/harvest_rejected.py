@@ -65,6 +65,12 @@ WATCHLIST_CHOSEN = {
 # validate_dpo_hq.REQUIRED_CHOSEN_KEYS 的镜像：HQ cleaned chosen 顶层 key 必须恰好是这 6 个
 CHOSEN_KEYS = ("ticker", "direction", "conviction", "action_chain", "time_horizon", "rationale")
 
+# committal 但标的不可溯时的 ticker 哨兵：区别于 NONE（"无标的观望"）。
+# 表"有方向但标的待人工锚定"——不透传基座幻觉 ticker（如把泡泡玛特填成 002857.SZ）。
+# 选 UNRESOLVED 而非 NONE：validate_dpo_hq.ticker_grounded 对 NONE 豁免检查（会让 committal
+# 静默放行），对 UNRESOLVED 仍 flag，正确提示人工补标的。基座原始猜测另存 meta.ticker_guess。
+UNRESOLVED_TICKER = "UNRESOLVED"
+
 
 def normalize_chosen(obj: Dict[str, Any]) -> Dict[str, Any]:
     """chosen 收敛为 HQ 校验的 6 个顶层 key：多删（模型附带字段）、少补（time_horizon 缺省 None）。"""
@@ -207,9 +213,17 @@ def calibrate(rejected_raw: str, evidence_text: str) -> Dict[str, Any]:
     else:
         conviction = 0.3          # 标的未验证到（即使价位可溯）→ 低信念保留（不清零）
     obj["conviction"] = conviction
-    quote = evidence_quote(ticker, evidence_text)
-    basis = "可溯证据" if grounded else "方向（标的待核）"
-    obj["rationale"] = f"基于原文{basis}" + (f"：…{quote}…" if quote else "")
+
+    if not grounded:
+        # 标的不可溯：**不透传基座幻觉 ticker**。基座常把"泡泡玛特"幻觉成 002857.SZ、
+        # "禾赛"幻觉成 HES（Hess 石油），错误具体代码冒充"看似有标的"会注入有害训练锚定。
+        # 置 UNRESOLVED 哨兵、保留方向（spec 决策3：不清零）；基座原始猜测由 harvest()
+        # 另存 meta.ticker_guess，供人工签核参考（紫金 601899 等正确猜测也不丢）。
+        obj["ticker"] = UNRESOLVED_TICKER
+        obj["rationale"] = "基于原文方向（标的待核，需人工锚定）"
+    else:
+        quote = evidence_quote(ticker, evidence_text)
+        obj["rationale"] = "基于原文可溯证据" + (f"：…{quote}…" if quote else "")
     return normalize_chosen(obj)
 
 
@@ -251,14 +265,22 @@ def harvest(
             stats["identical_dropped"] += 1
             continue
 
+        meta = {"passage_id": c.get("id"), "creator": c.get("creator"),
+                "source_file": c.get("source_file"), "mock": mock,
+                "hq_category": c.get("hq_category"),
+                "hq_score": (c.get("signals") or {}).get("hq_score")}
+        # ungrounded committal 的 chosen.ticker 已被 calibrate 置 UNRESOLVED；
+        # 把基座原始 ticker 猜测留痕供人工锚定（不进 chosen，不污染训练文本）。
+        if chosen_obj.get("ticker") == UNRESOLVED_TICKER:
+            guess = str((parse_output(rejected_raw) or {}).get("ticker", "")).strip()
+            if guess:
+                meta["ticker_guess"] = guess
+
         pairs.append({
             "prompt": format_dpo_prompt(evidence),
             "chosen": chosen_raw,
             "rejected": rejected_raw,
-            "meta": {"passage_id": c.get("id"), "creator": c.get("creator"),
-                     "source_file": c.get("source_file"), "mock": mock,
-                     "hq_category": c.get("hq_category"),
-                     "hq_score": (c.get("signals") or {}).get("hq_score")},
+            "meta": meta,
         })
         stats["kept"] += 1
     return {"pairs": pairs, "stats": stats}

@@ -27,6 +27,9 @@ BLOCK_RE = re.compile(r"^###\s+\[([^\]]+)\]\s+(\S+)\s+\(([^)]+)\)\s*$", re.MULTI
 HTML_RE = re.compile(r"<[^>]+>")
 WS_RE = re.compile(r"[ \t]+")
 TICKER_RE = re.compile(r"\$?[A-Z]{2,5}\b|\d{4,6}\.(?:HK|SH|SZ)|\b\d{6}\b")
+# 严格标的代码：A股6位(可带 .SH/.SZ/.BJ) 或 港股4-5位.HK。刻意排除裸 [A-Z]{2,5}
+# （链接/英文词易误命中，是飞书闲聊混入候选的根因）。用于 groundable_entity_hits。
+STRICT_CODE_RE = re.compile(r"\b\d{6}(?:\.(?:SH|SZ|BJ))?\b|\b\d{4,5}\.HK\b")
 PRICE_RE = re.compile(
     r"\d+(?:\.\d+)?\s*(?:元|美元|港币|港元|块)|"
     r"\d+(?:\.\d+)?\s*[-~]\s*\d+(?:\.\d+)?|PE|倍|亿|%"
@@ -138,6 +141,35 @@ def entity_hits(text: str) -> List[str]:
     return sorted(hits)
 
 
+def _groundable_key(ticker: str) -> str:
+    ticker = (ticker or "").strip().upper().lstrip("$")
+    if "." not in ticker:
+        return ticker.lstrip("0") or ticker
+    head, _, tail = ticker.partition(".")
+    # A-share registry aliases may include .SH/.SZ while source text often has bare 6 digits.
+    if len(head) == 6 and tail in {"SH", "SZ", "BJ"}:
+        return head.lstrip("0") or head
+    return f"{head.lstrip('0') or head}.{tail}"
+
+
+def groundable_entity_hits(text: str) -> List[str]:
+    """强标的信号：entity_registry 中文别名命中 + 严格代码格式（STRICT_CODE_RE）。
+
+    刻意排除裸 [A-Z]{2,5}（TICKER_RE 会把飞书链接 feishu.cn/docx/X26ud… 里的英文串
+    误当 ticker，导致闲聊混入候选）。用于 ① 纯闲聊硬过滤 ② committal 必须有可锚标的。
+    """
+    hits_by_key = {_groundable_key(m.group(0)): m.group(0).upper() for m in STRICT_CODE_RE.finditer(text)}
+    try:
+        from finer.entity_registry import ENTITY_REGISTRY
+    except Exception:
+        ENTITY_REGISTRY = {}
+    for alias, entry in ENTITY_REGISTRY.items():
+        if len(alias) >= 2 and alias in text:
+            ticker = str(entry[0]).upper()
+            hits_by_key.setdefault(_groundable_key(ticker), ticker)
+    return sorted(hits_by_key.values())
+
+
 def count_words(text: str, words: Iterable[str]) -> int:
     return sum(text.count(word) for word in words)
 
@@ -158,8 +190,10 @@ def classify(text: str) -> Tuple[str, Dict[str, Any]]:
     abstain = count_words(text, ABSTAIN_WORDS)
     multi_hint = count_words(text, MULTI_HINT_WORDS)
     entities = entity_hits(text)
+    groundable = groundable_entity_hits(text)  # 强标的信号（排除裸字母误命中）
     has_price = bool(PRICE_RE.search(text))
-    has_multi = len(entities) >= 2 or (len(entities) >= 1 and multi_hint >= 2)
+    # has_multi 用 groundable 而非 entities：避免链接里的英文串凑成"多标的"误判 multi_context
+    has_multi = len(groundable) >= 2 or (len(groundable) >= 1 and multi_hint >= 2)
 
     if has_multi:
         category = "multi_context"
@@ -170,6 +204,11 @@ def classify(text: str) -> Tuple[str, Dict[str, Any]]:
     elif abstain > 0:
         category = "abstain"
     else:
+        category = "abstain"
+
+    # 根因2：committal 类别必须有可锚标的；无强标的的方向观点降级 abstain
+    # （保留为观望训练样本，避免下游 harvest 对无标的内容硬配/幻觉 ticker）。
+    if category in ("bullish_action", "bearish_risk", "multi_context") and not groundable:
         category = "abstain"
 
     signal_score = int(bullish > 0 or bearish > 0) + int(has_price) + int(bool(entities))
@@ -188,6 +227,7 @@ def classify(text: str) -> Tuple[str, Dict[str, Any]]:
         "multi_hint_hits": multi_hint,
         "has_price": has_price,
         "entity_hits": entities,
+        "groundable_hits": groundable,
         "horizon_hint": horizon_hint(text),
         "signal_score": signal_score,
         "hq_score": score,
@@ -240,7 +280,15 @@ def collect_candidates(
                 stats["excluded_id"] += 1
                 continue
             category, signals = classify(content)
-            if signals["signal_score"] == 0 and signals["abstain_hits"] == 0:
+            # 纯闲聊/无效硬过滤：无强标的 + 无价格 + 无任何多空/观望信号
+            # （飞书文档分享、小龙虾闲聊等：旧逻辑因链接英文串误命中 entity 而漏过）。
+            if (
+                not signals["groundable_hits"]
+                and not signals["has_price"]
+                and signals["bullish_hits"] == 0
+                and signals["bearish_hits"] == 0
+                and signals["abstain_hits"] == 0
+            ):
                 stats["noise"] += 1
                 continue
             seen_hashes.add(h)
