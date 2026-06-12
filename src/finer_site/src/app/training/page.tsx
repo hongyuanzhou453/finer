@@ -34,6 +34,7 @@ import {
 //   docs/specs/2026-06-07-dpo-bailian-training-line.md
 //   docs/specs/2026-06-07-f6-rlhf-to-dpo-mapping.md
 //   docs/specs/2026-06-10-annotation-workbench.md
+//   docs/specs/2026-06-12-rlvr-guided-dpo-task-card.md（RLHF × RLVR 协同，rev2）
 //   src/finer/schemas/{annotation,trade_action}.py
 // 红线：不编造模型提升数字。真实微调数字留待百炼实跑回填。
 // 标注工作台是内部工具，本页 CTA 指向在线演示（F6 复核模拟）与 GitHub。
@@ -42,13 +43,14 @@ import {
 export const metadata: Metadata = {
   title: "训练数据",
   description:
-    "人工标注与 RLHF 如何沉淀为 DPO 训练数据：三类标注任务、训练集与人工验证集的零泄漏分离、证据对齐的偏好原则、三项评测指标与百炼 DPO 训练线现状。",
+    "RLHF 人类偏好与 RLVR 可验证奖励如何协同沉淀为 DPO 训练数据：三类标注任务、确定性 verifier、训练集与人工验证集的零泄漏分离、证据对齐的偏好原则、三项评测指标与百炼 DPO 训练线现状。",
 };
 
 const NAV_LINKS = [
   { href: "#annotation", label: "人工标注" },
   { href: "#train-eval", label: "训练 ≠ 验证" },
   { href: "#preference", label: "偏好原则" },
+  { href: "#rlvr", label: "RLHF × RLVR" },
   { href: "#metrics", label: "评测指标" },
   { href: "#status", label: "训练线进展" },
 ];
@@ -142,14 +144,18 @@ const STAGES = [
   { stage: "地基②", deliver: "eval_compare.py 三指标评测器", status: "done", detail: "--demo dry-run 走通（枚举真相源未漂移）" },
   { stage: "地基③", deliver: "train_dpo.py --smoke-test", status: "done", detail: "tiny 模型 + CPU + 2 步，训练循环可运行" },
   { stage: "数据②", deliver: "to_bailian.py 百炼 ChatML 转换", status: "done", detail: "格式已核实 + Qwen3-8B 支持 DPO LoRA" },
-  { stage: "数据①", deliver: "harvest rejected → 校准 chosen", status: "pending", detail: "真实 API 跑批待授权（DashScope qwen3-8b）" },
+  { stage: "数据①", deliver: "harvest rejected → 校准 chosen", status: "active", detail: "152 对 qwen3-8b 真实 draft 已生成，HQ 全量人工审核进行中" },
   { stage: "实跑", deliver: "百炼上传 / 训练 / 部署 / 评测", status: "user", detail: "真实微调与评测，回填 after.jsonl 出真实数字" },
+  { stage: "v2", deliver: "RLVR-guided k-best 采样构对", status: "locked", detail: "任务卡 rev2 已锁定，baseline 出数后启动（rewards.py 统一奖励真相源）" },
 ];
 
 const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
   done: { label: "已就绪", cls: "bg-[rgba(16,185,129,0.12)] text-[#0f7a54]" },
   pending: { label: "待授权", cls: "bg-[rgba(155,123,69,0.14)] text-[var(--accent-gold)]" },
   user: { label: "待实跑", cls: "bg-[var(--surface-muted)] text-foreground/55" },
+  active: { label: "进行中", cls: "bg-[rgba(159,29,34,0.10)] text-morningstar-red" },
+  locked: { label: "方法论已锁定", cls: "bg-[rgba(155,123,69,0.14)] text-[var(--accent-gold)]" },
+  research: { label: "预研边界", cls: "bg-[var(--surface-muted)] text-foreground/55" },
 };
 
 // 验证集轨道与训练集轨道（两条数据流）
@@ -181,6 +187,68 @@ const REAL_PAIR_CASE = {
     "chosen 保留风险警示和 hold 判断，同时用 null 表达原文没有价格锚点；这是“证据不足不硬填”的真实偏好原则。",
 };
 
+// RLHF × RLVR 协同（方法论真相源：docs/specs/2026-06-12-rlvr-guided-dpo-task-card.md rev2）
+const REWARD_AXES = [
+  {
+    icon: ClipboardCheck,
+    tag: "RLHF · 人类偏好",
+    title: "人做最终裁决，管 verifier 测不到的轴",
+    body: "方向解读对不对、rationale 是否言之有物、该不该弃权——这些没有确定性判据，只能由人裁决。三类标注任务与 F6 复核台产出的偏好对，是训练包的主体与最终 truth。",
+    points: [
+      "HQ 偏好对全量人工审核（A / E / R）",
+      "F6 字段级修正 → 偏好对（环 B 飞轮）",
+      "verifier 只能排序与筛选，不能替代人工签核",
+    ],
+  },
+  {
+    icon: BadgeCheck,
+    tag: "RLVR · 可验证奖励",
+    title: "任务天然可验证，奖励确定性、免费",
+    body: "抽取任务的大部分质量轴对错有判据，可由规则直接验证：JSON 结构是否合规、ticker 与价位能否回到原文、conviction 是否与证据强度匹配。这些 verifier 已在仓库里运行——评测三指标与 HQ 质量门用的就是它们。",
+    points: [
+      "结构合规：schema 与枚举即真相源（硬门）",
+      "证据溯源：标的 / 价位逐一回原文比对",
+      "信念校准：conviction 阶梯 0.8 / 0.6 / 0.45 / 0.3",
+    ],
+  },
+];
+
+const SYNERGY_STEPS = [
+  {
+    step: "01",
+    title: "k-best 采样",
+    body: "对同一段 KOL 原文采样多个候选输出，温度放开，让模型暴露真实的输出分布——好与坏的样本都来自模型自己（on-policy）。",
+  },
+  {
+    step: "02",
+    title: "verifier 打分构对",
+    body: "可验证奖励逐项打分：高分且全过硬门的做 chosen 候选，破门或低分的做 rejected；分差不足转人工，不硬凑偏好对，也不用 verifier 的修补结果冒充学习目标。",
+  },
+  {
+    step: "03",
+    title: "人工审核后混合",
+    body: "verifier 构造的偏好对仍需全量人工审核，再与人工偏好对、难例按约 6 : 3 : 1 混入同一个 DPO 训练包——RLHF 与 RLVR 在数据层合流。",
+  },
+];
+
+const RLVR_ROADMAP = [
+  {
+    phase: "v1 · RLHF 主导",
+    deliver: "152 对 HQ draft 全量人工审核 → 百炼 DPO LoRA baseline",
+    status: "active",
+  },
+  {
+    phase: "v2 · RLVR-guided DPO",
+    deliver: "rewards.py 统一奖励真相源 + k-best 采样构对 + 混合训练包",
+    status: "locked",
+  },
+  {
+    phase: "路径 B · 在线 RL",
+    deliver: "百炼 RL API（gspo / grpo）+ HTTP 奖励服务，或自管 TRL GRPO",
+    status: "research",
+  },
+];
+
 export default function TrainingPage() {
   return (
     <div className="min-h-screen">
@@ -189,18 +257,20 @@ export default function TrainingPage() {
       {/* ===== Hero ===== */}
       <section className="mx-auto max-w-[1200px] px-6 pt-12 pb-10 lg:pt-16">
         <div className="text-[12px] font-bold uppercase tracking-[0.22em] text-morningstar-red">
-          人工标注 · RLHF · DPO 训练数据
+          人工标注 · RLHF × RLVR · DPO 训练数据
         </div>
         <h1 className="mt-5 max-w-3xl text-[34px] font-bold leading-[1.15] tracking-tight text-foreground lg:text-[44px]">
-          人工标注与 RLHF，
+          RLHF 偏好 × RLVR 可验证奖励，
           <br />
-          如何沉淀为 DPO 训练数据
+          协同沉淀为 DPO 训练数据
         </h1>
         <p className="mt-6 max-w-2xl text-[16px] leading-7 text-[var(--ink-soft)]">
-          模型抽取的投资判断，在进入回测前都要被人类裁决。这些裁决与标注被结构化记录，
-          一路沉淀为两类资产——喂给模型学习的 <strong className="text-foreground">DPO 训练集</strong>，
-          与模型从未见过、用来诚实打分的 <strong className="text-foreground">人工验证集</strong>。
-          这一页讲清楚标注了什么、为什么把训练与验证严格分开、以及百炼 DPO 训练线现在走到了哪一步。
+          模型抽取的投资判断，在进入回测前都要被人类裁决；而结构合规、证据溯源这些「对错有判据」的轴，
+          交给确定性 verifier 自动验证。两类奖励信号——
+          <strong className="text-foreground">RLHF 的人类偏好</strong>与
+          <strong className="text-foreground">RLVR 的可验证奖励</strong>——协同沉淀为同一条
+          DPO 训练线上的训练集与人工验证集。这一页讲清楚两类信号各管什么、怎么协同、
+          以及训练线现在走到了哪一步。
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link
@@ -221,6 +291,8 @@ export default function TrainingPage() {
           <span>文件即真相源，标注落盘可重建</span>
           <span className="h-1 w-1 rounded-full bg-foreground/20" />
           <span>训练 / 验证零泄漏</span>
+          <span className="h-1 w-1 rounded-full bg-foreground/20" />
+          <span>奖励可验证 · 确定性可复现</span>
           <span className="h-1 w-1 rounded-full bg-foreground/20" />
           <span>不编造提升数字</span>
         </div>
@@ -524,6 +596,105 @@ export default function TrainingPage() {
         </div>
       </section>
 
+      {/* ===== RLHF × RLVR 协同 ===== */}
+      <section id="rlvr" className="mx-auto max-w-[1200px] px-6 py-16">
+        <div className="mb-9 max-w-2xl">
+          <div className="text-[12px] font-bold uppercase tracking-[0.2em] text-morningstar-red">
+            RLHF × RLVR
+          </div>
+          <h2 className="mt-4 text-[26px] font-bold tracking-tight text-foreground">
+            两类奖励信号，灌进同一条 DPO 训练线
+          </h2>
+          <p className="mt-3 text-[15px] leading-7 text-[var(--ink-soft)]">
+            人类偏好（RLHF）与可验证奖励（RLVR）不是两条训练线，而是同一条 DPO 线上的两类信号：
+            verifier 负责对错有判据的轴——确定性、免费、可复现；人负责 verifier
+            测不到的最终裁决。投研抽取任务的特殊之处在于，它的大部分质量轴天然可验证。
+          </p>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          {REWARD_AXES.map((a) => {
+            const Icon = a.icon;
+            return (
+              <div key={a.tag} className="rounded-sm border border-[var(--table-border)] bg-white p-6">
+                <div className="flex items-center justify-between">
+                  <Icon className="h-7 w-7 text-morningstar-red" strokeWidth={1.5} />
+                  <span className="rounded-sm bg-[var(--surface-muted)] px-2 py-0.5 text-[10px] font-bold tracking-wider text-foreground/55">
+                    {a.tag}
+                  </span>
+                </div>
+                <h3 className="mt-4 text-[17px] font-bold tracking-tight text-foreground">{a.title}</h3>
+                <p className="mt-2 text-[13px] leading-6 text-[var(--ink-soft)]">{a.body}</p>
+                <ul className="mt-3 space-y-1.5">
+                  {a.points.map((p) => (
+                    <li key={p} className="flex items-start gap-2 text-[12px] leading-5 text-foreground/60">
+                      <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-foreground/25" />
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 grid gap-px overflow-hidden rounded-sm border border-[var(--table-border)] bg-[var(--table-border)] lg:grid-cols-3">
+          {SYNERGY_STEPS.map((s) => (
+            <div key={s.step} className="bg-white p-6">
+              <div className="font-mono text-[12px] font-bold text-foreground/35">{s.step}</div>
+              <h3 className="mt-2 text-[15px] font-bold tracking-tight text-foreground">{s.title}</h3>
+              <p className="mt-2 text-[13px] leading-6 text-[var(--ink-soft)]">{s.body}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="rounded-sm border-t-2 border-morningstar-red bg-white p-6 shadow-[var(--shadow-soft)]">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="h-5 w-5 text-foreground" strokeWidth={1.6} />
+              <h3 className="text-[15px] font-bold tracking-tight text-foreground">
+                为什么不做纯 RLVR
+              </h3>
+            </div>
+            <p className="mt-3 text-[13px] leading-6 text-[var(--ink-soft)]">
+              单一可验证信号会被「塌缩」利用——迭代 1 里校准器过严，89% 真实承诺被清零成观望，
+              模型差点学成「无脑弃权」。所以 verifier 信号必须多维加权，committal
+              率、非承诺构成漂移、幻觉率全部进 reward health 监控，触线即阻止导出；
+              人类偏好轴永远保留最终裁决权。
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-sm border border-[var(--table-border)] bg-white">
+            <div className="bg-[var(--table-header-bg)] px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-foreground/45">
+              协同训练路线
+            </div>
+            {RLVR_ROADMAP.map((r, i) => {
+              const st = STATUS_STYLE[r.status];
+              return (
+                <div
+                  key={r.phase}
+                  className={`flex items-center justify-between gap-4 px-5 py-3.5 ${
+                    i > 0 ? "border-t border-[var(--grid-line)]" : ""
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-bold text-foreground">{r.phase}</div>
+                    <div className="mt-0.5 text-[12px] leading-5 text-[var(--ink-soft)]">{r.deliver}</div>
+                  </div>
+                  <span className={`shrink-0 rounded-sm px-2 py-0.5 text-[11px] font-bold ${st.cls}`}>
+                    {st.label}
+                  </span>
+                </div>
+              );
+            })}
+            <p className="border-t border-[var(--grid-line)] bg-[var(--surface-muted)] px-5 py-2.5 text-[11px] leading-5 text-foreground/45">
+              市场收益 / 回测结果永不进入抽取模型的训练奖励——抽取的职责是忠实记录 KOL
+              说了什么，不是预测市场。真实提升数字仍只来自实跑后的 eval_compare 报告。
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* ===== 两个环 ===== */}
       <section className="mx-auto max-w-[1200px] px-6 py-16">
         <div className="mb-9 max-w-2xl">
@@ -808,7 +979,8 @@ export default function TrainingPage() {
           </div>
           <p className="mx-auto mt-8 max-w-xl text-[11px] leading-5 text-foreground/35">
             方法论与字段映射见仓库 docs/specs/2026-06-07-dpo-bailian-training-line.md、
-            2026-06-07-f6-rlhf-to-dpo-mapping.md、2026-06-10-annotation-workbench.md。
+            2026-06-07-f6-rlhf-to-dpo-mapping.md、2026-06-10-annotation-workbench.md、
+            2026-06-12-rlvr-guided-dpo-task-card.md。
             数据与训练结果仅供研究，不构成投资建议。
           </p>
         </div>

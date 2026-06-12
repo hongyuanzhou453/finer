@@ -1,20 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   Check,
   ChevronRight,
   Clock,
   Search,
-  ShieldCheck,
   Star,
   UserCheck,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { KOLS, STAGE_DETAILS } from "@/demo/data";
+import { DemoHeader, type DemoView } from "./demo-header";
 import type {
   EvidenceSpan,
   Kol,
@@ -30,7 +28,7 @@ import { PipelineRail } from "./pipeline-rail";
 const pct = (v: number, sign = true) =>
   `${sign && v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
 
-const DIRECTION_META: Record<TradeDirection, { label: string; cls: string }> = {
+export const DIRECTION_META: Record<TradeDirection, { label: string; cls: string }> = {
   bullish: { label: "看多", cls: "bg-[rgba(225,27,34,0.1)] text-morningstar-red" },
   bearish: { label: "看空", cls: "bg-[rgba(16,185,129,0.12)] text-[#0f9b6c]" },
   neutral: { label: "中性", cls: "bg-[var(--surface-muted)] text-[var(--ink-soft)]" },
@@ -47,7 +45,7 @@ const VALIDATION_META: Record<ValidationStatus, { label: string; cls: string }> 
 
 // ---- small pieces -----------------------------------------------------------
 
-function Stars({
+export function Stars({
   value,
   onSelect,
 }: {
@@ -83,7 +81,7 @@ function Stars({
   );
 }
 
-function HighlightedSource({
+export function HighlightedSource({
   text,
   spans,
   activeSpanId,
@@ -415,7 +413,13 @@ function RlhfPanel({ ta }: { ta: TradeAction }) {
 
 // ---- main workbench ---------------------------------------------------------
 
-export function DemoWorkbench() {
+export function DemoWorkbench({
+  view,
+  onViewChange,
+}: {
+  view: DemoView;
+  onViewChange: (v: DemoView) => void;
+}) {
   const [kolId, setKolId] = useState(KOLS[0].id);
   const kol = KOLS.find((k) => k.id === kolId) ?? KOLS[0];
 
@@ -442,29 +446,7 @@ export function DemoWorkbench() {
   return (
     <div className="flex h-[100dvh] flex-col">
       {/* top bar */}
-      <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--table-border)] bg-[rgba(243,239,231,0.92)] px-4 backdrop-blur">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-morningstar-red">
-            <ShieldCheck className="h-4 w-4 text-white" strokeWidth={1.8} />
-          </div>
-          <span className="text-[14px] font-bold tracking-tight text-foreground">
-            Finer OS
-            <span className="ml-2 font-mono text-[11px] font-normal text-foreground/45">
-              / demo workbench
-            </span>
-          </span>
-          <span className="ml-2 hidden rounded-sm border border-[var(--table-border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)] sm:inline">
-            演示数据 · Sample data only
-          </span>
-        </div>
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-foreground/70 transition-colors hover:text-morningstar-red"
-        >
-          <ArrowLeft className="h-4 w-4" strokeWidth={2} />
-          返回首页
-        </Link>
-      </header>
+      <DemoHeader view={view} onViewChange={onViewChange} />
 
       {/* body: three panes */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">

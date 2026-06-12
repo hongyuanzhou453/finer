@@ -182,3 +182,78 @@ export interface StageDetail {
   output: { k: string; v: string }[];
   schema_ref: string;
 }
+
+// ---- annotation demo (标注全流程) -------------------------------------------
+// Demo-only types for the interactive annotation walkthrough. Field names echo
+// the real pipeline (eval_set.jsonl gold, DPO pairs, RLHFFeedback) and the RLVR
+// reward axes from docs/specs/2026-06-12-rlvr-guided-dpo-task-card.md — but ALL
+// values are fabricated and scored by a deterministic demo function, never a
+// real model or backend.
+
+export type AnnotationTaskId = "gold" | "preference" | "f6";
+
+/** One model extraction candidate — shape mirrors the simplified extraction JSON. */
+export interface ExtractionDraft {
+  ticker: string;
+  direction: TradeDirection;
+  conviction: number; // 0-1
+  action: ActionType;
+  target_price_low: number | null;
+  target_price_high: number | null;
+  rationale: string;
+}
+
+/**
+ * RLVR verifier score for one ExtractionDraft against its source evidence.
+ * Axes align with the planned src/finer/ml/rewards.py (structure gate +
+ * grounding / calibration / abstention). Computed deterministically in the demo.
+ */
+export interface RewardBreakdown {
+  total: number; // [0,1]; structure fail -> 0
+  structurePass: boolean; // gate
+  grounding: number; // [0,1]
+  calibration: number; // [0,1]
+  abstention: number; // [0,1]
+  committal: boolean; // direction ∈ {bullish, bearish}
+  notes: string[]; // human-readable reasons
+}
+
+/** Task 1 — held-out eval gold annotation (human verification set). */
+export interface GoldTask {
+  id: string;
+  persona: string;
+  passage: string;
+  expected_abstain: boolean;
+  reference_gold: {
+    direction: TradeDirection;
+    ticker: string;
+    conviction: number;
+    note: string;
+  };
+}
+
+/** Task 2 — DPO preference pair review (chosen ≻ rejected). */
+export interface PreferencePair {
+  id: string;
+  persona: string;
+  prompt: string; // source evidence text
+  chosen: ExtractionDraft;
+  rejected: ExtractionDraft;
+  rationale: string; // why chosen beats rejected
+}
+
+/** Task 3 — F6 field-level correction → preference (environment B flywheel). */
+export interface F6Case {
+  id: string;
+  trade_action_id: string;
+  persona: string;
+  passage: string;
+  model_output: ExtractionDraft; // the rejected (model's original error)
+  flagged: string; // what's wrong
+}
+
+export interface AnnotationProgress {
+  gold: number;
+  pairs: number;
+  f6: number;
+}
