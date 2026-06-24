@@ -251,9 +251,18 @@ async def test_from_envelope_handles_json_roundtrip_anchor_dicts():
     """ContentEnvelope types anchors as List[Any], so model_validate() on a
     serialized F2 envelope yields dict anchors. The runner must coerce them so
     the real F5-route file path resolves symbols (regression guard)."""
+    from finer.schemas.temporal import TemporalAnchor
+
     built = _f2_envelope(["看好这只股票，准备加仓。"], anchors=[_ndt_anchor()])
+    # Strict TemporalAnchor with a datetime that survives JSON only as a string.
+    built.temporal_anchors = [
+        TemporalAnchor.create_published_at(
+            raw_text="2026-03-12", resolved_time=_PUBLISHED_AT, confidence=1.0
+        )
+    ]
     reloaded = ContentEnvelope.model_validate(json.loads(built.model_dump_json()))
     assert isinstance(reloaded.entity_anchors[0], dict)  # documents the root cause
+    assert isinstance(reloaded.temporal_anchors[0], dict)  # incl. strict temporal anchor
 
     actions = await run_canonical_from_envelope(reloaded, {"author": "test-kol"})
 

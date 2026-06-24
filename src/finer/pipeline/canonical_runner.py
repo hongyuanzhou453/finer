@@ -222,8 +222,10 @@ def _coerce_envelope_anchors(envelope: ContentEnvelope) -> None:
         ]
     temporal = getattr(envelope, "temporal_anchors", None) or []
     if any(isinstance(a, dict) for a in temporal):
+        # TemporalAnchor is strict=True (rejects ISO-string datetimes); from_dict
+        # converts resolved_time strings before validation.
         envelope.temporal_anchors = [
-            TemporalAnchor.model_validate(a) if isinstance(a, dict) else a
+            TemporalAnchor.from_dict(a) if isinstance(a, dict) else a
             for a in temporal
         ]
 
