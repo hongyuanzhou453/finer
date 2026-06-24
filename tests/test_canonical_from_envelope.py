@@ -241,3 +241,22 @@ async def test_route_uses_envelope_path_for_f2_json(tmp_path):
     payload = json.loads(out_files[0].read_text(encoding="utf-8"))
     assert payload["model"] == "canonical-f2-envelope"
     assert payload["actions"] == [{"action_id": "a1", "canonical_trace_status": "canonical"}]
+
+
+# ── 5. JSON round-trip: anchors arrive as dicts but still resolve ────────────
+
+
+@pytest.mark.asyncio
+async def test_from_envelope_handles_json_roundtrip_anchor_dicts():
+    """ContentEnvelope types anchors as List[Any], so model_validate() on a
+    serialized F2 envelope yields dict anchors. The runner must coerce them so
+    the real F5-route file path resolves symbols (regression guard)."""
+    built = _f2_envelope(["看好这只股票，准备加仓。"], anchors=[_ndt_anchor()])
+    reloaded = ContentEnvelope.model_validate(json.loads(built.model_dump_json()))
+    assert isinstance(reloaded.entity_anchors[0], dict)  # documents the root cause
+
+    actions = await run_canonical_from_envelope(reloaded, {"author": "test-kol"})
+
+    assert actions, "expected canonical actions from a JSON-reloaded F2 envelope"
+    assert actions[0].canonical_trace_status == "canonical"
+    assert _action_symbol(actions[0]) == "300750.SZ"

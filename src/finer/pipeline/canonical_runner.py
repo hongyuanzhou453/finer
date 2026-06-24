@@ -35,6 +35,8 @@ from typing import Any, Dict, List, Optional
 from finer.schemas.content_envelope import BlockQuality, ContentBlock, ContentEnvelope
 from finer.schemas.quality import QualityCard
 from finer.schemas.evidence import EvidenceSpan
+from finer.schemas.entity_anchor import EntityAnchor
+from finer.schemas.temporal import TemporalAnchor
 from finer.schemas.investment_intent import NormalizedInvestmentIntent
 from finer.schemas.policy import (
     PolicyContext,
@@ -203,6 +205,29 @@ async def run_canonical_from_artifacts(
     return result
 
 
+def _coerce_envelope_anchors(envelope: ContentEnvelope) -> None:
+    """Coerce dict-shaped anchors into model instances (idempotent).
+
+    ContentEnvelope types entity_anchors / temporal_anchors as ``List[Any]``, so
+    ``ContentEnvelope.model_validate()`` on a serialized F2 envelope leaves them
+    as plain dicts. F3/F5 expect EntityAnchor / TemporalAnchor attribute access,
+    so coerce here. Envelopes built in memory (already model instances) pass
+    through untouched.
+    """
+    entities = getattr(envelope, "entity_anchors", None) or []
+    if any(isinstance(a, dict) for a in entities):
+        envelope.entity_anchors = [
+            EntityAnchor.model_validate(a) if isinstance(a, dict) else a
+            for a in entities
+        ]
+    temporal = getattr(envelope, "temporal_anchors", None) or []
+    if any(isinstance(a, dict) for a in temporal):
+        envelope.temporal_anchors = [
+            TemporalAnchor.model_validate(a) if isinstance(a, dict) else a
+            for a in temporal
+        ]
+
+
 async def run_canonical_from_envelope(
     envelope: ContentEnvelope,
     context: Optional[Dict[str, Any]] = None,
@@ -229,6 +254,10 @@ async def run_canonical_from_envelope(
         raise ValueError(f"Unknown strategy: {strategy!r}. Use 'programmatic' or 'llm_guided'.")
 
     context = context or {}
+
+    # F2 anchors may arrive as dicts (JSON round-trip via List[Any] fields);
+    # coerce them so F3/F5 can use EntityAnchor / TemporalAnchor attributes.
+    _coerce_envelope_anchors(envelope)
 
     # Quality Gate: reject envelopes that fail quality gate before F3
     from finer.services.quality_gate import evaluate_envelope_quality
