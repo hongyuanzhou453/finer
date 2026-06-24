@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -454,3 +455,206 @@ def test_unknown_trade_action_returns_canonical_error(client: TestClient) -> Non
     assert "fix_hint" in details
     for sensitive in ("token", "secret", "password", "cookie", "authorization", "api_key"):
         assert sensitive not in details
+
+
+# ---------------------------------------------------------------------------
+# Canonical ``*_actions.json`` batch-wrapper bridging
+#
+# The F5 extraction route writes one wrapper file per source, shaped as
+# ``{"source_file", "extracted_at", "model": "canonical-*", "actions": [...]}``.
+# The assembler must expand these into per-action audit rows (and keep skipping
+# legacy batch products that lack the canonical model marker).
+# ---------------------------------------------------------------------------
+
+
+def _write_canonical_wrapper(
+    data_root: Path,
+    stem: str,
+    actions: list[TradeAction],
+    *,
+    model: str = "canonical-f2-envelope",
+    source_file: str | None = None,
+) -> Path:
+    """Write a canonical F5 route wrapper file (``{stem}_actions.json``)."""
+
+    path = data_root / "F5_executed" / f"{stem}_actions.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "source_file": source_file or f"/abs/data/F2_anchored/{stem}.json",
+                "extracted_at": _dt(12).isoformat(),
+                "model": model,
+                "actions": [a.model_dump(mode="json") for a in actions],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _wrapper_action(trade_action_id: str, ticker: str, *, hour: int = 12) -> TradeAction:
+    return _action(
+        trade_action_id=trade_action_id,
+        ticker=ticker,
+        content_id=f"env-{trade_action_id}",
+        creator_id="kol-wrap",
+        intent_id=f"intent-{trade_action_id}",
+        policy_id=f"policy-{trade_action_id}",
+        evidence_span_ids=[f"span-{trade_action_id}"],
+        timestamp=_dt(hour),
+    )
+
+
+def test_canonical_wrapper_expands_into_rows(tmp_path: Path) -> None:
+    """Every embedded action in a canonical wrapper becomes its own audit row."""
+
+    a1 = _wrapper_action("wrap-a1", "600519", hour=13)
+    a2 = _wrapper_action("wrap-a2", "000858", hour=12)
+    _write_canonical_wrapper(tmp_path, "local_w1", [a1, a2])
+
+    assembler = AuditAssembler(data_root=tmp_path, ttl_seconds=0)
+    listing = assembler.list_action_summaries(limit=100)
+
+    assert listing["total"] == 2
+    assert {row["trade_action_id"] for row in listing["actions"]} == {"wrap-a1", "wrap-a2"}
+    # F3/F4 sidecars are not persisted by the route, yet the action self-declares
+    # canonical with full provenance, so the materialized status stays canonical.
+    assert all(row["canonical_trace_status"] == "canonical" for row in listing["actions"])
+
+
+def test_canonical_wrapper_trace_bundle_keeps_source_file(tmp_path: Path) -> None:
+    """The trace bundle resolves a wrapped action and preserves the source link."""
+
+    action = _wrapper_action("wrap-trace", "600519")
+    _write_canonical_wrapper(
+        tmp_path, "local_wt", [action], source_file="/abs/F2_anchored/local_wt.json"
+    )
+
+    assembler = AuditAssembler(data_root=tmp_path, ttl_seconds=0)
+    bundle = assembler.get_trace_bundle("wrap-trace")
+
+    assert bundle is not None
+    assert bundle["trade_action"]["trade_action_id"] == "wrap-trace"
+    assert bundle["trade_action"]["canonical_trace_status"] == "canonical"
+    assert bundle["envelope"]["source_file"] == "/abs/F2_anchored/local_wt.json"
+    # F3/F4 sidecars are not persisted alongside the wrapper.
+    assert bundle["intent"] is None
+    assert bundle["policy"] is None
+
+
+def test_legacy_wrapper_without_canonical_marker_is_skipped(tmp_path: Path) -> None:
+    """A ``*_actions.json`` file lacking the canonical model marker stays skipped.
+
+    This guards the distinction between canonical route output and legacy batch
+    products: even when a legacy wrapper happens to embed a provenanced action,
+    the missing ``canonical-*`` model tag keeps it out of the audit station.
+    """
+
+    legacy_action = _wrapper_action("legacy-a1", "600519")
+    wrapper = tmp_path / "F5_executed" / "legacy_batch_actions.json"
+    wrapper.parent.mkdir(parents=True, exist_ok=True)
+    wrapper.write_text(
+        json.dumps(
+            {
+                "source_file": "legacy.json",
+                "model": "qwen-max",  # raw model name → legacy, not canonical
+                "actions": [legacy_action.model_dump(mode="json")],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assembler = AuditAssembler(data_root=tmp_path, ttl_seconds=0)
+    assert assembler.list_action_summaries() == {"actions": [], "total": 0}
+
+
+def test_canonical_wrapper_via_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The list + trace endpoints serve actions sourced from a canonical wrapper."""
+
+    from finer.api.routes import audit as audit_route
+    from finer.api.server import create_app
+
+    action = _wrapper_action("http-wrap", "600519")
+    _write_canonical_wrapper(tmp_path, "local_http", [action])
+    monkeypatch.setattr(
+        audit_route,
+        "_ASSEMBLER",
+        AuditAssembler(data_root=tmp_path, ttl_seconds=0),
+    )
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    listing = client.get("/api/audit/actions").json()["data"]
+    assert listing["total"] == 1
+    assert listing["actions"][0]["trade_action_id"] == "http-wrap"
+
+    trace = client.get("/api/audit/actions/http-wrap/trace")
+    assert trace.status_code == 200
+    assert trace.json()["data"]["trade_action"]["trade_action_id"] == "http-wrap"
+
+
+def test_canonical_wrapper_and_single_file_coexist(tmp_path: Path) -> None:
+    """Golden-path single files and route wrappers index together without clashing."""
+
+    _seed_action_set(tmp_path)  # 3 single-file actions + 1 skipped legacy wrapper
+    _write_canonical_wrapper(tmp_path, "local_mix", [_wrapper_action("wrap-mix", "AAPL")])
+
+    assembler = AuditAssembler(data_root=tmp_path, ttl_seconds=0)
+    listing = assembler.list_action_summaries(limit=100)
+
+    # 3 single-file + 1 wrapped action; the no-marker legacy wrapper stays skipped.
+    assert listing["total"] == 4
+    ids = {row["trade_action_id"] for row in listing["actions"]}
+    assert "wrap-mix" in ids
+    assert {"ta-canonical", "ta-partial", "ta-non-canonical"} <= ids
+
+
+# ---------------------------------------------------------------------------
+# Optional smoke test against the real ``data/F5_executed`` produced by the F5
+# route. Skips automatically when the canonical wrappers are absent (e.g. CI),
+# so the suite stays portable. Override the data root with
+# FINER_AUDIT_REAL_DATA_ROOT when running from an isolated worktree.
+# ---------------------------------------------------------------------------
+
+_REAL_DATA_ROOT = Path(
+    os.environ.get(
+        "FINER_AUDIT_REAL_DATA_ROOT",
+        str(Path(__file__).resolve().parents[1] / "data"),
+    )
+)
+
+
+def _has_real_canonical_wrappers() -> bool:
+    f5_dir = _REAL_DATA_ROOT / "F5_executed"
+    return f5_dir.is_dir() and any(f5_dir.glob("*_actions.json"))
+
+
+@pytest.mark.skipif(
+    not _has_real_canonical_wrappers(),
+    reason="real canonical F5 *_actions.json wrappers not present",
+)
+def test_real_f5_executed_wrappers_are_served() -> None:
+    assembler = AuditAssembler(data_root=_REAL_DATA_ROOT, ttl_seconds=0)
+    listing = assembler.list_action_summaries(limit=10_000)
+
+    assert listing["total"] >= 1
+    assert all(
+        row["canonical_trace_status"] in {"canonical", "partial", "non_canonical"}
+        for row in listing["actions"]
+    )
+
+    first_id = listing["actions"][0]["trade_action_id"]
+    bundle = assembler.get_trace_bundle(first_id)
+    assert bundle is not None
+    assert bundle["trade_action"]["trade_action_id"] == first_id
+    assert set(bundle.keys()) == {
+        "trade_action",
+        "intent",
+        "policy",
+        "evidence_spans",
+        "envelope",
+    }
