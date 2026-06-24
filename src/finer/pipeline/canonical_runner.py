@@ -1,6 +1,6 @@
 """Canonical F3 → F4 → F5 Pipeline Runner.
 
-Provides two entry points:
+Provides three entry points:
 
 1. run_canonical_from_artifacts() — **canonical**: consumes structured
    upstream artifacts (intents, policy mappings, evidence spans, temporal
@@ -8,7 +8,12 @@ Provides two entry points:
    evidence_span_ids, and execution_timing.  Non-executable policy hints
    are recorded as RejectedIntent for audit.
 
-2. run_canonical_extraction() — **deprecated**: accepts raw text,
+2. run_canonical_from_envelope() — **canonical**: consumes a real (F1/F2)
+   ContentEnvelope and runs F3→F4→F5, so F3 resolves target symbols from
+   envelope.entity_anchors and F5 timing uses envelope.temporal_anchors.
+   This is the entry point the F5 route uses for F2-anchored envelopes.
+
+3. run_canonical_extraction() — **deprecated**: accepts raw text,
    fabricates a minimal ContentEnvelope, and runs F3→F4→F5.
    Retained only for backward compatibility and legacy baseline.
 
@@ -198,6 +203,106 @@ async def run_canonical_from_artifacts(
     return result
 
 
+async def run_canonical_from_envelope(
+    envelope: ContentEnvelope,
+    context: Optional[Dict[str, Any]] = None,
+    strategy: str = "programmatic",
+) -> List[TradeAction]:
+    """Canonical F3 → F4 → F5 pipeline over a real (F1/F2) ContentEnvelope.
+
+    This is the entry point the F5 route should use for F2-anchored envelopes.
+    Unlike :func:`run_canonical_extraction` — which fabricates a minimal envelope
+    from raw text and therefore discards entity/temporal anchors — this consumes a
+    fully-anchored F2 envelope, so F3 resolves ``target_symbol`` from
+    ``envelope.entity_anchors`` and F5 timing uses ``envelope.temporal_anchors``.
+
+    Args:
+        envelope: F1/F2 ContentEnvelope (with entity_anchors / temporal_anchors).
+        context: Optional extraction context (``kol_id`` / ``author`` for policy).
+            Falls back to ``envelope.creator_id`` when not provided.
+        strategy: F5 construction strategy — "programmatic" or "llm_guided".
+
+    Returns:
+        List of canonical TradeActions (canonical_trace_status == "canonical").
+    """
+    if strategy not in ("programmatic", "llm_guided"):
+        raise ValueError(f"Unknown strategy: {strategy!r}. Use 'programmatic' or 'llm_guided'.")
+
+    context = context or {}
+
+    # Quality Gate: reject envelopes that fail quality gate before F3
+    from finer.services.quality_gate import evaluate_envelope_quality
+
+    gate_result = evaluate_envelope_quality(envelope)
+    if gate_result.status == "reject":
+        logger.info(
+            "Envelope %s rejected by quality gate (score=%.2f, reasons=%s)",
+            envelope.envelope_id, gate_result.score, gate_result.reasons,
+        )
+        return []
+
+    # F3: Intent extraction (consumes envelope.entity_anchors for symbol resolution)
+    from finer.extraction.intent_extractor import RuleBasedIntentExtractor
+
+    extractor = RuleBasedIntentExtractor()
+    intent_result = extractor.extract(envelope)
+    intents = intent_result.intents
+
+    if not intents:
+        logger.info("No intents extracted from envelope %s", envelope.envelope_id)
+        return []
+
+    # F4: Policy mapping
+    from finer.policy.policy_mapper import PolicyMapper
+
+    kol_id = (
+        context.get("kol_id")
+        or context.get("author")
+        or getattr(envelope, "creator_id", None)
+    )
+    policy_ctx = PolicyContext(kol_id=kol_id) if kol_id else None
+    mapper = PolicyMapper(context=policy_ctx)
+    policy_batch = mapper.map_batch(intents)
+
+    # F5: TradeAction construction via the canonical entry point
+    evidence_map: Dict[str, EvidenceSpan] = {
+        span.evidence_span_id: span for span in intent_result.evidence_spans
+    }
+    temporal_list = list(getattr(envelope, "temporal_anchors", []) or [])
+
+    if strategy == "programmatic":
+        result = _build_actions_programmatic(
+            intents=intents,
+            policy_batch=policy_batch,
+            envelope=envelope,
+            evidence_map=evidence_map,
+            temporal_anchors=temporal_list,
+        )
+    else:
+        text = "\n".join(
+            getattr(b, "text", "") or "" for b in getattr(envelope, "blocks", [])
+        ).strip()
+        result = await _build_actions_llm(
+            intents=intents,
+            policy_batch=policy_batch,
+            envelope=envelope,
+            evidence_map=evidence_map,
+            temporal_anchors=temporal_list,
+            text=text,
+        )
+
+    logger.info(
+        "Canonical (envelope) complete: %s → %d intents → %d policy mappings → "
+        "%d trade actions (strategy=%s)",
+        envelope.envelope_id,
+        len(intents),
+        len(policy_batch.mappings),
+        result.executable_count,
+        strategy,
+    )
+    return result.trade_actions
+
+
 async def run_canonical_extraction(
     text: str,
     context: Dict[str, Any],
@@ -235,68 +340,7 @@ async def run_canonical_extraction(
     # F1: Build minimal ContentEnvelope from raw text (legacy path)
     envelope = _build_envelope(text, context)
 
-    # Quality Gate: reject envelopes that fail quality gate before F3
-    from finer.services.quality_gate import evaluate_envelope_quality
-
-    gate_result = evaluate_envelope_quality(envelope)
-    if gate_result.status == "reject":
-        logger.info(
-            "Envelope %s rejected by quality gate (score=%.2f, reasons=%s)",
-            envelope.envelope_id, gate_result.score, gate_result.reasons,
-        )
-        return []
-
-    # F3: Intent extraction
-    from finer.extraction.intent_extractor import RuleBasedIntentExtractor
-
-    extractor = RuleBasedIntentExtractor()
-    intent_result = extractor.extract(envelope)
-    intents = intent_result.intents
-
-    if not intents:
-        logger.info("No intents extracted from text")
-        return []
-
-    # F4: Policy mapping
-    from finer.policy.policy_mapper import PolicyMapper
-
-    kol_id = context.get("kol_id") or context.get("author")
-    policy_ctx = PolicyContext(kol_id=kol_id) if kol_id else None
-    mapper = PolicyMapper(context=policy_ctx)
-    policy_batch = mapper.map_batch(intents)
-
-    # F5: TradeAction construction via the canonical entry point
-    evidence_map: Dict[str, EvidenceSpan] = {
-        span.evidence_span_id: span for span in intent_result.evidence_spans
-    }
-    temporal_list = list(getattr(envelope, 'temporal_anchors', []) or [])
-
-    if strategy == "programmatic":
-        result = _build_actions_programmatic(
-            intents=intents,
-            policy_batch=policy_batch,
-            envelope=envelope,
-            evidence_map=evidence_map,
-            temporal_anchors=temporal_list,
-        )
-    else:
-        result = await _build_actions_llm(
-            intents=intents,
-            policy_batch=policy_batch,
-            envelope=envelope,
-            evidence_map=evidence_map,
-            temporal_anchors=temporal_list,
-            text=text,
-        )
-
-    logger.info(
-        "Canonical extraction complete: %d intents → %d policy mappings → %d trade actions (strategy=%s)",
-        len(intents),
-        len(policy_batch.mappings),
-        result.executable_count,
-        strategy,
-    )
-    return result.trade_actions
+    return await run_canonical_from_envelope(envelope, context, strategy=strategy)
 
 
 # ── F1: Envelope construction (legacy path only) ────────────────────────────

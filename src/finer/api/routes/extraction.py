@@ -299,19 +299,43 @@ async def _run_extraction_pipeline_async(
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                text = data.get("text") or data.get("content") or data.get("clean_text", "")
-                if not text:
-                    logger.warning(f"No text content in {file_path}")
-                    continue
-
                 context = {
                     "source_id": str(file_path),
                     "source_file": file_path.name,
                 }
 
-                from finer.pipeline.canonical_runner import run_canonical_extraction
-                actions = await run_canonical_extraction(text, context)
-                model = "canonical-programmatic"
+                from finer.pipeline.canonical_runner import (
+                    run_canonical_from_envelope,
+                    run_canonical_extraction,
+                )
+
+                # Prefer the canonical F2-envelope path so F3/F5 consume the
+                # entity/temporal anchors. Fall back to the legacy raw-text path
+                # only when the file is not a serialized ContentEnvelope.
+                envelope = None
+                if isinstance(data, dict) and "blocks" in data:
+                    try:
+                        from finer.schemas.content_envelope import ContentEnvelope
+
+                        envelope = ContentEnvelope.model_validate(data)
+                    except Exception as exc:
+                        logger.warning(
+                            "F2 envelope validation failed for %s (%s); using raw-text fallback",
+                            file_path.name, exc,
+                        )
+                        envelope = None
+
+                if envelope is not None:
+                    context["kol_id"] = getattr(envelope, "creator_id", None)
+                    actions = await run_canonical_from_envelope(envelope, context)
+                    model = "canonical-f2-envelope"
+                else:
+                    text = data.get("text") or data.get("content") or data.get("clean_text", "")
+                    if not text:
+                        logger.warning(f"No text content in {file_path}")
+                        continue
+                    actions = await run_canonical_extraction(text, context)
+                    model = "canonical-programmatic"
 
                 if actions:
                     output_file = output_path / f"{file_path.stem}_actions.json"
