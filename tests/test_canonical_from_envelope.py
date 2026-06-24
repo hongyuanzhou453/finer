@@ -241,6 +241,9 @@ async def test_route_uses_envelope_path_for_f2_json(tmp_path):
     payload = json.loads(out_files[0].read_text(encoding="utf-8"))
     assert payload["model"] == "canonical-f2-envelope"
     assert payload["actions"] == [{"action_id": "a1", "canonical_trace_status": "canonical"}]
+    # Actions must serialize via mode="json" so datetime fields (the four
+    # execution-timing clocks) become ISO strings, not unserializable datetimes.
+    fake_action.model_dump.assert_called_once_with(mode="json")
 
 
 # ── 5. JSON round-trip: anchors arrive as dicts but still resolve ────────────

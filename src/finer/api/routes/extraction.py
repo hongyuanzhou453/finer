@@ -287,6 +287,9 @@ async def _run_extraction_pipeline_async(
 ):
     """异步执行提取管线 (canonical F3→F4→F5)."""
     try:
+        # Ensure output dir exists even when called outside the route handler.
+        output_path.mkdir(parents=True, exist_ok=True)
+
         # 查找输入文件
         input_files = list(input_path.glob("**/*.json"))[:limit]
         logger.info(f"Found {len(input_files)} files to process in {input_path}")
@@ -343,7 +346,7 @@ async def _run_extraction_pipeline_async(
                         "source_file": str(file_path),
                         "extracted_at": datetime.now().isoformat(),
                         "model": model,
-                        "actions": [a.model_dump() for a in actions],
+                        "actions": [a.model_dump(mode="json") for a in actions],
                     }
                     with open(output_file, "w", encoding="utf-8") as f:
                         json.dump(output_data, f, ensure_ascii=False, indent=2)
