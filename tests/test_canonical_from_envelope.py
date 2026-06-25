@@ -272,3 +272,70 @@ async def test_from_envelope_handles_json_roundtrip_anchor_dicts():
     assert actions, "expected canonical actions from a JSON-reloaded F2 envelope"
     assert actions[0].canonical_trace_status == "canonical"
     assert _action_symbol(actions[0]) == "300750.SZ"
+
+
+# ── 5. F3/F4 persistence lights up the audit Intent/Policy cards ──────────────
+
+
+@pytest.mark.asyncio
+async def test_persist_dir_writes_f3_f4_sidecars(tmp_path):
+    """persist_dir writes per-id F3/F4 sidecars the audit assembler can resolve."""
+    from finer.services.audit_assembler import AuditAssembler
+
+    envelope = _f2_envelope(["看好这只股票，准备加仓。"], anchors=[_ndt_anchor()])
+    actions = await run_canonical_from_envelope(
+        envelope, {"author": "test-kol"}, persist_dir=tmp_path
+    )
+    assert actions
+    action = actions[0]
+
+    intent_file = tmp_path / "F3_intents" / f"{action.intent_id}.json"
+    policy_file = tmp_path / "F4_policy_mapped" / f"{action.policy_id}.json"
+    assert intent_file.is_file(), "F3 intent sidecar should be written"
+    assert policy_file.is_file(), "F4 policy sidecar should be written"
+
+    # The assembler now populates Intent + Policy cards from the sidecars.
+    f5_dir = tmp_path / "F5_executed"
+    f5_dir.mkdir(parents=True, exist_ok=True)
+    (f5_dir / f"{envelope.envelope_id}_actions.json").write_text(
+        json.dumps(
+            {
+                "source_file": "x",
+                "model": "canonical-f2-envelope",
+                "actions": [action.model_dump(mode="json")],
+            }
+        ),
+        encoding="utf-8",
+    )
+    bundle = AuditAssembler(data_root=tmp_path, ttl_seconds=0).get_trace_bundle(
+        action.trade_action_id
+    )
+    assert bundle is not None
+    assert bundle["intent"] is not None
+    assert bundle["intent"]["intent_id"] == action.intent_id
+    assert bundle["policy"] is not None
+    assert bundle["policy"]["policy_id"] == action.policy_id
+
+
+@pytest.mark.asyncio
+async def test_no_persist_dir_writes_nothing(tmp_path):
+    """Without persist_dir the runner stays read-only (no sidecars)."""
+    envelope = _f2_envelope(["看好这只股票，准备加仓。"], anchors=[_ndt_anchor()])
+    actions = await run_canonical_from_envelope(envelope, {"author": "test-kol"})
+    assert actions
+    assert not (tmp_path / "F3_intents").exists()
+    assert not (tmp_path / "F4_policy_mapped").exists()
+
+
+@pytest.mark.asyncio
+async def test_action_rationale_is_human_readable():
+    """Rationale is grounded in target/direction/evidence, not '<action> via <uuid>'."""
+    envelope = _f2_envelope(["看好这只股票，准备加仓。"], anchors=[_ndt_anchor()])
+    actions = await run_canonical_from_envelope(envelope, {"author": "test-kol"})
+    assert actions
+    rationale = actions[0].rationale or ""
+
+    assert "Canonical F3→F4→F5" not in rationale  # old placeholder gone
+    assert " via " not in rationale  # old "<action_hint> via <policy_id>" gone
+    assert "宁德时代" in rationale or "300750" in rationale  # carries the target
+    assert "·" in rationale  # new structured format

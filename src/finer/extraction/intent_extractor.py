@@ -148,13 +148,32 @@ def _is_skip_block(text: str) -> bool:
     return False
 
 
+# Prefer concrete tradeable instruments over broad index/sector/macro references
+# when several known entities co-occur, so a specific stock pick is not shadowed
+# by a market index ("上证") or theme ("光模块") that was only mentioned as backdrop.
+_ENTITY_TYPE_PRIORITY = {
+    "ticker": 0,
+    "etf": 0,
+    "crypto": 1,
+    "commodity": 1,
+    "sector": 2,
+    "index": 3,
+    "macro": 4,
+}
+
+
 def _find_entities_in_text(text: str) -> List[Tuple[str, EntityEntry]]:
-    """Find all known entity names present in text."""
+    """Find all known entity names present in text.
+
+    Ordered by (type priority, name length) so callers taking ``found[0]`` get
+    the most specific tradeable entity rather than whichever index/theme happened
+    to match. Longer names still win within the same type (more specific match).
+    """
     found = []
     for name, entry in ENTITY_REGISTRY.items():
         if name in text:
             found.append((name, entry))
-    found.sort(key=lambda x: len(x[0]), reverse=True)
+    found.sort(key=lambda x: (_ENTITY_TYPE_PRIORITY.get(x[1][2], 5), -len(x[0])))
     return found
 
 

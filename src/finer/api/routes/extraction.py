@@ -330,7 +330,11 @@ async def _run_extraction_pipeline_async(
 
                 if envelope is not None:
                     context["kol_id"] = getattr(envelope, "creator_id", None)
-                    actions = await run_canonical_from_envelope(envelope, context)
+                    # persist_dir = data root (F5_executed's parent) so F3/F4
+                    # sidecars land where the audit assembler reads them.
+                    actions = await run_canonical_from_envelope(
+                        envelope, context, persist_dir=output_path.parent
+                    )
                     model = "canonical-f2-envelope"
                 else:
                     text = data.get("text") or data.get("content") or data.get("clean_text", "")

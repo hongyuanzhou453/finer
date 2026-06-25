@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from finer.schemas.content_envelope import BlockQuality, ContentBlock, ContentEnvelope
@@ -234,6 +235,7 @@ async def run_canonical_from_envelope(
     envelope: ContentEnvelope,
     context: Optional[Dict[str, Any]] = None,
     strategy: str = "programmatic",
+    persist_dir: Optional[Path] = None,
 ) -> List[TradeAction]:
     """Canonical F3 → F4 → F5 pipeline over a real (F1/F2) ContentEnvelope.
 
@@ -248,6 +250,10 @@ async def run_canonical_from_envelope(
         context: Optional extraction context (``kol_id`` / ``author`` for policy).
             Falls back to ``envelope.creator_id`` when not provided.
         strategy: F5 construction strategy — "programmatic" or "llm_guided".
+        persist_dir: When set, F3 intents and F4 policy mappings are written as
+            per-id sidecars under ``persist_dir/F3_intents`` and
+            ``persist_dir/F4_policy_mapped`` so the audit trace assembler can
+            populate the Intent/Policy cards. None (default) skips persistence.
 
     Returns:
         List of canonical TradeActions (canonical_trace_status == "canonical").
@@ -331,6 +337,12 @@ async def run_canonical_from_envelope(
         result.executable_count,
         strategy,
     )
+
+    # Persist F3/F4 intermediate artifacts as per-id sidecars so the audit trace
+    # assembler can resolve intent_id → Intent card and policy_id → Policy card.
+    if persist_dir is not None and result.trade_actions:
+        _persist_canonical_artifacts(intents, policy_batch.mappings, persist_dir)
+
     return result.trade_actions
 
 
@@ -546,7 +558,7 @@ def _build_actions_programmatic(
             confidence=intent.confidence,
             time_horizon=mapped.holding_period_hint,
             requires_manual_review=mapped.requires_human_review,
-            rationale=f"Canonical F3→F4→F5: {mapped.action_hint} via {mapped.policy_id}",
+            rationale=_build_action_rationale(intent, mapped, evidence_text),
         )
         actions.append(ta)
 
@@ -767,6 +779,52 @@ def _build_evidence_text(
         if span and hasattr(span, 'text'):
             parts.append(span.text)
     return " | ".join(parts)
+
+
+def _build_action_rationale(
+    intent: NormalizedInvestmentIntent,
+    mapped: PolicyMappedIntent,
+    evidence_text: str,
+) -> str:
+    """Compose a human-readable rationale for the audit/review surface.
+
+    Grounded in the F3 intent (direction + target), the F4 action hint, and the
+    KOL's own evidence text — instead of the opaque ``"<action> via <uuid>"``
+    placeholder that told a human auditor nothing.
+    """
+    target = intent.target_name or intent.target_symbol or "标的"
+    decision = f"{intent.direction} {target} · {mapped.action_hint}"
+    snippet = " ".join((evidence_text or "").split())[:160]
+    return f"{decision}｜依据：{snippet}" if snippet else decision
+
+
+def _persist_canonical_artifacts(
+    intents: List[NormalizedInvestmentIntent],
+    mappings: List[PolicyMappingResult],
+    persist_dir: Path,
+) -> None:
+    """Write F3 intents and F4 policy mappings as per-id sidecar JSON.
+
+    The audit trace assembler reads ``{persist_dir}/F3_intents/{intent_id}.json``
+    and ``{persist_dir}/F4_policy_mapped/{policy_id}.json`` to populate the Intent
+    and Policy cards; persisting them here closes the gap where the route wrote
+    only F5 (so those cards were always empty).
+    """
+    f3_dir = Path(persist_dir) / "F3_intents"
+    f4_dir = Path(persist_dir) / "F4_policy_mapped"
+    try:
+        f3_dir.mkdir(parents=True, exist_ok=True)
+        f4_dir.mkdir(parents=True, exist_ok=True)
+        for intent in intents:
+            (f3_dir / f"{intent.intent_id}.json").write_text(
+                intent.model_dump_json(indent=2), encoding="utf-8"
+            )
+        for mapping in mappings:
+            (f4_dir / f"{mapping.policy_id}.json").write_text(
+                mapping.model_dump_json(indent=2), encoding="utf-8"
+            )
+    except OSError as exc:
+        logger.warning("Failed to persist F3/F4 artifacts to %s: %s", persist_dir, exc)
 
 
 def _parse_llm_json(response: str) -> List[Dict[str, Any]]:
