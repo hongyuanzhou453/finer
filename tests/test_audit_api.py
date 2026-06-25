@@ -658,3 +658,57 @@ def test_real_f5_executed_wrappers_are_served() -> None:
         "evidence_spans",
         "envelope",
     }
+
+
+# ---------------------------------------------------------------------------
+# Evidence panel — F2_evidence sidecar resolution
+# ---------------------------------------------------------------------------
+
+
+def _write_evidence_span(
+    data_root: Path, span_id: str, *, text: str = "准备加仓", confidence: float = 0.9
+) -> None:
+    """Write an F2_evidence/{span_id}.json sidecar as the canonical runner does."""
+    from finer.schemas.evidence import EvidenceSpan
+
+    evidence_dir = data_root / "F2_evidence"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    span = EvidenceSpan(
+        evidence_span_id=span_id,
+        block_id="blk-1",
+        char_start=0,
+        char_end=len(text),
+        text=text,
+        confidence=confidence,
+        span_type="intent_keyword",
+    )
+    (evidence_dir / f"{span_id}.json").write_text(
+        span.model_dump_json(indent=2), encoding="utf-8"
+    )
+
+
+def test_evidence_spans_resolved_from_sidecars(tmp_path: Path) -> None:
+    """The trace bundle resolves evidence_span_ids from F2_evidence sidecars."""
+    action = _wrapper_action("ev-wrap", "600519")  # evidence_span_ids=["span-ev-wrap"]
+    _write_canonical_wrapper(tmp_path, "local_ev", [action])
+    _write_evidence_span(tmp_path, "span-ev-wrap", text="准备加仓建仓")
+
+    bundle = AuditAssembler(data_root=tmp_path, ttl_seconds=0).get_trace_bundle("ev-wrap")
+    assert bundle is not None
+    spans = bundle["evidence_spans"]
+    assert len(spans) == 1
+    assert spans[0]["evidence_span_id"] == "span-ev-wrap"
+    assert spans[0]["text"] == "准备加仓建仓"
+    # Shape matches the frontend EvidenceSpan contract used by evidence-source.tsx.
+    for key in ("block_id", "char_start", "char_end", "confidence"):
+        assert key in spans[0]
+
+
+def test_evidence_spans_missing_sidecar_is_skipped(tmp_path: Path) -> None:
+    """A referenced span with no sidecar is skipped, not fatal (panel stays partial)."""
+    action = _wrapper_action("ev-miss", "600519")  # references span-ev-miss (unwritten)
+    _write_canonical_wrapper(tmp_path, "local_evmiss", [action])
+
+    bundle = AuditAssembler(data_root=tmp_path, ttl_seconds=0).get_trace_bundle("ev-miss")
+    assert bundle is not None
+    assert bundle["evidence_spans"] == []

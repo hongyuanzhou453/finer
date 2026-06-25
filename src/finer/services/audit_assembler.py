@@ -17,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from finer.paths import DATA_ROOT
 from finer.schemas.content_envelope import ContentEnvelope
+from finer.schemas.evidence import EvidenceSpan
 from finer.schemas.investment_intent import NormalizedInvestmentIntent
 from finer.schemas.policy import PolicyMappingResult
 from finer.schemas.trade_action import TradeAction
@@ -112,7 +113,7 @@ class AuditAssembler:
             "trade_action": action_payload,
             "intent": intent.model_dump(mode="json") if intent else None,
             "policy": policy.model_dump(mode="json") if policy else None,
-            "evidence_spans": [],
+            "evidence_spans": self._load_evidence_spans_for_action(action),
             "envelope": self._envelope_context(
                 action, intent, envelope, source_file=indexed.source_file
             ),
@@ -262,6 +263,23 @@ class AuditAssembler:
             self.data_root / "F4_policy_mapped" / f"{action.policy_id}.json",
             PolicyMappingResult,
         )
+
+    def _load_evidence_spans_for_action(self, action: TradeAction) -> list[dict[str, Any]]:
+        """Resolve the action's evidence_span_ids to EvidenceSpan dicts.
+
+        Reads ``F2_evidence/{evidence_span_id}.json`` sidecars (written by the
+        canonical runner). Missing/unreadable spans are skipped so a partial
+        evidence set still renders rather than failing the whole bundle.
+        """
+        spans: list[dict[str, Any]] = []
+        evidence_dir = self.data_root / "F2_evidence"
+        for span_id in action.evidence_span_ids:
+            span = self._safe_load_model(
+                evidence_dir / f"{span_id}.json", EvidenceSpan
+            )
+            if span is not None:
+                spans.append(span.model_dump(mode="json"))
+        return spans
 
     def _load_envelope_for_action(
         self,

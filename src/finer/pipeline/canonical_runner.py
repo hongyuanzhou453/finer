@@ -250,10 +250,11 @@ async def run_canonical_from_envelope(
         context: Optional extraction context (``kol_id`` / ``author`` for policy).
             Falls back to ``envelope.creator_id`` when not provided.
         strategy: F5 construction strategy — "programmatic" or "llm_guided".
-        persist_dir: When set, F3 intents and F4 policy mappings are written as
-            per-id sidecars under ``persist_dir/F3_intents`` and
-            ``persist_dir/F4_policy_mapped`` so the audit trace assembler can
-            populate the Intent/Policy cards. None (default) skips persistence.
+        persist_dir: When set, F3 intents, F4 policy mappings, and the F2 evidence
+            spans referenced by the emitted actions are written as per-id sidecars
+            under ``persist_dir/F3_intents``, ``persist_dir/F4_policy_mapped`` and
+            ``persist_dir/F2_evidence`` so the audit trace assembler can populate
+            the Intent / Policy / Evidence panels. None (default) skips persistence.
 
     Returns:
         List of canonical TradeActions (canonical_trace_status == "canonical").
@@ -338,10 +339,19 @@ async def run_canonical_from_envelope(
         strategy,
     )
 
-    # Persist F3/F4 intermediate artifacts as per-id sidecars so the audit trace
-    # assembler can resolve intent_id → Intent card and policy_id → Policy card.
+    # Persist F3/F4/evidence intermediate artifacts as per-id sidecars so the
+    # audit trace assembler can resolve intent_id → Intent card, policy_id →
+    # Policy card, and evidence_span_ids → Evidence panel.
     if persist_dir is not None and result.trade_actions:
-        _persist_canonical_artifacts(intents, policy_batch.mappings, persist_dir)
+        used_evidence_ids = {
+            eid for action in result.trade_actions for eid in action.evidence_span_ids
+        }
+        used_spans = [
+            evidence_map[eid] for eid in used_evidence_ids if eid in evidence_map
+        ]
+        _persist_canonical_artifacts(
+            intents, policy_batch.mappings, used_spans, persist_dir
+        )
 
     return result.trade_actions
 
@@ -801,20 +811,24 @@ def _build_action_rationale(
 def _persist_canonical_artifacts(
     intents: List[NormalizedInvestmentIntent],
     mappings: List[PolicyMappingResult],
+    evidence_spans: List[EvidenceSpan],
     persist_dir: Path,
 ) -> None:
-    """Write F3 intents and F4 policy mappings as per-id sidecar JSON.
+    """Write F3 intents, F4 policy mappings, and F2 evidence spans as per-id JSON.
 
-    The audit trace assembler reads ``{persist_dir}/F3_intents/{intent_id}.json``
-    and ``{persist_dir}/F4_policy_mapped/{policy_id}.json`` to populate the Intent
-    and Policy cards; persisting them here closes the gap where the route wrote
-    only F5 (so those cards were always empty).
+    The audit trace assembler reads ``{persist_dir}/F3_intents/{intent_id}.json``,
+    ``{persist_dir}/F4_policy_mapped/{policy_id}.json`` and
+    ``{persist_dir}/F2_evidence/{evidence_span_id}.json`` to populate the Intent,
+    Policy and Evidence panels; persisting them here closes the gap where the
+    route wrote only F5 (so those panels were always empty).
     """
     f3_dir = Path(persist_dir) / "F3_intents"
     f4_dir = Path(persist_dir) / "F4_policy_mapped"
+    evidence_dir = Path(persist_dir) / "F2_evidence"
     try:
         f3_dir.mkdir(parents=True, exist_ok=True)
         f4_dir.mkdir(parents=True, exist_ok=True)
+        evidence_dir.mkdir(parents=True, exist_ok=True)
         for intent in intents:
             (f3_dir / f"{intent.intent_id}.json").write_text(
                 intent.model_dump_json(indent=2), encoding="utf-8"
@@ -823,8 +837,12 @@ def _persist_canonical_artifacts(
             (f4_dir / f"{mapping.policy_id}.json").write_text(
                 mapping.model_dump_json(indent=2), encoding="utf-8"
             )
+        for span in evidence_spans:
+            (evidence_dir / f"{span.evidence_span_id}.json").write_text(
+                span.model_dump_json(indent=2), encoding="utf-8"
+            )
     except OSError as exc:
-        logger.warning("Failed to persist F3/F4 artifacts to %s: %s", persist_dir, exc)
+        logger.warning("Failed to persist F3/F4/evidence artifacts to %s: %s", persist_dir, exc)
 
 
 def _parse_llm_json(response: str) -> List[Dict[str, Any]]:

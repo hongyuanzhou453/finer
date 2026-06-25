@@ -274,12 +274,12 @@ async def test_from_envelope_handles_json_roundtrip_anchor_dicts():
     assert _action_symbol(actions[0]) == "300750.SZ"
 
 
-# ── 5. F3/F4 persistence lights up the audit Intent/Policy cards ──────────────
+# ── 5. F3/F4/evidence persistence lights up the audit Intent/Policy/Evidence ──
 
 
 @pytest.mark.asyncio
-async def test_persist_dir_writes_f3_f4_sidecars(tmp_path):
-    """persist_dir writes per-id F3/F4 sidecars the audit assembler can resolve."""
+async def test_persist_dir_writes_f3_f4_evidence_sidecars(tmp_path):
+    """persist_dir writes per-id F3/F4/F2-evidence sidecars the assembler resolves."""
     from finer.services.audit_assembler import AuditAssembler
 
     envelope = _f2_envelope(["看好这只股票，准备加仓。"], anchors=[_ndt_anchor()])
@@ -294,7 +294,12 @@ async def test_persist_dir_writes_f3_f4_sidecars(tmp_path):
     assert intent_file.is_file(), "F3 intent sidecar should be written"
     assert policy_file.is_file(), "F4 policy sidecar should be written"
 
-    # The assembler now populates Intent + Policy cards from the sidecars.
+    # Every evidence span the action references is persisted.
+    assert action.evidence_span_ids, "action should carry evidence spans"
+    for span_id in action.evidence_span_ids:
+        assert (tmp_path / "F2_evidence" / f"{span_id}.json").is_file()
+
+    # The assembler now populates Intent + Policy + Evidence panels.
     f5_dir = tmp_path / "F5_executed"
     f5_dir.mkdir(parents=True, exist_ok=True)
     (f5_dir / f"{envelope.envelope_id}_actions.json").write_text(
@@ -315,6 +320,11 @@ async def test_persist_dir_writes_f3_f4_sidecars(tmp_path):
     assert bundle["intent"]["intent_id"] == action.intent_id
     assert bundle["policy"] is not None
     assert bundle["policy"]["policy_id"] == action.policy_id
+    # Evidence panel is no longer a stub.
+    assert len(bundle["evidence_spans"]) == len(action.evidence_span_ids)
+    served_ids = {s["evidence_span_id"] for s in bundle["evidence_spans"]}
+    assert served_ids == set(action.evidence_span_ids)
+    assert all(s.get("text") for s in bundle["evidence_spans"])
 
 
 @pytest.mark.asyncio
@@ -325,6 +335,7 @@ async def test_no_persist_dir_writes_nothing(tmp_path):
     assert actions
     assert not (tmp_path / "F3_intents").exists()
     assert not (tmp_path / "F4_policy_mapped").exists()
+    assert not (tmp_path / "F2_evidence").exists()
 
 
 @pytest.mark.asyncio
