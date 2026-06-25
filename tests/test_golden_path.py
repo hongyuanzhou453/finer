@@ -1,6 +1,7 @@
 """Golden Path pipeline tests.
 
-Tests run_golden_path(envelope) -> TradeAction with mocked LLM router.
+Tests run_golden_path(envelope) -> GoldenPathResult with mocked LLM router.
+Most tests read ``.primary_action`` (the representative TradeAction).
 Verifies F3→F4→F5 canonical chain, artifact writing, and error handling.
 
 Run: pytest tests/test_golden_path.py -v
@@ -111,53 +112,90 @@ def _patch_model_router():
 class TestRunGoldenPath:
     """Test the run_golden_path function."""
 
-    def test_returns_trade_action(self, tmp_path):
+    def test_returns_golden_path_result(self, tmp_path):
+        from finer.pipeline.golden_path import GoldenPathResult, run_golden_path
+
+        result = run_golden_path(_make_envelope(), data_root=tmp_path)
+        assert isinstance(result, GoldenPathResult)
+        assert result.intent_count == 1
+        assert result.policy_mapping_count == 1
+        assert result.action_count == 1
+        assert result.primary_action.__class__.__name__ == "TradeAction"
+
+    def test_returns_all_trade_actions_for_multi_intent_envelope(
+        self,
+        tmp_path,
+        _patch_model_router,
+    ):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
-        assert ta.__class__.__name__ == "TradeAction"
+        _patch_model_router.call_json.return_value = {
+            "intents": [
+                _MOCK_LLM_OUTPUT["intents"][0],
+                {
+                    "target_name": "Microsoft Corp.",
+                    "target_symbol": "MSFT",
+                    "target_type": "stock",
+                    "direction": "bullish",
+                    "actionability": "explicit_action",
+                    "position_delta_hint": "open",
+                    "conviction": 0.8,
+                    "confidence": 0.88,
+                    "market": "US",
+                    "evidence_text": "看好微软 MSFT，准备买入",
+                },
+            ],
+        }
+
+        result = run_golden_path(_make_envelope(), data_root=tmp_path)
+
+        assert result.intent_count == 2
+        assert result.policy_mapping_count == 2
+        assert result.action_count == 2
+        assert {ta.target.ticker for ta in result.trade_actions} == {"AAPL", "MSFT"}
+        assert len(list((tmp_path / "F5_executed").glob("*.json"))) == 2
 
     def test_canonical_trace_status(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
         assert ta.canonical_trace_status == "canonical"
 
     def test_has_intent_id_and_policy_id(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
         assert ta.intent_id is not None
         assert ta.policy_id is not None
 
     def test_has_evidence_span_ids(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
         assert len(ta.evidence_span_ids) > 0
 
     def test_has_execution_timing(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
         assert ta.execution_timing is not None
 
     def test_target_ticker(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
         assert ta.target.ticker == "AAPL"
 
     def test_direction_bullish(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
         assert ta.direction.value == "bullish"
 
     def test_source_creator_id(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
         assert ta.source.creator_id == "test_kol"
 
 
@@ -225,7 +263,7 @@ class TestCanonicalChain:
     def test_intent_id_in_chain(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
 
         # F3 artifact should have matching intent_id
         f3_files = list((tmp_path / "F3_intents").glob("*.json"))
@@ -235,7 +273,7 @@ class TestCanonicalChain:
     def test_policy_id_in_chain(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
 
         # F4 artifact should have matching policy_id
         f4_dir = tmp_path / "F4_policy_mapped"
@@ -247,7 +285,7 @@ class TestCanonicalChain:
         from finer.pipeline.golden_path import run_golden_path
 
         envelope = _make_envelope()
-        ta = run_golden_path(envelope, data_root=tmp_path)
+        ta = run_golden_path(envelope, data_root=tmp_path).primary_action
 
         # TradeAction evidence_span_ids should come from F3 intent
         f3_files = list((tmp_path / "F3_intents").glob("*.json"))
@@ -257,7 +295,7 @@ class TestCanonicalChain:
     def test_f5_action_serializable(self, tmp_path):
         from finer.pipeline.golden_path import run_golden_path
 
-        ta = run_golden_path(_make_envelope(), data_root=tmp_path)
+        ta = run_golden_path(_make_envelope(), data_root=tmp_path).primary_action
         dumped = ta.model_dump()
         assert dumped["canonical_trace_status"] == "canonical"
         assert dumped["intent_id"] is not None

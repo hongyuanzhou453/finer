@@ -23,6 +23,14 @@ Two F5 strategies:
 
 Both strategies produce TradeActions with full canonical trace:
   intent_id + policy_id + evidence_span_ids + execution_timing
+
+F2-grounding hard gate: a TradeAction's ``evidence_span_ids`` are re-resolved
+against the envelope's F2 block evidence (``_index_f2_evidence`` /
+``_resolve_f2_grounding``), not the intent's own F3 spans. When the envelope is
+F2-anchored, an intent that cannot be grounded in F2 evidence is rejected
+(``evidence_not_grounded_in_f2``). Fabricated/raw-text (dev) envelopes carry no
+F2 evidence, so their actions get empty evidence and the TradeAction validator
+downgrades them to ``partial`` — they no longer masquerade as canonical.
 """
 
 from __future__ import annotations
@@ -164,10 +172,14 @@ async def run_canonical_from_artifacts(
         logger.info("No intents provided to canonical runner")
         return CanonicalRunnerResult(strategy=strategy)
 
-    # Index evidence spans by ID for validation
-    evidence_map: Dict[str, EvidenceSpan] = {
-        span.evidence_span_id: span for span in evidence_spans
-    }
+    # Index F2 block evidence from the envelope, then fold in the explicitly-passed
+    # F2 spans so grounding resolves even when the envelope blocks don't embed them.
+    f2_span_by_id, f2_symbol_map, f2_block_map = _index_f2_evidence(envelope)
+    for span in evidence_spans:
+        f2_span_by_id.setdefault(span.evidence_span_id, span)
+        bid = getattr(span, "block_id", None)
+        if bid and span.evidence_span_id not in f2_block_map.setdefault(bid, []):
+            f2_block_map[bid].append(span.evidence_span_id)
 
     # Build temporal anchor index
     temporal_list = temporal_anchors or []
@@ -178,7 +190,9 @@ async def run_canonical_from_artifacts(
             intents=intents,
             policy_batch=policy_batch,
             envelope=envelope,
-            evidence_map=evidence_map,
+            f2_span_by_id=f2_span_by_id,
+            f2_symbol_map=f2_symbol_map,
+            f2_block_map=f2_block_map,
             temporal_anchors=temporal_list,
         )
     else:
@@ -186,7 +200,9 @@ async def run_canonical_from_artifacts(
             intents=intents,
             policy_batch=policy_batch,
             envelope=envelope,
-            evidence_map=evidence_map,
+            f2_span_by_id=f2_span_by_id,
+            f2_symbol_map=f2_symbol_map,
+            f2_block_map=f2_block_map,
             temporal_anchors=temporal_list,
         )
 
@@ -302,10 +318,10 @@ async def run_canonical_from_envelope(
     mapper = PolicyMapper(context=policy_ctx)
     policy_batch = mapper.map_batch(intents)
 
-    # F5: TradeAction construction via the canonical entry point
-    evidence_map: Dict[str, EvidenceSpan] = {
-        span.evidence_span_id: span for span in intent_result.evidence_spans
-    }
+    # F5: TradeAction construction grounded in F2 block evidence (not F3 self-evidence).
+    # Index the envelope's deterministic F2 spans so each action's evidence_span_ids
+    # resolve to real F2 evidence, and ungrounded intents are rejected.
+    f2_span_by_id, f2_symbol_map, f2_block_map = _index_f2_evidence(envelope)
     temporal_list = list(getattr(envelope, "temporal_anchors", []) or [])
 
     if strategy == "programmatic":
@@ -313,7 +329,9 @@ async def run_canonical_from_envelope(
             intents=intents,
             policy_batch=policy_batch,
             envelope=envelope,
-            evidence_map=evidence_map,
+            f2_span_by_id=f2_span_by_id,
+            f2_symbol_map=f2_symbol_map,
+            f2_block_map=f2_block_map,
             temporal_anchors=temporal_list,
         )
     else:
@@ -324,7 +342,9 @@ async def run_canonical_from_envelope(
             intents=intents,
             policy_batch=policy_batch,
             envelope=envelope,
-            evidence_map=evidence_map,
+            f2_span_by_id=f2_span_by_id,
+            f2_symbol_map=f2_symbol_map,
+            f2_block_map=f2_block_map,
             temporal_anchors=temporal_list,
             text=text,
         )
@@ -347,7 +367,7 @@ async def run_canonical_from_envelope(
             eid for action in result.trade_actions for eid in action.evidence_span_ids
         }
         used_spans = [
-            evidence_map[eid] for eid in used_evidence_ids if eid in evidence_map
+            f2_span_by_id[eid] for eid in used_evidence_ids if eid in f2_span_by_id
         ]
         _persist_canonical_artifacts(
             intents, policy_batch.mappings, used_spans, persist_dir
@@ -456,13 +476,27 @@ def _build_actions_programmatic(
     intents: List[NormalizedInvestmentIntent],
     policy_batch: PolicyMappingBatch,
     envelope: ContentEnvelope,
-    evidence_map: Optional[Dict[str, EvidenceSpan]] = None,
+    f2_span_by_id: Optional[Dict[str, EvidenceSpan]] = None,
+    f2_symbol_map: Optional[Dict[str, List[str]]] = None,
+    f2_block_map: Optional[Dict[str, List[str]]] = None,
     temporal_anchors: Optional[List[Any]] = None,
 ) -> CanonicalRunnerResult:
     """Build TradeActions deterministically from policy hints.
 
-    Records non-executable policy hints as RejectedIntent for audit.
+    Each TradeAction's ``evidence_span_ids`` are re-grounded against the F2
+    evidence index (``f2_span_by_id`` / ``f2_symbol_map`` / ``f2_block_map``).
+    When the envelope is F2-anchored, an intent that cannot be grounded is
+    rejected (``evidence_not_grounded_in_f2``). Non-executable policy hints are
+    recorded as RejectedIntent for audit.
     """
+    f2_span_by_id = f2_span_by_id or {}
+    f2_symbol_map = f2_symbol_map or {}
+    f2_block_map = f2_block_map or {}
+    # Only enforce the F2-grounding hard gate when the envelope actually carries
+    # F2 evidence. A fabricated/raw-text (dev) envelope has none, so its actions
+    # get empty evidence → TradeAction validator downgrades them to "partial".
+    envelope_has_f2 = bool(f2_span_by_id)
+
     intent_map: Dict[str, NormalizedInvestmentIntent] = {
         i.intent_id: i for i in intents
     }
@@ -491,36 +525,26 @@ def _build_actions_programmatic(
             ))
             continue
 
-        # Validate evidence
-        evidence_ids = list(intent.evidence_span_ids)
-        if not evidence_ids:
-            rejected.append(RejectedIntent(
-                intent_id=mapped.intent_id,
-                policy_id=mapped.policy_id,
-                action_hint=mapped.action_hint,
-                reason="no_evidence_spans",
-            ))
-            continue
-
-        # Validate evidence resolution
-        if evidence_map:
-            missing = [eid for eid in evidence_ids if eid not in evidence_map]
-            if missing:
-                rejected.append(RejectedIntent(
-                    intent_id=mapped.intent_id,
-                    policy_id=mapped.policy_id,
-                    action_hint=mapped.action_hint,
-                    reason="evidence_span_missing",
-                ))
-                continue
-
-        # Validate ticker
+        # Validate ticker (a target is required regardless of evidence)
         if not intent.target_symbol and not intent.target_name:
             rejected.append(RejectedIntent(
                 intent_id=mapped.intent_id,
                 policy_id=mapped.policy_id,
                 action_hint=mapped.action_hint,
                 reason="no_ticker_symbol",
+            ))
+            continue
+
+        # F2-grounding hard gate: the action's evidence must trace to F2 block
+        # evidence. F3's own uuid spans never match F2, so re-resolve grounding
+        # against the F2 index (by ticker, then source blocks).
+        evidence_ids = _resolve_f2_grounding(intent, f2_symbol_map, f2_block_map)
+        if envelope_has_f2 and not evidence_ids:
+            rejected.append(RejectedIntent(
+                intent_id=mapped.intent_id,
+                policy_id=mapped.policy_id,
+                action_hint=mapped.action_hint,
+                reason="evidence_not_grounded_in_f2",
             ))
             continue
 
@@ -535,8 +559,8 @@ def _build_actions_programmatic(
             intent_id=intent.intent_id,
         )
 
-        # Build evidence text from evidence spans
-        evidence_text = _build_evidence_text(evidence_ids, evidence_map)
+        # Build evidence text from the grounded F2 evidence spans
+        evidence_text = _build_evidence_text(evidence_ids, f2_span_by_id)
 
         ta = TradeAction(
             intent_id=intent.intent_id,
@@ -584,12 +608,24 @@ async def _build_actions_llm(
     intents: List[NormalizedInvestmentIntent],
     policy_batch: PolicyMappingBatch,
     envelope: ContentEnvelope,
-    evidence_map: Optional[Dict[str, EvidenceSpan]] = None,
+    f2_span_by_id: Optional[Dict[str, EvidenceSpan]] = None,
+    f2_symbol_map: Optional[Dict[str, List[str]]] = None,
+    f2_block_map: Optional[Dict[str, List[str]]] = None,
     temporal_anchors: Optional[List[Any]] = None,
     text: Optional[str] = None,
 ) -> CanonicalRunnerResult:
-    """Build TradeActions using LLM with policy context, then backfill trace IDs."""
+    """Build TradeActions using LLM with policy context, then backfill trace IDs.
+
+    Like the programmatic builder, each action's ``evidence_span_ids`` are
+    re-grounded against the F2 evidence index; LLM actions that cannot be
+    grounded are dropped when the envelope is F2-anchored.
+    """
     from finer.llm import LLMClient
+
+    f2_span_by_id = f2_span_by_id or {}
+    f2_symbol_map = f2_symbol_map or {}
+    f2_block_map = f2_block_map or {}
+    envelope_has_f2 = bool(f2_span_by_id)
 
     intent_map: Dict[str, NormalizedInvestmentIntent] = {
         i.intent_id: i for i in intents
@@ -654,7 +690,8 @@ Only include actions for the executable policy mappings listed above. Return [] 
     except Exception as e:
         logger.warning("LLM F5 failed, falling back to programmatic: %s", e)
         return _build_actions_programmatic(
-            intents, policy_batch, envelope, evidence_map, temporal_anchors
+            intents, policy_batch, envelope,
+            f2_span_by_id, f2_symbol_map, f2_block_map, temporal_anchors,
         )
 
     # Backfill trace IDs from policy mappings
@@ -698,8 +735,15 @@ Only include actions for the executable policy mappings listed above. Return [] 
             intent_id=matched_intent.intent_id,
         )
 
-        evidence_ids = list(matched_intent.evidence_span_ids)
-        evidence_text = _build_evidence_text(evidence_ids, evidence_map)
+        # F2-grounding gate: drop LLM actions that cannot be traced to F2 evidence
+        evidence_ids = _resolve_f2_grounding(matched_intent, f2_symbol_map, f2_block_map)
+        if envelope_has_f2 and not evidence_ids:
+            logger.debug(
+                "Dropping LLM action for %s: not grounded in F2 evidence",
+                matched_intent.intent_id,
+            )
+            continue
+        evidence_text = _build_evidence_text(evidence_ids, f2_span_by_id)
 
         ta = TradeAction(
             intent_id=matched_intent.intent_id,
@@ -789,6 +833,91 @@ def _build_evidence_text(
         if span and hasattr(span, 'text'):
             parts.append(span.text)
     return " | ".join(parts)
+
+
+def _index_f2_evidence(
+    envelope: ContentEnvelope,
+) -> tuple[Dict[str, EvidenceSpan], Dict[str, List[str]], Dict[str, List[str]]]:
+    """Index a F2-anchored envelope's block-level evidence for F5 grounding.
+
+    F3 mints its own intent-keyword spans with fresh uuids that never match the
+    deterministic F2 block spans, so an F5 gate that resolves the intent's own
+    ``evidence_span_ids`` is self-referential. This indexes the *F2* evidence —
+    the spans materialized by ``enrichment.entity_anchoring`` onto each block and
+    referenced by every ``EntityAnchor`` — so F5 can ground each TradeAction in
+    real F2 evidence (audit optimization #2).
+
+    Tolerates dict-shaped blocks/spans/anchors (serialized F2 envelopes round-trip
+    through ``List[Any]`` fields).
+
+    Returns:
+        (span_by_id, symbol_to_span_ids, block_to_span_ids) — all keyed by the
+        canonical F2 ``evidence_span_id``. ``symbol_to_span_ids`` is keyed by
+        ``EntityAnchor.resolved_symbol`` (ticker grounding); ``block_to_span_ids``
+        by ``block_id`` (fallback grounding for symbol-less sector/index intents).
+    """
+    span_by_id: Dict[str, EvidenceSpan] = {}
+    block_to_span_ids: Dict[str, List[str]] = {}
+
+    for block in getattr(envelope, "blocks", None) or []:
+        if isinstance(block, dict):
+            block_id = block.get("block_id")
+            raw_spans = block.get("evidence_spans") or []
+        else:
+            block_id = getattr(block, "block_id", None)
+            raw_spans = getattr(block, "evidence_spans", None) or []
+        for raw in raw_spans:
+            try:
+                span = raw if isinstance(raw, EvidenceSpan) else EvidenceSpan.model_validate(raw)
+            except Exception:  # noqa: BLE001 - skip malformed F2 spans, don't crash F5
+                continue
+            span_by_id[span.evidence_span_id] = span
+            if block_id:
+                block_to_span_ids.setdefault(block_id, []).append(span.evidence_span_id)
+
+    symbol_to_span_ids: Dict[str, List[str]] = {}
+    for anchor in getattr(envelope, "entity_anchors", None) or []:
+        if isinstance(anchor, dict):
+            symbol = anchor.get("resolved_symbol")
+            meta = anchor.get("metadata") or {}
+            single = anchor.get("evidence_span_id")
+        else:
+            symbol = getattr(anchor, "resolved_symbol", None)
+            meta = getattr(anchor, "metadata", None) or {}
+            single = getattr(anchor, "evidence_span_id", None)
+        if not symbol:
+            continue
+        ids = list(meta.get("evidence_span_ids") or [])
+        if single:
+            ids.append(single)
+        # dedup preserving order; keep only spans that resolve to F2 block evidence
+        ids = [i for i in dict.fromkeys(ids) if i in span_by_id]
+        if ids:
+            symbol_to_span_ids.setdefault(symbol, []).extend(ids)
+
+    return span_by_id, symbol_to_span_ids, block_to_span_ids
+
+
+def _resolve_f2_grounding(
+    intent: NormalizedInvestmentIntent,
+    symbol_to_span_ids: Dict[str, List[str]],
+    block_to_span_ids: Dict[str, List[str]],
+) -> List[str]:
+    """Resolve the F2 evidence span IDs that ground an intent's TradeAction.
+
+    Symbol-first (the ticker mention proves the target is grounded in F2), then a
+    block-level fallback for symbol-less sector/index intents. Empty result means
+    the intent cannot be grounded in F2 evidence → F5 rejects it when the envelope
+    is F2-anchored.
+    """
+    symbol = getattr(intent, "target_symbol", None)
+    if symbol and symbol_to_span_ids.get(symbol):
+        return list(dict.fromkeys(symbol_to_span_ids[symbol]))
+
+    ids: List[str] = []
+    for block_id in getattr(intent, "block_ids", None) or []:
+        ids.extend(block_to_span_ids.get(block_id, []))
+    return list(dict.fromkeys(ids))
 
 
 def _build_action_rationale(

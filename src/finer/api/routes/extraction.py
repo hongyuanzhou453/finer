@@ -132,16 +132,31 @@ def _action_to_response(action) -> TradeActionResponse:
 
 @router.post("/extract", response_model=ExtractionResponse)
 async def extract_trade_actions(request: ExtractionRequest):
-    """从文本提取 Trade Actions (canonical F3→F4→F5).
+    """从原始文本提取 Trade Actions —— DEV/DEMO 便捷入口，非 canonical。
+
+    ⚠️ 该端点把一段裸文本塞进一个**伪造的最小 ContentEnvelope**（无 F2
+    entity/temporal anchor、无真实 evidence span），因此证据质量不足，
+    **不得作为 canonical 主链路数据使用**。
+
+    Canonical 语义只走 F2-anchored envelope：
+      - HTTP：POST /api/extraction/pipeline（从 data/F2_anchored 读取）
+      - 程序内：finer.pipeline.canonical_runner.run_canonical_from_envelope()
+
+    保留本端点仅用于开发联调与 demo。
 
     Args:
         request: 包含文本和可选上下文的请求
 
     Returns:
-        ExtractionResponse 包含提取的 Trade Actions
+        ExtractionResponse（model 标记为 ``dev-rawtext-*``，标识非 canonical 来源）
     """
     import time
     start_time = time.time()
+
+    logger.warning(
+        "POST /api/extraction/extract is a DEV/DEMO raw-text path (fabricated "
+        "envelope, non-canonical). Use /api/extraction/pipeline for canonical traces."
+    )
 
     # 构建上下文
     context = {
@@ -153,7 +168,7 @@ async def extract_trade_actions(request: ExtractionRequest):
         context["timestamp"] = request.timestamp
 
     try:
-        # Canonical 路径: F3→F4→F5
+        # DEV/DEMO 路径：deprecated raw-text 入口，伪造 envelope，非 canonical
         from finer.pipeline.canonical_runner import run_canonical_extraction
 
         trade_actions = await run_canonical_extraction(
@@ -172,7 +187,7 @@ async def extract_trade_actions(request: ExtractionRequest):
             actions=actions,
             total_actions=len(actions),
             avg_confidence=avg_conf,
-            model=f"canonical-{request.strategy}",
+            model=f"dev-rawtext-{request.strategy}",
             processing_time_ms=(time.time() - start_time) * 1000,
         )
 

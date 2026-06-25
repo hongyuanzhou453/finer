@@ -58,13 +58,48 @@ def _reject_card() -> QualityCard:
 
 
 def _f2_envelope(blocks_text, anchors=None, card=None) -> ContentEnvelope:
-    """A serialized-shaped F2 envelope: content in blocks, anchors at top level."""
+    """A serialized-shaped F2 envelope: content in blocks, anchors at top level.
+
+    Mirrors real F2 output: each entity anchor is grounded by an EvidenceSpan
+    materialized onto block ``b0`` and back-linked via the anchor's
+    ``evidence_span_id`` / ``metadata.evidence_span_ids``. The F5 runner re-grounds
+    each TradeAction against these F2 spans, so without this linkage the canonical
+    gate would (correctly) downgrade the actions to ``partial``.
+    """
+    anchors = list(anchors or [])
+    spans_by_block_idx: dict[int, list[EvidenceSpan]] = {}
+    linked_anchors: list[EntityAnchor] = []
+    for idx, anchor in enumerate(anchors):
+        span_id = f"f2-span-{idx}"
+        span_text = anchor.raw_text or anchor.resolved_symbol or "evidence"
+        spans_by_block_idx.setdefault(0, []).append(
+            EvidenceSpan(
+                evidence_span_id=span_id,
+                block_id="b0",
+                char_start=0,
+                char_end=max(1, len(span_text)),
+                text=span_text,
+                span_type="entity_mention",
+                confidence=1.0,
+            )
+        )
+        linked_anchors.append(
+            anchor.model_copy(
+                update={
+                    "evidence_span_id": span_id,
+                    "metadata": {**(anchor.metadata or {}), "evidence_span_ids": [span_id]},
+                }
+            )
+        )
+
     blocks = [
         ContentBlock(
+            block_id=f"b{i}",
             block_type="paragraph",
             text=text,
             order=i,
             quality_card=_pass_card(),
+            evidence_spans=spans_by_block_idx.get(i, []),
         )
         for i, text in enumerate(blocks_text)
     ]
@@ -76,7 +111,7 @@ def _f2_envelope(blocks_text, anchors=None, card=None) -> ContentEnvelope:
         published_at=_PUBLISHED_AT,
         quality_card=card or _pass_card(),
         blocks=blocks,
-        entity_anchors=anchors or [],
+        entity_anchors=linked_anchors,
         temporal_anchors=[],
     )
 
@@ -350,3 +385,69 @@ async def test_action_rationale_is_human_readable():
     assert " via " not in rationale  # old "<action_hint> via <policy_id>" gone
     assert "宁德时代" in rationale or "300750" in rationale  # carries the target
     assert "·" in rationale  # new structured format
+
+
+# ── 6. F2-grounding hard gate (batch B) ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_action_evidence_is_f2_grounded_not_f3():
+    """The action's evidence_span_ids resolve to F2 block evidence (f2-span-*),
+    not the intent's own F3 keyword spans (audit optimization #2)."""
+    envelope = _f2_envelope(["看好这只股票，准备加仓。"], anchors=[_ndt_anchor()])
+
+    actions = await run_canonical_from_envelope(envelope, {"author": "test-kol"})
+
+    assert actions
+    assert actions[0].evidence_span_ids == ["f2-span-0"]
+    assert actions[0].canonical_trace_status == "canonical"
+
+
+@pytest.mark.asyncio
+async def test_ungrounded_intent_rejected_by_f2_gate():
+    """An F2-anchored envelope rejects an intent whose target cannot be grounded
+    in F2 evidence (no matching ticker span, no source-block span)."""
+    envelope = _f2_envelope(["看好这只股票，准备加仓。"], anchors=[_ndt_anchor()])
+
+    ungrounded = NormalizedInvestmentIntent(
+        intent_id="intent-x",
+        envelope_id=envelope.envelope_id,
+        block_ids=["does-not-exist"],
+        creator_id="test-kol",
+        target_type="stock",
+        target_name="Nvidia",
+        target_symbol="NVDA",  # not among the envelope's F2 anchors
+        market="US",
+        direction="bullish",
+        actionability="explicit_action",
+        position_delta_hint="open",
+        conviction=0.8,
+        confidence=0.8,
+        evidence_span_ids=["span-f3-only"],  # F3 self-evidence — must NOT satisfy the gate
+    )
+    mock_result = MagicMock()
+    mock_result.intents = [ungrounded]
+    mock_result.evidence_spans = []
+
+    mapped = PolicyMappedIntent(
+        intent_id="intent-x",
+        policy_id="policy-x",
+        original_intent_summary="bullish",
+        action_hint="open_position",
+        position_sizing_hint="small",
+        holding_period_hint="medium_term",
+        mapping_confidence=0.8,
+        requires_human_review=False,
+    )
+    mock_batch = PolicyMappingBatch(mapped_intents=[mapped], mappings=[])
+
+    with (
+        patch("finer.extraction.intent_extractor.RuleBasedIntentExtractor") as MockExtractor,
+        patch("finer.policy.policy_mapper.PolicyMapper") as MockMapper,
+    ):
+        MockExtractor.return_value.extract.return_value = mock_result
+        MockMapper.return_value.map_batch.return_value = mock_batch
+
+        actions = await run_canonical_from_envelope(envelope, {"author": "test-kol"})
+
+    assert actions == [], "ungrounded intent must be rejected by the F2-grounding gate"

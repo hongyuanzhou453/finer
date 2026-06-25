@@ -122,7 +122,7 @@ export default function AuditPage() {
             </span>
           </span>
           {AUDIT_USE_FIXTURES && (
-            <span className="ml-2 hidden rounded-sm border border-[var(--table-border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)] sm:inline">
+            <span className="ml-2 inline rounded-sm border border-morningstar-red/40 bg-morningstar-red/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-morningstar-red">
               演示数据 · Sample data
             </span>
           )}

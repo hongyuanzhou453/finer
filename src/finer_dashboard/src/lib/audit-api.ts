@@ -1,11 +1,13 @@
 /**
  * Data layer for the /audit view.
  *
- * Toggles between local fixtures (default this round) and the live backend
- * canonical-trace API via the NEXT_PUBLIC_AUDIT_USE_FIXTURES env var.
+ * Defaults to the live backend canonical-trace API. Set
+ * NEXT_PUBLIC_AUDIT_USE_FIXTURES=true to force local fixtures (e.g. when the
+ * backend is not running); fixtures mode is flagged with a "Sample data" badge
+ * in the /audit header so it is never mistaken for real F5 output.
  *
- * Backend contract (NOT yet implemented — see
- * docs/specs/2026-06-04-dashboard-audit-trace-frontend.md §7):
+ * Backend contract (IMPLEMENTED — see src/finer/api/routes/audit.py,
+ * tests/test_audit_api.py):
  *   GET /api/audit/actions               -> { actions: TradeActionSummary[], total }
  *   GET /api/audit/actions/{id}/trace    -> AuditTraceBundle
  */
@@ -17,9 +19,13 @@ import type {
 } from "@/lib/contracts";
 import { AUDIT_BUNDLES, AUDIT_SUMMARIES } from "@/lib/fixtures/audit-trace";
 
-/** True when the view is backed by local fixtures rather than the live backend. */
+/**
+ * True when the view is backed by local fixtures rather than the live backend.
+ * Defaults to false (live); opt into fixtures with
+ * NEXT_PUBLIC_AUDIT_USE_FIXTURES=true.
+ */
 export const AUDIT_USE_FIXTURES =
-  process.env.NEXT_PUBLIC_AUDIT_USE_FIXTURES !== "false";
+  process.env.NEXT_PUBLIC_AUDIT_USE_FIXTURES === "true";
 
 export type AuditActionFilters = {
   traceStatus?: CanonicalTraceStatus | "all";
