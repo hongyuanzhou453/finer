@@ -101,7 +101,9 @@ class AuditAssembler:
         action = indexed.action
         intent = self._load_intent_for_action(action)
         policy = self._load_policy_for_action(action)
-        envelope = self._load_envelope_for_action(action, intent)
+        envelope = self._load_envelope_for_action(
+            action, intent, source_file=indexed.source_file
+        )
         materialized_status = self._materialized_trace_status(
             action, intent, policy, trust_self_declared=indexed.from_wrapper
         )
@@ -285,7 +287,26 @@ class AuditAssembler:
         self,
         action: TradeAction,
         intent: NormalizedInvestmentIntent | None,
+        source_file: str | None = None,
     ) -> ContentEnvelope | None:
+        # Prefer the wrapper's source_file link: it points at the real F2 file
+        # (e.g. ``local_<hash>.json``), whereas ``content_id`` / ``envelope_id``
+        # are ``env_<hash>`` ids that do not match the F2 filename, so the
+        # content_id lookup silently misses and the envelope panel falls back to
+        # a stub. Resolve by basename under data_root so it stays portable
+        # regardless of the absolute path baked into source_file.
+        if source_file:
+            # Try the portable location first (F2 co-located under this
+            # data_root — the normal case), then the literal absolute path baked
+            # into the wrapper (handles a split F2/F5 layout).
+            for candidate in (
+                self.data_root / "F2_anchored" / Path(source_file).name,
+                Path(source_file),
+            ):
+                envelope = self._safe_load_model(candidate, ContentEnvelope)
+                if envelope is not None:
+                    return envelope
+
         envelope_id = intent.envelope_id if intent else action.source.content_id
         if not envelope_id:
             return None

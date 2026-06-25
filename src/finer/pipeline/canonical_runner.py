@@ -343,14 +343,23 @@ async def run_canonical_from_envelope(
     # audit trace assembler can resolve intent_id → Intent card, policy_id →
     # Policy card, and evidence_span_ids → Evidence panel.
     if persist_dir is not None and result.trade_actions:
+        # Persist only the artifacts actually referenced by emitted actions —
+        # rejected intents / unmapped policies are never read by the audit
+        # assembler, so writing all of them would just leave orphan sidecars.
+        used_intent_ids = {a.intent_id for a in result.trade_actions if a.intent_id}
+        used_policy_ids = {a.policy_id for a in result.trade_actions if a.policy_id}
         used_evidence_ids = {
             eid for action in result.trade_actions for eid in action.evidence_span_ids
         }
+        used_intents = [i for i in intents if i.intent_id in used_intent_ids]
+        used_mappings = [
+            m for m in policy_batch.mappings if m.policy_id in used_policy_ids
+        ]
         used_spans = [
             evidence_map[eid] for eid in used_evidence_ids if eid in evidence_map
         ]
         _persist_canonical_artifacts(
-            intents, policy_batch.mappings, used_spans, persist_dir
+            used_intents, used_mappings, used_spans, persist_dir
         )
 
     return result.trade_actions

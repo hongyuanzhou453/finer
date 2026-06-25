@@ -294,6 +294,13 @@ async def test_persist_dir_writes_f3_f4_evidence_sidecars(tmp_path):
     assert intent_file.is_file(), "F3 intent sidecar should be written"
     assert policy_file.is_file(), "F4 policy sidecar should be written"
 
+    # Only action-referenced intents/policies are persisted — no orphan sidecars
+    # for rejected intents / unmapped policies.
+    persisted_intents = {p.stem for p in (tmp_path / "F3_intents").glob("*.json")}
+    persisted_policies = {p.stem for p in (tmp_path / "F4_policy_mapped").glob("*.json")}
+    assert persisted_intents == {a.intent_id for a in actions}
+    assert persisted_policies == {a.policy_id for a in actions}
+
     # Every evidence span the action references is persisted.
     assert action.evidence_span_ids, "action should carry evidence spans"
     for span_id in action.evidence_span_ids:

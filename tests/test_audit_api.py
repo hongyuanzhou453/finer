@@ -712,3 +712,45 @@ def test_evidence_spans_missing_sidecar_is_skipped(tmp_path: Path) -> None:
     bundle = AuditAssembler(data_root=tmp_path, ttl_seconds=0).get_trace_bundle("ev-miss")
     assert bundle is not None
     assert bundle["evidence_spans"] == []
+
+
+# ---------------------------------------------------------------------------
+# Envelope panel — resolve via source_file, not the mismatched content_id
+# ---------------------------------------------------------------------------
+
+
+def test_envelope_resolved_via_source_file_not_content_id(tmp_path: Path) -> None:
+    """Bundle loads the rich F2 envelope via the wrapper's source_file even when
+    the action's content_id does not match the F2 filename (the real-data shape).
+
+    Regression for the hollow Envelope panel: content_id is an ``env_<hash>`` id
+    that never matches the ``local_<hash>.json`` F2 filename, so the content_id
+    lookup missed and source_text collapsed to the short evidence-text stub.
+    """
+    env_text = "这是一段较长的真实研报正文，反复提到减持与回调等关键证据片段。" * 3
+    _write_model(
+        tmp_path / "F2_anchored" / "local_real.json",
+        _envelope("env-real-id", "kol-x", env_text),
+    )
+    action = _action(
+        trade_action_id="env-wrap",
+        ticker="600519",
+        content_id="env_mismatch_does_not_match_filename",
+        creator_id="kol-x",
+        intent_id="i1",
+        policy_id="p1",
+        evidence_span_ids=["s1"],
+    )
+    _write_canonical_wrapper(
+        tmp_path,
+        "local_real",
+        [action],
+        source_file=str(tmp_path / "F2_anchored" / "local_real.json"),
+    )
+
+    bundle = AuditAssembler(data_root=tmp_path, ttl_seconds=0).get_trace_bundle("env-wrap")
+    assert bundle is not None
+    env = bundle["envelope"]
+    assert env["envelope_id"] == "env-real-id"  # resolved the real F2 envelope
+    assert env_text in env["source_text"]  # full source text, not the stub
+    assert len(env["source_text"]) > 50
