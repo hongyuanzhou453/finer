@@ -442,6 +442,36 @@ class ExecutionTiming(BaseModel):
                     "(e.g., 'market-calendar-v1', 'policy-timing-follow-next-open')"
     )
 
+    @model_validator(mode='after')
+    def validate_clock_monotonicity(self) -> 'ExecutionTiming':
+        """Enforce four-clock monotonicity to prevent look-ahead / future-function.
+
+        The timing chain must move forward: a view cannot become effective or be
+        decided before it was published, and cannot be executable before it was
+        decided. This guards against upstream builders mapping an in-text
+        *referenced* date (e.g. an F2 ``mentioned_at`` anchor pointing to the
+        past) onto ``intent_effective_at`` — which previously produced
+        effective < published on every canonical action and corrupts F8 backtest
+        entry timing.
+        """
+        pub = self.intent_published_at
+        if self.intent_effective_at is not None and self.intent_effective_at < pub:
+            raise ValueError(
+                f"intent_effective_at ({self.intent_effective_at.isoformat()}) must not "
+                f"precede intent_published_at ({pub.isoformat()})"
+            )
+        if self.action_decision_at < pub:
+            raise ValueError(
+                f"action_decision_at ({self.action_decision_at.isoformat()}) must not "
+                f"precede intent_published_at ({pub.isoformat()})"
+            )
+        if self.action_executable_at < self.action_decision_at:
+            raise ValueError(
+                f"action_executable_at ({self.action_executable_at.isoformat()}) must not "
+                f"precede action_decision_at ({self.action_decision_at.isoformat()})"
+            )
+        return self
+
 
 # =============================================================================
 # Main TradeAction Model

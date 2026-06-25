@@ -844,12 +844,12 @@ class TestExecutionTiming:
 
     def test_execution_timing_with_all_fields(self):
         """Test ExecutionTiming with all optional fields set."""
-        now = datetime.now()
-        effective = datetime(2026, 4, 15, 9, 30, 0)
+        published = datetime(2026, 4, 15, 9, 30, 0)
+        effective = datetime(2026, 4, 15, 10, 0, 0)
         timing = ExecutionTiming(
-            intent_published_at=now,
+            intent_published_at=published,
             intent_effective_at=effective,
-            action_decision_at=now,
+            action_decision_at=published,
             action_executable_at=datetime(2026, 4, 16, 9, 30, 0),
             market="US",
             timezone="America/New_York",
