@@ -1,16 +1,18 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import {
   AudioLines,
+  ArrowUpRight,
   BrainCircuit,
   ChevronRight,
-  Clock3,
   FileImage,
   FileText,
   FolderKanban,
   Info,
   ScanSearch,
+  ShieldCheck,
   Tag,
   Eye,
   X,
@@ -35,15 +37,6 @@ interface InspectorPanelProps {
   selectedAsset: AssetFile | null;
   tier: string;
 }
-
-const provenanceSteps = [
-  { tier: "F0", label: "Intake", detail: "多源内容接入与原始文件归档" },
-  { tier: "F1", label: "Standardize", detail: "内容标准化与 ContentBlock 拆分" },
-  { tier: "F2", label: "Anchor", detail: "质量评估、实体解析与时间锚定" },
-  { tier: "F5", label: "Execute", detail: "Intent 提取 → Policy 映射 → TradeAction" },
-  { tier: "F6", label: "Review", detail: "人工复核与歧义裁决" },
-  { tier: "F8", label: "Backtest", detail: "策略回测与 KOL 评分" },
-];
 
 function renderIconForType(type: string) {
   if (type === "mp3" || type === "wav") {
@@ -92,8 +85,8 @@ export function InspectorPanel({
   const [entityContents, setEntityContents] = React.useState<EnrichmentContent[]>([]);
   const [loadingContents, setLoadingContents] = React.useState(false);
   const hasAsset = Boolean(selectedAsset);
-  const activeStepIndex = provenanceSteps.findIndex((step) => step.tier === tier);
   const evidenceSummary = buildEvidenceSummary(selectedAsset?.type ?? "", tier);
+  const isExecuted = tier === "F5" || tier === "F6";
 
   // Fetch F2 Anchor entity contents when folder is selected
   React.useEffect(() => {
@@ -262,51 +255,27 @@ export function InspectorPanel({
 
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-[10px] text-foreground/40 font-bold uppercase tracking-widest">
-            <Clock3 className="w-3.5 h-3.5" strokeWidth={1.5} />
-            Provenance Timeline
+            <ShieldCheck className="w-3.5 h-3.5" strokeWidth={1.5} />
+            证据链审计 · Audit Trace
           </div>
 
           <div className="rounded-2xl border border-[rgba(95,67,40,0.12)] bg-white/70 p-5">
-            <div className="space-y-4">
-              {provenanceSteps.map((step, index) => {
-                const isReached = activeStepIndex >= index;
-                const isCurrent = step.tier === tier;
-
-                return (
-                  <div key={step.tier} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div
-                        className={`flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-bold ${
-                          isCurrent
-                            ? "border-[rgba(159,29,34,0.2)] bg-[rgba(159,29,34,0.1)] text-morningstar-red"
-                            : isReached
-                              ? "border-[rgba(31,106,103,0.22)] bg-[rgba(31,106,103,0.1)] text-[var(--accent-teal)]"
-                              : "border-[rgba(95,67,40,0.12)] bg-[rgba(99,76,55,0.04)] text-[var(--ink-soft)]"
-                        }`}
-                      >
-                        {step.tier.replace("F", "")}
-                      </div>
-                      {index < provenanceSteps.length - 1 && (
-                        <div className="mt-1 h-8 w-px bg-[rgba(95,67,40,0.12)]" />
-                      )}
-                    </div>
-                    <div className="min-w-0 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[12px] font-bold ${isCurrent ? "text-morningstar-red" : "text-foreground/80"}`}>
-                          {step.label}
-                        </span>
-                        <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
-                          {step.tier}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
-                        {step.detail}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <p className="text-sm leading-relaxed text-foreground/80">
+              {isExecuted
+                ? "该资产已进入执行 / 复核阶段。在审计台可逐层核验其 TradeAction 的 F3 Intent → F4 Policy → F5 执行链，以及原文证据高亮与四时钟 ExecutionTiming。"
+                : "完成 F3 Intent → F4 Policy → F5 执行后，可在审计台逐层核验证据链。当前阶段尚未生成 TradeAction。"}
+            </p>
+            <Link
+              href="/audit"
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-sm bg-morningstar-red px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-white shadow-md transition-all hover:bg-red-700 hover:shadow-lg"
+            >
+              <ShieldCheck className="h-4 w-4" strokeWidth={1.8} />
+              打开证据链审计台
+              <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2} />
+            </Link>
+            <p className="mt-2 text-center text-[10px] text-foreground/40">
+              展示 F3→F4→F5 canonical trace（当前为演示数据）
+            </p>
           </div>
         </section>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   ArrowRightLeft,
@@ -13,6 +14,7 @@ import {
   Radar,
   Settings,
   Database,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -264,6 +266,35 @@ export function Sidebar({
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="px-3 text-[10px] font-bold text-[var(--ink-soft)] uppercase tracking-[0.16em]">
+            Analysis
+          </div>
+          <div className="space-y-1.5">
+            <Link
+              href="/audit"
+              className="block w-full rounded-sm border border-transparent px-3 py-2.5 text-left transition-all duration-150 hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-sm border border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] p-2 text-[var(--ink-soft)]">
+                  <ShieldCheck className="w-4 h-4" strokeWidth={1.6} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-bold text-foreground">审计台 Audit</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+                      TRACE
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
+                    证据链与 F3→F4→F5 溯源
+                  </div>
+                </div>
+              </div>
+            </Link>
           </div>
         </div>
 
