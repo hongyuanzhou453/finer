@@ -133,8 +133,15 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     "1988.HK": ("1988.HK", "HK", "ticker"),
 
     "吉利汽车": ("0175.HK", "HK", "ticker"),
+    "吉利":     ("0175.HK", "HK", "ticker"),
     "0175":    ("0175.HK", "HK", "ticker"),
     "0175.HK": ("0175.HK", "HK", "ticker"),
+
+    # 地平线机器人（Horizon Robotics）— F2 LLM 提议核验插入（2026-06-26），9660.HK
+    "地平线":     ("9660.HK", "HK", "ticker"),
+    "地平线机器人": ("9660.HK", "HK", "ticker"),
+    "9660":    ("9660.HK", "HK", "ticker"),
+    "9660.HK": ("9660.HK", "HK", "ticker"),
 
     "蓝思科技": ("6613.HK", "HK", "ticker"),
     "6613":    ("6613.HK", "HK", "ticker"),

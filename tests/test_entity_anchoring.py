@@ -278,6 +278,24 @@ def test_f2_gap_review_additions_resolve_and_scan():
     assert by_symbol["2643.HK"].entity_type == "stock"
 
 
+def test_f2_llm_proposal_additions_resolve_and_scan():
+    """Tradable entities surfaced by the F2 constrained-LLM proposal eval (2026-06-26)."""
+    expected = {
+        "地平线": ("9660.HK", "HK", "ticker"),
+        "地平线机器人": ("9660.HK", "HK", "ticker"),
+        "吉利": ("0175.HK", "HK", "ticker"),
+    }
+    for alias, entry in expected.items():
+        assert resolve(alias) == entry
+
+    anchors = anchor_entities_deterministic(
+        [("b1", "说一下地平线的财报，进取组合卖出20%吉利。")]
+    )
+    by_symbol = {anchor.resolved_symbol: anchor for anchor in anchors}
+    assert {"9660.HK", "0175.HK"}.issubset(by_symbol)
+    assert by_symbol["9660.HK"].entity_type == "stock"
+
+
 def test_public_etf_and_index_registry_gaps_resolve_and_scan():
     expected = {
         "QQQ": ("QQQ", "US", "etf"),
