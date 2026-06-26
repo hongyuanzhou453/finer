@@ -246,6 +246,38 @@ def test_public_market_registry_gaps_resolve_and_scan():
     assert by_symbol["WTI"].entity_type == "commodity"
 
 
+def test_f2_gap_review_additions_resolve_and_scan():
+    """Human-triaged tradable entities from the 2026-06-26 all-local gap scan."""
+    expected = {
+        "中金公司": ("3908.HK", "HK", "ticker"),
+        "CICC": ("3908.HK", "HK", "ticker"),
+        "曹操出行": ("2643.HK", "HK", "ticker"),
+        "高盛": ("GS", "US", "ticker"),
+        "GS": ("GS", "US", "ticker"),
+        "MUFG": ("MUFG", "US", "ticker"),
+        "SAP": ("SAP", "US", "ticker"),
+        "CRWV": ("CRWV", "US", "ticker"),
+        "CoreWeave": ("CRWV", "US", "ticker"),
+    }
+    for alias, entry in expected.items():
+        assert resolve(alias) == entry
+
+    anchors = anchor_entities_deterministic(
+        [
+            (
+                "b1",
+                "CICC 中金公司研报，曹操出行上市，高盛GS看多软件，"
+                "MUFG联合主承销，SAP和CRWV被反复提及。",
+            )
+        ]
+    )
+    by_symbol = {anchor.resolved_symbol: anchor for anchor in anchors}
+
+    assert {"3908.HK", "2643.HK", "GS", "MUFG", "SAP", "CRWV"}.issubset(by_symbol)
+    assert by_symbol["3908.HK"].entity_type == "stock"
+    assert by_symbol["2643.HK"].entity_type == "stock"
+
+
 def test_public_etf_and_index_registry_gaps_resolve_and_scan():
     expected = {
         "QQQ": ("QQQ", "US", "etf"),

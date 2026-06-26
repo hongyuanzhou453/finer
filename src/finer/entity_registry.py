@@ -254,6 +254,20 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     "算电协同": ("COMPUTE_POWER", "CN", "sector"),
     "新能源":   ("NEW_ENERGY", "CN", "sector"),
     "光模块":   ("OPTICAL_MODULE", "CN", "sector"),
+
+    # ── F2 gap-review additions (2026-06-26, human-triaged from all-local gap scan) ──
+    "中金公司":  ("3908.HK", "HK", "ticker"),
+    "中金":     ("3908.HK", "HK", "ticker"),
+    "CICC":    ("3908.HK", "HK", "ticker"),
+    "曹操出行":  ("2643.HK", "HK", "ticker"),
+    "高盛":     ("GS",      "US", "ticker"),
+    "GS":      ("GS",      "US", "ticker"),
+    "三菱日联":  ("MUFG",    "US", "ticker"),
+    "MUFG":    ("MUFG",    "US", "ticker"),
+    "SAP":     ("SAP",     "US", "ticker"),
+    "思爱普":   ("SAP",     "US", "ticker"),
+    "CoreWeave":("CRWV",   "US", "ticker"),
+    "CRWV":    ("CRWV",    "US", "ticker"),
 }
 
 

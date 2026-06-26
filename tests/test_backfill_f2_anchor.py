@@ -296,7 +296,7 @@ def test_gap_report_marks_low_hit_without_zero_duplication(tmp_path: Path):
         text=[
             "腾讯目标价继续上修，已有实体命中。",
             "星河出行科技，收入增长但实体待人工核验。",
-            "曹操出行，订单增长但实体待人工核验。",
+            "云图出行，订单增长但实体待人工核验。",
             "行业景气度继续修复。",
             "财报结构仍需人工复核。",
             "估值分位仍有争议。",
@@ -409,14 +409,14 @@ def test_gap_candidates_filter_generic_terms_and_keep_entity_phrase(tmp_path: Pa
             "应用的激光雷达产，品及用于机器人及，乃根据本集团的初，金融科技及企业服。"
             "港股科技继续回调，算力的资产证券化开始讨论，集团整体仍需观察。"
             "星河出行科技激光雷达品牌在智能驾驶产业链反复被提及。"
-            "曹操出行，收入增长，公司业务被提及，需要人工核验。"
+            "云图出行，收入增长，公司业务被提及，需要人工核验。"
         ),
     )
 
     report = build_gap_report(plan_backfill(tmp_path, scope="curated-pdf"))
     aliases = {candidate["alias_candidate"] for candidate in report["gap_candidates"]}
 
-    assert "曹操出行" in aliases
+    assert "云图出行" in aliases
     assert "图片" not in aliases
     assert "收入" not in aliases
     assert "百万元" not in aliases
@@ -486,7 +486,7 @@ def test_gap_candidates_filter_generic_terms_and_keep_entity_phrase(tmp_path: Pa
     candidate = next(
         candidate
         for candidate in report["gap_candidates"]
-        if candidate["alias_candidate"] == "曹操出行"
+        if candidate["alias_candidate"] == "云图出行"
     )
     assert candidate["candidate_type"] == "cn_entity_phrase"
     assert 0.0 <= candidate["score"] <= 1.0
@@ -505,7 +505,7 @@ def test_gap_candidates_filter_metric_time_and_currency_tokens(tmp_path: Path):
             "04:37 PM GMT，7:26 AM，UTC 时区更新。"
             "汇率 RMB CNY HKD JPY EUR GBP 结算。"
             "海外金融进了 IBD。自主IP DIMOO PUCKY YOKI JELLY PINO 销量。"
-            "OK 就这样，JUST 观望。曹操出行收入增长，被反复提及，需要人工核验。"
+            "OK 就这样，JUST 观望。云图出行收入增长，被反复提及，需要人工核验。"
         ),
     )
 
@@ -513,7 +513,7 @@ def test_gap_candidates_filter_metric_time_and_currency_tokens(tmp_path: Path):
     aliases = {c["alias_candidate"] for c in report["gap_candidates"]}
 
     # A real CN entity phrase still surfaces for human review.
-    assert "曹操出行" in aliases
+    assert "云图出行" in aliases
     # Financial metrics / ratios are a measure, never an investable entity.
     for metric in ("EPS", "AUM", "ASP", "NP", "NPM", "ER", "PB", "PIK"):
         assert metric not in aliases
