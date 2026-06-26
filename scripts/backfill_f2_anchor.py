@@ -25,6 +25,14 @@ from typing import Any, Iterable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from finer.enrichment.entity_anchoring import build_f2_deterministic_envelope  # noqa: E402
+from finer.enrichment.entity_stoplist import (  # noqa: E402
+    CN_GENERIC_CANDIDATE_TERMS as _CN_GENERIC_CANDIDATE_TERMS,
+    NOISY_UPPER_TOKENS as _NOISY_UPPER_TOKENS,
+)
+from finer.enrichment.llm_entity_proposal import (  # noqa: E402
+    LLMEntityProposalAdapter,
+    LLMEntityProposalError,
+)
 from finer.schemas.content import ContentRecord  # noqa: E402
 from finer.schemas.content_envelope import ContentEnvelope  # noqa: E402
 
@@ -53,121 +61,6 @@ GAP_CANDIDATE_REVIEW_FIELDS = (
 )
 _UPPER_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z][A-Z0-9]{1,4}(?:\.[A-Z]{1,4})?(?![A-Za-z0-9])")
 _CN_CANDIDATE_RE = re.compile(r"[\u4e00-\u9fff]{2,8}")
-_NOISY_UPPER_TOKENS = {
-    "AI",
-    "ADAS",
-    "AND",
-    "API",
-    "APP",
-    "ASR",
-    "BBG",
-    "BPS",
-    "BRN0W",
-    "CIPS",
-    "CAGR",
-    "CCL",
-    "CEO",
-    "CFO",
-    "CNBC",
-    "CUDA",
-    "DDTL",
-    "DJT",
-    "CPI",
-    "CTA",
-    "DRAM",
-    "ETF",
-    "FIFO",
-    "FINRA",
-    "FILA",
-    "FIRE",
-    "FSD",
-    "GAAP",
-    "GDP",
-    "GPU",
-    "GTC",
-    "HBM",
-    "HSD",
-    "IEA",
-    "IDEF",
-    "IFRS",
-    "IPO",
-    "IRR",
-    "IP",
-    "LABUBU",
-    "LTCM",
-    "LLM",
-    "MOLLY",
-    "MORE",
-    "NAND",
-    "NEW",
-    "NOA",
-    "OCR",
-    "PCB",
-    "PDF",
-    "PE",
-    "PEG",
-    "PCE",
-    "PROHIBITED",
-    "PPI",
-    "PSG",
-    "PO",
-    "PS",
-    "PPT",
-    "REASONABLE",
-    "REGIME",
-    "ROE",
-    "ROI",
-    "RSI",
-    "SOFR",
-    "SP",
-    "TACO",
-    "TRUMP",
-    "TPU",
-    "TV",
-    "CN",
-    "HK",
-    "US",
-    "USA",
-    "USD",
-    "WATCH",
-    "I",
-    "II",
-    "III",
-    "IV",
-    "V",
-    # --- Financial metrics / ratios (a measure, never an investable entity) ---
-    "EPS",
-    "AUM",
-    "ASP",
-    "NP",
-    "NPM",
-    "ER",
-    "PB",
-    "PIK",
-    # --- Time / date tokens (timestamps in KOL screenshots, not entities) ---
-    "AM",
-    "PM",
-    "GMT",
-    "UTC",
-    # --- Currency codes (consistent with USD above) ---
-    "RMB",
-    "CNY",
-    "HKD",
-    "JPY",
-    "EUR",
-    "GBP",
-    # --- Career / desk abbreviations ---
-    "IBD",
-    # --- Pop Mart IP product lines (consistent with LABUBU / MOLLY) ---
-    "DIMOO",
-    "PUCKY",
-    "YOKI",
-    "JELLY",
-    "PINO",
-    # --- Generic English words / interjections ---
-    "JUST",
-    "OK",
-}
 _CN_ENTITY_CUES = (
     "出行",
     "科技",
@@ -188,91 +81,6 @@ _CN_ENTITY_CUES = (
     "雷达",
     "芯片",
     "聚创",
-)
-_CN_GENERIC_CANDIDATE_TERMS = (
-    "目标",
-    "图片",
-    "价值",
-    "区间",
-    "情绪",
-    "以上",
-    "以下",
-    "背景",
-    "关键",
-    "数据",
-    "收入",
-    "百万元",
-    "占比",
-    "提升",
-    "提升至",
-    "提升到了",
-    "去年",
-    "方面",
-    "一方面",
-    "品牌",
-    "截止",
-    "基于",
-    "公开",
-    "信息",
-    "参考",
-    "分析",
-    "订单",
-    "毛利",
-    "产能",
-    "业务",
-    "公司",
-    "策略",
-    "操作",
-    "风险",
-    "来自",
-    "分钟",
-    "前",
-    "转发",
-    "评论",
-    "保守",
-    "止盈",
-    "波段",
-    "位置",
-    "流通",
-    "相关股",
-    "也继续",
-    "产业链",
-    "产业的",
-    "投资机",
-    "总销量",
-    "销量",
-    "交付量",
-    "商店",
-    "研究院",
-    "金融科技",
-    "资产证券",
-    "资产证券化",
-    "非存款",
-    "抵押品",
-    "信贷",
-    "权重",
-    "盘面",
-    "补跌",
-    "奢侈品",
-    "煤炭",
-    "主管",
-    "报业",
-    "活跃",
-    "一如既往",
-    "企业服",
-    "本集团",
-    "激光雷达产",
-    "非常",
-    "点赞",
-    "收藏",
-    "回复",
-    "讨论",
-    "最热",
-    "最新",
-    "最早",
-    "下午",
-    "猫大人",
-    "出货量",
 )
 _CN_EXACT_GENERIC_CANDIDATE_TERMS = {
     "科技企业",
@@ -906,11 +714,70 @@ def _is_noisy_upper_token(alias: str) -> bool:
     )
 
 
+# ── F2 constrained-LLM entity proposal path (Phase 2) ────────────────────────
+# Opt-in via --llm-proposals. The adapter proposes; the deterministic validator
+# in llm_entity_proposal.py gates every proposal. Results are cached per block so
+# build_gap_report's two passes never double-spend tokens, and capped by
+# --llm-max-blocks so an accidental run cannot burn the whole corpus.
+_LLM_ADAPTER: LLMEntityProposalAdapter | None = None
+_LLM_PROPOSAL_CACHE: dict[tuple[str, str], list[dict[str, Any]]] = {}
+_LLM_MAX_BLOCKS = 0  # 0 = no cap on blocks sent to the LLM
+_LLM_BLOCKS_CALLED = 0
+
+
+def set_llm_proposal_adapter(
+    adapter: LLMEntityProposalAdapter | None,
+    *,
+    max_blocks: int = 0,
+) -> None:
+    """Install (or clear) the LLM entity-proposal adapter for the gap path.
+
+    Passing ``None`` disables the path. Resets the per-run cache and counter.
+    """
+    global _LLM_ADAPTER, _LLM_MAX_BLOCKS, _LLM_BLOCKS_CALLED
+    _LLM_ADAPTER = adapter
+    _LLM_MAX_BLOCKS = max(0, max_blocks)
+    _LLM_BLOCKS_CALLED = 0
+    _LLM_PROPOSAL_CACHE.clear()
+
+
+def _llm_candidates_for_block(
+    item: PlannedEnvelope,
+    block_id: str,
+    text: str,
+    reason: str,
+) -> list[dict[str, Any]]:
+    """Return validated LLM entity candidates for one block (cached, capped)."""
+    if _LLM_ADAPTER is None or not _LLM_ADAPTER.is_configured():
+        return []
+    cache_key = (item.content_id, block_id)
+    if cache_key in _LLM_PROPOSAL_CACHE:
+        return _LLM_PROPOSAL_CACHE[cache_key]
+
+    global _LLM_BLOCKS_CALLED
+    if _LLM_MAX_BLOCKS and _LLM_BLOCKS_CALLED >= _LLM_MAX_BLOCKS:
+        return []
+    try:
+        proposed = _LLM_ADAPTER.propose_for_block(
+            text=text,
+            block_id=block_id,
+            source_record_id=item.content_id,
+            raw_path=item.raw_path,
+            reason=reason,
+        )
+    except LLMEntityProposalError:
+        proposed = []
+    _LLM_BLOCKS_CALLED += 1
+    _LLM_PROPOSAL_CACHE[cache_key] = proposed
+    return proposed
+
+
 def _gap_candidates_for_block(
     item: PlannedEnvelope,
     block: dict[str, Any],
     *,
     reason: str,
+    include_llm: bool = False,
 ) -> list[dict[str, Any]]:
     text = block.get("text") or ""
     block_id = block.get("block_id") or ""
@@ -958,6 +825,16 @@ def _gap_candidates_for_block(
         )
         if len(candidates) >= MAX_GAP_CANDIDATES_PER_ITEM:
             return candidates
+
+    if include_llm:
+        for candidate in _llm_candidates_for_block(item, block_id, text, reason):
+            alias = candidate["alias_candidate"]
+            if alias in seen:
+                continue
+            seen.add(alias)
+            candidates.append(candidate)
+            if len(candidates) >= MAX_GAP_CANDIDATES_PER_ITEM:
+                break
     return candidates
 
 
@@ -1138,7 +1015,7 @@ def build_gap_report(plan: BackfillPlan) -> dict[str, Any]:
                 term in text for term in _FINANCIAL_CONTEXT_TERMS
             ):
                 continue
-            for candidate in _gap_candidates_for_block(item, block, reason=reason):
+            for candidate in _gap_candidates_for_block(item, block, reason=reason, include_llm=True):
                 if _is_noisy_upper_token(candidate["alias_candidate"]):
                     continue
                 candidates.append(candidate)
@@ -1326,11 +1203,35 @@ def main() -> None:
         type=Path,
         help="Optional JSONL path for human review of gap candidates",
     )
+    parser.add_argument(
+        "--llm-proposals",
+        action="store_true",
+        help="Enable constrained-LLM entity proposal path (needs DeepSeek env; burns tokens)",
+    )
+    parser.add_argument(
+        "--llm-max-blocks",
+        type=int,
+        default=0,
+        help="Safety cap on blocks sent to the LLM (0 = unlimited)",
+    )
     args = parser.parse_args()
 
     if args.dry_run and args.write:
         print("--dry-run and --write are mutually exclusive", file=sys.stderr)
         raise SystemExit(2)
+
+    if args.llm_proposals:
+        adapter = LLMEntityProposalAdapter()
+        if adapter.is_configured():
+            set_llm_proposal_adapter(adapter, max_blocks=args.llm_max_blocks)
+            cap = args.llm_max_blocks or "unlimited"
+            print(f"LLM entity proposal path ENABLED (max_blocks={cap})")
+        else:
+            print(
+                "--llm-proposals set but DeepSeek is not configured; "
+                "running rule paths only",
+                file=sys.stderr,
+            )
 
     mode = "write" if args.write else "dry-run"
     plan = plan_backfill(args.data_root, scope=args.scope, force=args.force)
