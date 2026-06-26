@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import logging
 import re
 from datetime import datetime
@@ -39,6 +40,8 @@ from finer.schemas.content_envelope import (
     ContentEnvelope,
 )
 from finer.schemas.quality import QualityCard
+
+from finer.parsing.layout_ocr_client import LayoutOCRClient
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +82,25 @@ _LINK_RE = re.compile(r"https?://\S+|www\.\S+")
 
 # Thresholds
 _MIN_TEXT_FOR_CONTENT = 30  # chars — below this, page is likely scanned/image
+# CJK Radicals Supplement + Kangxi Radicals. A broken font CMap maps 汉字 to
+# these radical glyphs (⼈ U+2F08 instead of 人 U+4EBA): the page has plenty of
+# "text" but it is garbled and must fall back to image OCR.
+_RADICAL_RE = re.compile(r"[⺀-⻿⼀-⿟]")
+_CJK_RE = re.compile(r"[㐀-鿿⺀-⿟]")
+_RADICAL_GARBLE_RATIO = 0.05
 _IMAGE_DENSITY_THRESHOLD = 0.4  # fraction of page area covered by images
+
+# Resolution for rendering a page to a raster before OCR. Layout OCR bboxes come
+# back in this pixel space; we convert them to PDF points (×72/dpi) so OCR blocks
+# share the coordinate system of the pdfplumber text-layer blocks.
+_OCR_RENDER_DPI = 150
+
+# Layout region type → canonical PDF block_type.
+_LAYOUT_REGION_BLOCK_TYPE = {
+    "table": "table_region",
+    "title": "section_title",
+    "text": "paragraph",
+}
 
 
 class PDFStandardizer:
@@ -91,6 +112,7 @@ class PDFStandardizer:
 
     def __init__(self, llm_client=None):
         self._llm = llm_client
+        self._layout_client: Optional[LayoutOCRClient] = None
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -163,8 +185,11 @@ class PDFStandardizer:
         chart_blocks = self._detect_chart_regions(page, page_idx, raw_path, full_text)
         blocks.extend(chart_blocks)
 
-        # 5. OCR fallback for scanned/image-heavy pages with little text
-        if len(full_text.strip()) < _MIN_TEXT_FOR_CONTENT and not table_blocks:
+        # 5. OCR fallback for scanned pages OR CMap-corrupted text layers.
+        # Garbled (radical-glyph) pages have a high char count but unusable text,
+        # so route them to image OCR even when there is plenty of "text".
+        text_garbled = self._is_radical_garbled(full_text)
+        if (len(full_text.strip()) < _MIN_TEXT_FOR_CONTENT and not table_blocks) or text_garbled:
             ocr_blocks = self._ocr_fallback_page(page, page_idx, raw_path)
             if ocr_blocks:
                 # Replace text blocks with OCR blocks for this page
@@ -192,6 +217,21 @@ class PDFStandardizer:
                     b.metadata["cover_page"] = True
 
         return blocks
+
+    def _is_radical_garbled(self, text: str) -> bool:
+        """True if the text layer is CMap-corrupted (汉字 rendered as radicals).
+
+        pdfplumber maps some embedded fonts' glyphs to Kangxi/CJK-radical
+        codepoints, producing text like ⼈⼯ instead of 人工. Such a page has a
+        high char count but is unusable; it must fall back to image OCR.
+        """
+        if not text:
+            return False
+        radicals = _RADICAL_RE.findall(text)
+        if len(radicals) < 10:
+            return False
+        cjk = _CJK_RE.findall(text)
+        return bool(cjk) and len(radicals) / len(cjk) > _RADICAL_GARBLE_RATIO
 
     # -----------------------------------------------------------------------
     # Text extraction
@@ -440,7 +480,12 @@ class PDFStandardizer:
         self, page, page_idx: int, raw_path: Path
     ) -> List[ContentBlock]:
         """OCR fallback for scanned/image-heavy pages."""
-        # Try vision API
+        # Primary: layout-aware OCR (Qwen-VL-OCR) — returns text WITH pixel bbox.
+        layout_blocks = self._ocr_page_via_layout(page, page_idx, raw_path)
+        if layout_blocks:
+            return layout_blocks
+
+        # Fallback: MiMo chat-vision text (no bbox).
         ocr_text = self._extract_page_via_vision(page, raw_path)
         if not ocr_text or len(ocr_text.strip()) < 10:
             return []
@@ -476,6 +521,75 @@ class PDFStandardizer:
 
         return blocks
 
+    def _ocr_page_via_layout(
+        self, page, page_idx: int, raw_path: Path
+    ) -> List[ContentBlock]:
+        """Render the page and OCR it with the layout engine → blocks WITH bbox.
+
+        Qwen-VL-OCR boxes come back in the rendered raster's pixel space; we
+        convert them to PDF points (×72/dpi) so OCR blocks share the coordinate
+        system of the pdfplumber text-layer blocks. Returns [] to signal fallback.
+        """
+        if self._layout_client is None:
+            self._layout_client = LayoutOCRClient()
+        if not self._layout_client.available:
+            return []
+        try:
+            img = page.to_image(resolution=_OCR_RENDER_DPI)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            regions = self._layout_client.extract_layout_regions(buf.getvalue(), "image/png")
+        except Exception:
+            logger.warning("Layout OCR failed for page in %s", raw_path.name, exc_info=True)
+            return []
+        if not regions:
+            return []
+
+        scale = 72.0 / _OCR_RENDER_DPI  # pixel → PDF point
+        model_name = self._layout_client.model
+        blocks: List[ContentBlock] = []
+        for region in regions:
+            text = (region.get("text") or "").strip()
+            if not text:
+                continue
+            noise_type = self._detect_noise_type(text)
+            if noise_type:
+                blocks.append(self._build_noise_block(noise_type, text, page_idx, raw_path))
+                continue
+            block_type = _LAYOUT_REGION_BLOCK_TYPE.get(region.get("type", ""), "paragraph")
+            bbox = self._region_bbox_to_points(region.get("bbox"), scale)
+            metadata: Dict[str, Any] = {"layout_available": True, "render_dpi": _OCR_RENDER_DPI}
+            if region.get("line_boxes"):
+                metadata["line_boxes"] = [
+                    [c * scale for c in lb] for lb in region["line_boxes"]
+                ]
+            blocks.append(
+                self._build_block(
+                    block_type=block_type,
+                    text=text,
+                    page_idx=page_idx,
+                    raw_path=raw_path,
+                    bbox=bbox,
+                    source_hash=self._hash_text(text),
+                    quality_flags=["ocr_extracted", "layout_ocr"],
+                    model_name=model_name,
+                    metadata=metadata,
+                )
+            )
+        return blocks
+
+    @staticmethod
+    def _region_bbox_to_points(bb: Optional[Dict[str, float]], scale: float) -> Optional[BoundingBox]:
+        """Convert a pixel-space region bbox dict to a PDF-point BoundingBox."""
+        if not bb:
+            return None
+        return BoundingBox(
+            x0=bb["x0"] * scale,
+            y0=bb["y0"] * scale,
+            x1=bb["x1"] * scale,
+            y1=bb["y1"] * scale,
+        )
+
     def _get_vision_error_reason(self) -> str:
         """Extract the last vision API error reason for failure metadata."""
         if self._llm is None:
@@ -495,8 +609,7 @@ class PDFStandardizer:
                 return None
 
             # Render page to image bytes
-            img = page.to_image(resolution=150)
-            import io
+            img = page.to_image(resolution=_OCR_RENDER_DPI)
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             image_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -506,11 +619,14 @@ class PDFStandardizer:
                 "并按照原图排版结构转化为Markdown格式。"
                 "只需返回Markdown本身。"
             )
-            return self._llm.chat_with_images(
+            from finer.parsing.ocr_quality import gate_vision_output
+
+            raw = self._llm.chat_with_images(
                 text=prompt,
                 image_base64=image_b64,
                 mime_type="image/png",
             )
+            return gate_vision_output(raw)
         except Exception:
             logger.warning(
                 "Vision OCR failed for page in %s", raw_path.name, exc_info=True
