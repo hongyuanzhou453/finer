@@ -98,3 +98,4 @@ pytest tests/ -v
 - `docs/specs/f1-standardization-contract.md` — F1 标准化契约（最新）
 - `docs/specs/canonical-path-test-plan.md` — 测试计划
 - `CLAUDE.md` — 项目工程规范
+- `knowledge/okf/index.md` — OKF 知识层入口（derived/curated 跨工具导航；运行时真值仍以 schemas + specs + 本文件为准）
