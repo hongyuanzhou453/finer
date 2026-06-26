@@ -494,6 +494,40 @@ def test_gap_candidates_filter_generic_terms_and_keep_entity_phrase(tmp_path: Pa
     assert "market" not in candidate
 
 
+def test_gap_candidates_filter_metric_time_and_currency_tokens(tmp_path: Path):
+    """Metrics, time/currency tokens, desk abbrevs, and Pop Mart IPs are noise, not entities."""
+    _seed_pair(
+        tmp_path,
+        "local_metric_noise",
+        "data/raw/trader/metric_noise.pdf",
+        text=(
+            "EPS (Rmb) 9.68，AUM 占比 40%，ASP 提升，NP 与 NPM 改善，ER 和 PB 估值，PIK 利息。"
+            "04:37 PM GMT，7:26 AM，UTC 时区更新。"
+            "汇率 RMB CNY HKD JPY EUR GBP 结算。"
+            "海外金融进了 IBD。自主IP DIMOO PUCKY YOKI JELLY PINO 销量。"
+            "OK 就这样，JUST 观望。曹操出行收入增长，被反复提及，需要人工核验。"
+        ),
+    )
+
+    report = build_gap_report(plan_backfill(tmp_path, scope="curated-pdf"))
+    aliases = {c["alias_candidate"] for c in report["gap_candidates"]}
+
+    # A real CN entity phrase still surfaces for human review.
+    assert "曹操出行" in aliases
+    # Financial metrics / ratios are a measure, never an investable entity.
+    for metric in ("EPS", "AUM", "ASP", "NP", "NPM", "ER", "PB", "PIK"):
+        assert metric not in aliases
+    # Time-of-day / timezone and currency codes are not entities.
+    for token in ("AM", "PM", "GMT", "UTC", "RMB", "CNY", "HKD", "JPY", "EUR", "GBP"):
+        assert token not in aliases
+    # Desk abbreviation + Pop Mart IP product lines (consistent with LABUBU / MOLLY).
+    for token in ("IBD", "DIMOO", "PUCKY", "YOKI", "JELLY", "PINO"):
+        assert token not in aliases
+    # Generic English words / interjections.
+    assert "OK" not in aliases
+    assert "JUST" not in aliases
+
+
 def test_gap_candidate_review_rows_add_blank_review_status(tmp_path: Path):
     _seed_pair(
         tmp_path,

@@ -135,6 +135,38 @@ _NOISY_UPPER_TOKENS = {
     "III",
     "IV",
     "V",
+    # --- Financial metrics / ratios (a measure, never an investable entity) ---
+    "EPS",
+    "AUM",
+    "ASP",
+    "NP",
+    "NPM",
+    "ER",
+    "PB",
+    "PIK",
+    # --- Time / date tokens (timestamps in KOL screenshots, not entities) ---
+    "AM",
+    "PM",
+    "GMT",
+    "UTC",
+    # --- Currency codes (consistent with USD above) ---
+    "RMB",
+    "CNY",
+    "HKD",
+    "JPY",
+    "EUR",
+    "GBP",
+    # --- Career / desk abbreviations ---
+    "IBD",
+    # --- Pop Mart IP product lines (consistent with LABUBU / MOLLY) ---
+    "DIMOO",
+    "PUCKY",
+    "YOKI",
+    "JELLY",
+    "PINO",
+    # --- Generic English words / interjections ---
+    "JUST",
+    "OK",
 }
 _CN_ENTITY_CUES = (
     "出行",
