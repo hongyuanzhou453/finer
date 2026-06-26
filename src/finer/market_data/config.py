@@ -24,13 +24,13 @@ class MarketDataConfig:
     request_interval: float = 0.2  # seconds between Tushare API calls
 
 
-def load_market_data_config() -> MarketDataConfig:
+def load_market_data_config(*, require_token: bool = True) -> MarketDataConfig:
     """Load market data config from environment.
 
-    Raises ValueError if TUSHARE_TOKEN is not set.
+    Raises ValueError if TUSHARE_TOKEN is not set and require_token=True.
     """
     token = os.environ.get("TUSHARE_TOKEN", "")
-    if not token:
+    if require_token and not token:
         raise ValueError(
             "TUSHARE_TOKEN environment variable is required for market data operations. "
             "Get your token at https://tushare.pro and set: export TUSHARE_TOKEN=your_token"

@@ -128,6 +128,14 @@ class MetaStore:
         ).fetchall()
         return [row[0] for row in rows]
 
+    def has_trade_cal_data(self, exchange: str = "SSE") -> bool:
+        """Return True when any trade calendar rows exist for an exchange."""
+        row = self._conn.execute(
+            "SELECT 1 FROM trade_cal WHERE exchange = ? LIMIT 1",
+            [exchange],
+        ).fetchone()
+        return row is not None
+
     def close(self) -> None:
         self._conn.close()
 

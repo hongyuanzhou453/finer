@@ -88,7 +88,7 @@ class LocalPro:
     ) -> pd.DataFrame:
         _require_duckdb()
         trade_cal_dir = self._data_dir / "trade_cal"
-        if not trade_cal_dir.exists():
+        if not _trade_cal_files_exist(trade_cal_dir):
             raise FileNotFoundError(
                 "trade_cal data not found. Run: finer market-data sync --table trade_cal"
             )
@@ -165,11 +165,16 @@ class LocalPro:
         if adj is None or daily.empty:
             return daily
 
-        factors = self.adj_factor(
-            ts_code=ts_code, start_date=start_date, end_date=end_date,
-        )
+        try:
+            factors = self.adj_factor(
+                ts_code=ts_code, start_date=start_date, end_date=end_date,
+            )
+        except FileNotFoundError:
+            logger.debug("adj_factor data missing; returning raw daily prices for %s", ts_code)
+            return daily
         if factors.empty:
-            return daily.iloc[0:0].copy()
+            logger.debug("adj_factor rows missing; returning raw daily prices for %s", ts_code)
+            return daily
 
         result = daily.merge(
             factors[["ts_code", "trade_date", "adj_factor"]],
@@ -216,7 +221,7 @@ class LocalPro:
             raise ValueError("end_date must be on or after start_date")
 
         table_dir = self._data_dir / table_name
-        if not table_dir.exists():
+        if not _partition_files_exist(table_dir):
             raise FileNotFoundError(
                 f"{table_name} data not found. Run: finer market-data sync --table {table_name}"
             )
@@ -286,6 +291,14 @@ def _parse_is_open(value: str | int | bool) -> bool:
     if value in (0, "0"):
         return False
     raise ValueError("is_open must be one of True, False, 1, 0, '1', '0'")
+
+
+def _partition_files_exist(table_dir: Path) -> bool:
+    return table_dir.exists() and any(table_dir.glob("date=*/data.parquet"))
+
+
+def _trade_cal_files_exist(table_dir: Path) -> bool:
+    return table_dir.exists() and any(table_dir.glob("exchange=*/data.parquet"))
 
 
 def _format_date_columns(df: pd.DataFrame, date_columns: list[str]) -> pd.DataFrame:

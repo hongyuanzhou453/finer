@@ -81,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     md_sync.add_argument("--start", help="Start date (YYYYMMDD)")
     md_sync.add_argument("--end", help="End date (YYYYMMDD)")
+    md_sync.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan sync without requiring TUSHARE_TOKEN, network calls, or writes",
+    )
 
     md_status = md_sub.add_parser("status", help="Show sync status")
 
@@ -203,12 +208,41 @@ def _cmd_inbox_status(args: argparse.Namespace) -> dict:
 def _cmd_market_data_sync(args: argparse.Namespace) -> dict:
     from finer.market_data.config import load_market_data_config
     from finer.market_data.service import MarketDataSyncService
+    from finer.market_data.status import build_sync_plan
 
-    config = load_market_data_config()
     start = _parse_date_arg(args.start) if args.start else None
     end = _parse_date_arg(args.end) if args.end else None
+    if not args.all and not args.table:
+        return {"error": "specify --all or --table"}
+    if getattr(args, "dry_run", False):
+        return build_sync_plan(
+            table=args.table,
+            sync_all=args.all,
+            start=start,
+            end=end,
+        )
 
-    with MarketDataSyncService(config) as svc:
+    try:
+        config = load_market_data_config(require_token=True)
+    except ValueError as exc:
+        return {
+            "status": "error",
+            "error": str(exc),
+            "token_configured": False,
+            "hint": "Set TUSHARE_TOKEN for real sync, or run with --dry-run to inspect the local plan.",
+        }
+
+    try:
+        svc_context = MarketDataSyncService(config)
+    except ImportError as exc:
+        return {
+            "status": "error",
+            "error": str(exc),
+            "token_configured": True,
+            "hint": "Install market data extras before real sync: pip install 'finer[market-data]'",
+        }
+
+    with svc_context as svc:
         if args.all:
             return svc.sync_all()
         elif args.table == "trade_cal":
@@ -228,13 +262,9 @@ def _cmd_market_data_sync(args: argparse.Namespace) -> dict:
 
 
 def _cmd_market_data_status(_args: argparse.Namespace) -> dict:
-    from finer.market_data.config import load_market_data_config
-    from finer.market_data.service import MarketDataSyncService
+    from finer.market_data.status import inspect_market_data
 
-    config = load_market_data_config()
-    with MarketDataSyncService(config) as svc:
-        status = svc.sync_status()
-    return {k: str(v) if v else "never" for k, v in status.items()}
+    return inspect_market_data()
 
 
 def _cmd_backtest_run(args: argparse.Namespace) -> dict:

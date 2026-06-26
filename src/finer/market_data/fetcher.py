@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from typing import Iterable
 
 import pandas as pd
 
@@ -30,6 +31,7 @@ DAILY_COLS = [
 TRADE_CAL_COLS = ["exchange", "cal_date", "is_open", "pretrade_date"]
 
 ADJ_FACTOR_COLS = ["ts_code", "trade_date", "adj_factor"]
+BASIC_LIST_STATUSES = ("L", "D", "P")
 
 
 class TushareFetcher:
@@ -49,15 +51,24 @@ class TushareFetcher:
             ) from e
         self._pro = ts.pro_api(token)
 
-    def fetch_basic(self) -> pd.DataFrame:
-        """Fetch all stock basic info (L/D/P/G status)."""
+    def fetch_basic(self, list_statuses: Iterable[str] = BASIC_LIST_STATUSES) -> pd.DataFrame:
+        """Fetch all stock basic info for supported list statuses (L/D/P)."""
         logger.info("Fetching stock_basic")
-        df = self._pro.stock_basic(
-            exchange="", list_status="L,D,P,G",
-            fields=",".join(BASIC_COLS),
-        )
-        if df is None or df.empty:
+        frames: list[pd.DataFrame] = []
+        for status in list_statuses:
+            df = self._pro.stock_basic(
+                exchange="", list_status=status,
+                fields=",".join(BASIC_COLS),
+            )
+            if df is not None and not df.empty:
+                frames.append(df)
+        if not frames:
             return pd.DataFrame(columns=BASIC_COLS)
+        df = (
+            pd.concat(frames, ignore_index=True)
+            .drop_duplicates(subset=["ts_code"], keep="first")
+            .reset_index(drop=True)
+        )
         df["list_date"] = pd.to_datetime(
             df["list_date"], format="%Y%m%d", errors="coerce"
         ).dt.date
