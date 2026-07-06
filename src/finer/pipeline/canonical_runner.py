@@ -82,7 +82,21 @@ ACTION_HINT_TO_ACTION_TYPE: dict[str, ActionType] = {
     "close_position": ActionType.CLOSE_LONG,
     "reduce_position": ActionType.CLOSE_LONG,
     "hold_position": ActionType.HOLD,
+    # Opinion tier: pure viewpoints materialize as WATCH actions (timeline
+    # tracking + 观点兑现回测), never as executable positions. Dropping them
+    # at F5 starved the viewpoint products of exactly the thing they present.
+    # avoid_or_watch_risk is the BEARISH twin of the watch hints — leaving it
+    # out silently filtered every bearish pure opinion off the timeline
+    # (live regen 2026-07-05: 4 unanimous bearish stances vanished at F5,
+    # skewing the radar bullish by funnel, not by content).
+    "watch_only": ActionType.WATCH,
+    "watch_or_no_trade": ActionType.WATCH,
+    "avoid_or_watch_risk": ActionType.WATCH,
 }
+
+# Hints that materialize as the non-executable opinion tier (all three
+# non-trading hints in schemas/policy.py's vocabulary)
+OPINION_TIER_HINTS: set[str] = {"watch_only", "watch_or_no_trade", "avoid_or_watch_risk"}
 
 ACTION_HINT_TO_DIRECTION: dict[str, TradeDirection] = {
     "open_position": TradeDirection.BULLISH,
@@ -247,11 +261,91 @@ def _coerce_envelope_anchors(envelope: ContentEnvelope) -> None:
         ]
 
 
+def _resolve_intent_extractor(intent_extractor: Optional[Any] = None):
+    """F3 extractor resolution: explicit injection > FINER_F3_EXTRACTOR=llm > rule-based.
+
+    The LLM extractor (constrained proposal, per the repo's stated F3 direction)
+    is opt-in via env until its output is validated on this corpus; construction
+    failures degrade to the deterministic rule-based baseline with a note.
+    """
+    import os
+
+    from finer.extraction.intent_extractor import RuleBasedIntentExtractor
+
+    if intent_extractor is not None:
+        return intent_extractor, None
+
+    if os.environ.get("FINER_F3_EXTRACTOR", "").strip().lower() == "llm":
+        try:
+            from finer.extraction.intent_extractor import (
+                ConsensusIntentExtractor,
+                LLMIntentExtractor,
+            )
+            from finer.llm.router import ModelRouter
+            from finer.prompts.registry import PromptRegistry
+
+            base = LLMIntentExtractor(
+                router=ModelRouter(), prompt_registry=PromptRegistry()
+            )
+            # The MiMo endpoint samples non-deterministically even at temp=0,
+            # so llm mode defaults to N-run majority-vote consensus (user
+            # decision 2026-07-05). FINER_F3_CONSENSUS_RUNS=1 opts out. A
+            # garbage value must not silently kill llm mode via the broad
+            # except below — fall back to the default of 3 instead.
+            try:
+                runs = int(os.environ.get("FINER_F3_CONSENSUS_RUNS", "") or "3")
+            except ValueError:
+                runs = 3
+            if runs > 1:
+                return ConsensusIntentExtractor(base, runs=runs), None
+            return base, None
+        except Exception as e:  # missing keys/config must not break the pipeline
+            return (
+                RuleBasedIntentExtractor(),
+                f"LLM extractor unavailable ({e}); fell back to rule-based",
+            )
+
+    return RuleBasedIntentExtractor(), None
+
+
+def _extract_with_fallback(extractor: Any, envelope: ContentEnvelope):
+    """Run F3 with the resolved extractor; degrade to rule-based on failure.
+
+    Fallback triggers on exceptions and on empty output from a non-rule
+    extractor (an LLM returning nothing usually means quota/key issues, not a
+    signal-free document — the deterministic baseline settles which it is).
+    """
+    from finer.extraction.intent_extractor import RuleBasedIntentExtractor
+
+    result = None
+    try:
+        result = extractor.extract(envelope)
+    except Exception as e:
+        logger.warning(
+            "F3 extractor %s failed on %s (%s); falling back to rule-based",
+            type(extractor).__name__,
+            envelope.envelope_id,
+            e,
+        )
+
+    if (result is None or not result.intents) and not isinstance(
+        extractor, RuleBasedIntentExtractor
+    ):
+        fallback_result = RuleBasedIntentExtractor().extract(envelope)
+        if result is None or fallback_result.intents:
+            fallback_result.processing_notes.append(
+                f"fell back from {type(extractor).__name__}"
+            )
+            return fallback_result
+    return result
+
+
 async def run_canonical_from_envelope(
     envelope: ContentEnvelope,
     context: Optional[Dict[str, Any]] = None,
     strategy: str = "programmatic",
     persist_dir: Optional[Path] = None,
+    intent_extractor: Optional[Any] = None,
 ) -> List[TradeAction]:
     """Canonical F3 → F4 → F5 pipeline over a real (F1/F2) ContentEnvelope.
 
@@ -295,12 +389,14 @@ async def run_canonical_from_envelope(
         )
         return []
 
-    # F3: Intent extraction (consumes envelope.entity_anchors for symbol resolution)
-    from finer.extraction.intent_extractor import RuleBasedIntentExtractor
-
-    extractor = RuleBasedIntentExtractor()
-    intent_result = extractor.extract(envelope)
-    intents = intent_result.intents
+    # F3: Intent extraction (consumes envelope.entity_anchors for symbol resolution).
+    # Extractor is injectable; default resolves via FINER_F3_EXTRACTOR (llm|rule),
+    # degrading to the deterministic rule-based baseline on any LLM failure.
+    extractor, resolve_note = _resolve_intent_extractor(intent_extractor)
+    if resolve_note:
+        logger.warning("%s (envelope %s)", resolve_note, envelope.envelope_id)
+    intent_result = _extract_with_fallback(extractor, envelope)
+    intents = intent_result.intents if intent_result else []
 
     if not intents:
         logger.info("No intents extracted from envelope %s", envelope.envelope_id)
@@ -370,7 +466,13 @@ async def run_canonical_from_envelope(
             f2_span_by_id[eid] for eid in used_evidence_ids if eid in f2_span_by_id
         ]
         _persist_canonical_artifacts(
-            intents, policy_batch.mappings, used_spans, persist_dir
+            intents,
+            policy_batch.mappings,
+            used_spans,
+            persist_dir,
+            envelope_id=envelope.envelope_id,
+            f3_extractor_version=getattr(intent_result, "extractor_version", None),
+            f3_processing_notes=list(getattr(intent_result, "processing_notes", []) or []),
         )
 
     return result.trade_actions
@@ -505,8 +607,13 @@ def _build_actions_programmatic(
     rejected: List[RejectedIntent] = []
 
     for mapped in policy_batch.mapped_intents:
-        # Non-executable → rejection record
-        if mapped.action_hint not in EXECUTABLE_HINTS:
+        # Unknown hints → rejection record. watch_only is NOT rejected any
+        # more: it materializes as the opinion tier (WATCH action) below,
+        # passing exactly the same target/sector/F2-grounding gates.
+        if (
+            mapped.action_hint not in EXECUTABLE_HINTS
+            and mapped.action_hint not in OPINION_TIER_HINTS
+        ):
             rejected.append(RejectedIntent(
                 intent_id=mapped.intent_id,
                 policy_id=mapped.policy_id,
@@ -535,6 +642,30 @@ def _build_actions_programmatic(
             ))
             continue
 
+        # Sector/concept targets are real KOL viewpoints but not tradable
+        # instruments — their registry "symbol" is a placeholder (e.g.
+        # 光模块 -> OPTICAL_MODULE). Reject with an audit trail instead of
+        # letting the placeholder masquerade as a ticker.
+        if intent.target_type == "sector":
+            rejected.append(RejectedIntent(
+                intent_id=mapped.intent_id,
+                policy_id=mapped.policy_id,
+                action_hint=mapped.action_hint,
+                reason="sector_target_not_tradable",
+            ))
+            continue
+
+        # A bare target_name must not masquerade as a ticker either
+        # (TargetInfo.ticker would otherwise carry a Chinese company name).
+        if not intent.target_symbol:
+            rejected.append(RejectedIntent(
+                intent_id=mapped.intent_id,
+                policy_id=mapped.policy_id,
+                action_hint=mapped.action_hint,
+                reason="unresolved_target_symbol",
+            ))
+            continue
+
         # F2-grounding hard gate: the action's evidence must trace to F2 block
         # evidence. F3's own uuid spans never match F2, so re-resolve grounding
         # against the F2 index (by ticker, then source blocks).
@@ -559,8 +690,11 @@ def _build_actions_programmatic(
             intent_id=intent.intent_id,
         )
 
-        # Build evidence text from the grounded F2 evidence spans
-        evidence_text = _build_evidence_text(evidence_ids, f2_span_by_id)
+        # Build evidence text from the grounded F2 evidence spans, expanded to
+        # sentence context via the block texts (mention tokens alone degrade).
+        evidence_text = _build_evidence_text(
+            evidence_ids, f2_span_by_id, block_texts=_block_texts(envelope)
+        )
 
         ta = TradeAction(
             intent_id=intent.intent_id,
@@ -574,7 +708,7 @@ def _build_actions_programmatic(
                 evidence_text=evidence_text[:500],
             ),
             target=TargetInfo(
-                ticker=intent.target_symbol or intent.target_name,
+                ticker=intent.target_symbol,
                 market=intent.market or "CN",
                 ticker_normalized=intent.target_symbol,
                 instrument_type=_target_type_to_instrument(intent.target_type),
@@ -589,10 +723,19 @@ def _build_actions_programmatic(
                     position_size_pct=position_pct,
                 ),
             ],
-            confidence=intent.confidence,
+            # confidence = pipeline structural certainty (lower of F3/F4, same
+            # semantics as CanonicalActionBuilder); conviction = KOL belief
+            # strength from F3 — the two were conflated before, which is why
+            # every live action showed the same flat confidence.
+            confidence=min(intent.confidence, mapped.mapping_confidence),
+            conviction=intent.conviction,
             time_horizon=mapped.holding_period_hint,
             requires_manual_review=mapped.requires_human_review,
             rationale=_build_action_rationale(intent, mapped, evidence_text),
+            metadata={
+                "action_hint_original": mapped.action_hint,
+                "tier": "opinion" if mapped.action_hint in OPINION_TIER_HINTS else "trade",
+            },
         )
         actions.append(ta)
 
@@ -674,7 +817,7 @@ Return a JSON array. Each element:
   "direction": "bullish/bearish/neutral",
   "action_type": "long/close_long/hold",
   "position_size_pct": 0.05,
-  "confidence": 0.85,
+  "confidence": "<float 0-1, calibrated to evidence strength — use the full range, do NOT default to one value>",
   "notes": "brief rationale"
 }}
 ```
@@ -723,6 +866,24 @@ Only include actions for the executable policy mappings listed above. Return [] 
             logger.debug("No policy mapping match for LLM action: %s %s", ticker, action_hint_raw)
             continue
 
+        # Same non-tradable gates as the programmatic path
+        if matched_intent.target_type == "sector":
+            rejected.append(RejectedIntent(
+                intent_id=matched_mapped.intent_id,
+                policy_id=matched_mapped.policy_id,
+                action_hint=matched_mapped.action_hint,
+                reason="sector_target_not_tradable",
+            ))
+            continue
+        if not matched_intent.target_symbol:
+            rejected.append(RejectedIntent(
+                intent_id=matched_mapped.intent_id,
+                policy_id=matched_mapped.policy_id,
+                action_hint=matched_mapped.action_hint,
+                reason="unresolved_target_symbol",
+            ))
+            continue
+
         direction_str = raw.get("direction", "bullish")
         direction = TradeDirection(direction_str) if direction_str in TradeDirection.__members__.values() else TradeDirection.BULLISH
 
@@ -743,7 +904,9 @@ Only include actions for the executable policy mappings listed above. Return [] 
                 matched_intent.intent_id,
             )
             continue
-        evidence_text = _build_evidence_text(evidence_ids, f2_span_by_id)
+        evidence_text = _build_evidence_text(
+            evidence_ids, f2_span_by_id, block_texts=_block_texts(envelope)
+        )
 
         ta = TradeAction(
             intent_id=matched_intent.intent_id,
@@ -770,6 +933,7 @@ Only include actions for the executable policy mappings listed above. Return [] 
                 ),
             ],
             confidence=raw.get("confidence", matched_intent.confidence),
+            conviction=matched_intent.conviction,
             time_horizon=matched_mapped.holding_period_hint,
             rationale=f"LLM-guided F5: {raw.get('notes', matched_mapped.action_hint)}",
         )
@@ -803,8 +967,16 @@ def _resolve_direction(
         return TradeDirection.BEARISH
     if hint == "hold_position":
         return TradeDirection.NEUTRAL
-    # open_position / add_position: use intent direction
-    return TradeDirection(intent.direction) if intent.direction in TradeDirection.__members__.values() else TradeDirection.BULLISH
+    # open_position / add_position / watch hints: use intent direction.
+    # mixed/unknown have no TradeDirection member — they are honestly
+    # NEUTRAL, not bullish (the old BULLISH default fabricated a stance:
+    # live regen 2026-07-05 turned a consensus "000001.SH mixed" into a
+    # bullish action).
+    return (
+        TradeDirection(intent.direction)
+        if intent.direction in TradeDirection.__members__.values()
+        else TradeDirection.NEUTRAL
+    )
 
 
 def _target_type_to_instrument(target_type: str) -> str:
@@ -820,19 +992,82 @@ def _target_type_to_instrument(target_type: str) -> str:
     return mapping.get(target_type, "unspecified")
 
 
+_SENTENCE_DELIMS = "。！？；\n"
+
+
+def _block_texts(envelope: ContentEnvelope) -> Dict[str, str]:
+    """block_id -> full block text (tolerates dict-shaped blocks)."""
+    out: Dict[str, str] = {}
+    for block in getattr(envelope, "blocks", None) or []:
+        if isinstance(block, dict):
+            bid, text = block.get("block_id"), block.get("text")
+        else:
+            bid, text = getattr(block, "block_id", None), getattr(block, "text", None)
+        if bid and isinstance(text, str) and text:
+            out[bid] = text
+    return out
+
+
+def _sentence_window(text: str, start: int, end: int, max_chars: int = 120) -> str:
+    """Expand a [start, end) span to the surrounding sentence (bounded)."""
+    n = len(text)
+    s = max(0, min(start if start is not None else 0, n))
+    e = max(s, min(end if end is not None else s, n))
+
+    left = s
+    for i in range(s - 1, max(-1, s - max_chars - 1), -1):
+        if i < 0 or text[i] in _SENTENCE_DELIMS:
+            left = i + 1
+            break
+        left = i
+    right = e
+    for i in range(e, min(n, e + max_chars)):
+        right = i + 1
+        if text[i] in _SENTENCE_DELIMS:
+            break
+    return text[left:right].strip()
+
+
 def _build_evidence_text(
     evidence_ids: List[str],
     evidence_map: Optional[Dict[str, EvidenceSpan]],
+    block_texts: Optional[Dict[str, str]] = None,
+    max_snippets: int = 3,
 ) -> str:
-    """Build concatenated evidence text from evidence span IDs."""
+    """Build human-readable evidence text from evidence span IDs.
+
+    F2 spans are mention-level anchors — their ``text`` is just the alias hit
+    ("亚马逊"), so joining them verbatim produced degenerate "X | X | X" strings
+    (49/58 live actions). Instead, expand each span to its surrounding sentence
+    via the block text, dedupe, and keep the first few distinct snippets. The
+    full span-id list stays on the action for audit; this is display text only.
+    """
     if not evidence_map:
         return ""
-    parts = []
+    snippets: List[str] = []
+    seen: set = set()
     for eid in evidence_ids:
         span = evidence_map.get(eid)
-        if span and hasattr(span, 'text'):
-            parts.append(span.text)
-    return " | ".join(parts)
+        if span is None:
+            continue
+        snippet = ""
+        block_text = (block_texts or {}).get(getattr(span, "block_id", None) or "")
+        if block_text:
+            snippet = _sentence_window(
+                block_text,
+                getattr(span, "char_start", None),
+                getattr(span, "char_end", None),
+            )
+        if not snippet:
+            snippet = getattr(span, "text", "") or ""
+        # normalize whitespace and shed F1 fake-table pipe framing
+        snippet = " ".join(snippet.split()).strip("|- ")
+        if snippet and snippet not in seen:
+            seen.add(snippet)
+            snippets.append(snippet)
+        if len(snippets) >= max_snippets:
+            break
+    return " | ".join(snippets)
 
 
 def _index_f2_evidence(
@@ -933,7 +1168,10 @@ def _build_action_rationale(
     """
     target = intent.target_name or intent.target_symbol or "标的"
     decision = f"{intent.direction} {target} · {mapped.action_hint}"
-    snippet = " ".join((evidence_text or "").split())[:160]
+    # first snippet only — the dashboard summary truncates to ~40 chars, so a
+    # joined list would crowd out the actual context sentence
+    first = (evidence_text or "").split(" | ")[0]
+    snippet = " ".join(first.split())[:160]
     return f"{decision}｜依据：{snippet}" if snippet else decision
 
 
@@ -942,6 +1180,9 @@ def _persist_canonical_artifacts(
     mappings: List[PolicyMappingResult],
     evidence_spans: List[EvidenceSpan],
     persist_dir: Path,
+    envelope_id: Optional[str] = None,
+    f3_extractor_version: Optional[str] = None,
+    f3_processing_notes: Optional[List[str]] = None,
 ) -> None:
     """Write F3 intents, F4 policy mappings, and F2 evidence spans as per-id JSON.
 
@@ -950,6 +1191,11 @@ def _persist_canonical_artifacts(
     ``{persist_dir}/F2_evidence/{evidence_span_id}.json`` to populate the Intent,
     Policy and Evidence panels; persisting them here closes the gap where the
     route wrote only F5 (so those panels were always empty).
+
+    Result-level F3 extraction provenance (validator rejection counts,
+    consensus vote records, fallback notes) lives on the extraction RESULT,
+    not on any intent — without ``{envelope_id}.notes.json`` those audit
+    decisions vanish when the run's stdout does.
     """
     f3_dir = Path(persist_dir) / "F3_intents"
     f4_dir = Path(persist_dir) / "F4_policy_mapped"
@@ -958,6 +1204,21 @@ def _persist_canonical_artifacts(
         f3_dir.mkdir(parents=True, exist_ok=True)
         f4_dir.mkdir(parents=True, exist_ok=True)
         evidence_dir.mkdir(parents=True, exist_ok=True)
+        if envelope_id and f3_processing_notes:
+            import json as _json
+
+            (f3_dir / f"{envelope_id}.notes.json").write_text(
+                _json.dumps(
+                    {
+                        "envelope_id": envelope_id,
+                        "extractor_version": f3_extractor_version,
+                        "processing_notes": f3_processing_notes,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
         for intent in intents:
             (f3_dir / f"{intent.intent_id}.json").write_text(
                 intent.model_dump_json(indent=2), encoding="utf-8"

@@ -66,6 +66,16 @@ def _make_envelope(**overrides) -> ContentEnvelope:
                 quality=_make_block_quality(),
                 provenance=_make_block_provenance(),
             ),
+            # second block so multi-intent mocks can quote verbatim evidence
+            # (the F3 validator rejects intents whose quote isn't in any block)
+            ContentBlock(
+                block_id="blk_002",
+                block_type="paragraph",
+                text="看好微软 MSFT，准备买入",
+                order_index=1,
+                quality=_make_block_quality(),
+                provenance=_make_block_provenance(),
+            ),
         ],
     )
     defaults.update(overrides)
