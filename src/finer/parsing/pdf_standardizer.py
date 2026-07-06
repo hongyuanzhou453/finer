@@ -333,15 +333,40 @@ class PDFStandardizer:
             if not table_data or len(table_data) < 2:
                 continue
 
+            # Get table bbox first (registered either way so the page-text pass
+            # still skips this region and doesn't double-extract the content)
+            bbox = self._get_table_bbox(page, table_data)
+            if bbox:
+                bboxes.append(bbox)
+
+            # pdfplumber wraps whole prose pages of transcript-style PDFs in
+            # narrow pseudo tables (live data: 27/27 blocks of a livestream
+            # transcript became table_region with pipe framing). Demote those
+            # to plain text blocks instead of framing prose as a table.
+            if self._is_prose_table(table_data):
+                prose_text = self._table_cells_to_prose(table_data)
+                if not prose_text.strip():
+                    continue
+                blocks.append(
+                    self._build_block(
+                        block_type=self._classify_text(prose_text, page_idx),
+                        text=prose_text,
+                        page_idx=page_idx,
+                        raw_path=raw_path,
+                        bbox=bbox,
+                        source_hash=self._hash_text(prose_text),
+                        metadata={
+                            "demoted_from": "table_region",
+                            "row_count": len(table_data),
+                        },
+                    )
+                )
+                continue
+
             # Convert table to markdown-like text
             table_text = self._table_to_text(table_data)
             if not table_text.strip():
                 continue
-
-            # Get table bbox from pdfplumber
-            bbox = self._get_table_bbox(page, table_data)
-            if bbox:
-                bboxes.append(bbox)
 
             blocks.append(
                 self._build_block(
@@ -356,6 +381,47 @@ class PDFStandardizer:
             )
 
         return blocks, bboxes
+
+    # Prose-table rejection thresholds: genuine tables carry short label/number
+    # cells across 3+ columns; transcript prose shows up as 1-2 "columns" whose
+    # cells hold long (often multi-line) sentences.
+    _PROSE_TABLE_MAX_COLS = 2
+    _PROSE_CELL_MAX_LEN = 120
+    _PROSE_CELL_AVG_LEN = 80
+    _PROSE_MULTILINE_MIN_LEN = 60
+
+    def _is_prose_table(self, table_data: List[List]) -> bool:
+        """True when a pdfplumber 'table' is actually wrapped prose."""
+        ncols = max(len(row) for row in table_data)
+        if ncols > self._PROSE_TABLE_MAX_COLS:
+            return False
+        cells = [
+            str(c).strip()
+            for row in table_data
+            for c in row
+            if c is not None and str(c).strip()
+        ]
+        if not cells:
+            return False
+        max_len = max(len(c) for c in cells)
+        avg_len = sum(len(c) for c in cells) / len(cells)
+        has_multiline = any("\n" in c for c in cells)
+        return (
+            max_len >= self._PROSE_CELL_MAX_LEN
+            or avg_len > self._PROSE_CELL_AVG_LEN
+            or (has_multiline and max_len >= self._PROSE_MULTILINE_MIN_LEN)
+        )
+
+    @staticmethod
+    def _table_cells_to_prose(table_data: List[List]) -> str:
+        """Flatten pseudo-table cells back into plain text (no pipe framing)."""
+        parts: List[str] = []
+        for row in table_data:
+            for c in row:
+                text = str(c).strip() if c is not None else ""
+                if text:
+                    parts.append(text)
+        return "\n".join(parts)
 
     def _table_to_text(self, table_data: List[List]) -> str:
         """Convert pdfplumber table data to markdown-like text."""
@@ -934,6 +1000,7 @@ class PDFStandardizer:
             source_uri=f0_record.raw_path,
             source_title=raw_path.name,
             raw_path=str(raw_path),
+            creator_id=f0_record.creator_id,
             creator_name=f0_record.creator_name,
             published_at=published_at,
             ingested_at=datetime.now(),

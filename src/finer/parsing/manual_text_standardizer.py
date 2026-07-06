@@ -242,6 +242,7 @@ class ManualTextStandardizer:
             source_uri=f0_record.raw_path,
             source_title=raw_path.name,
             raw_path=str(raw_path),
+            creator_id=f0_record.creator_id,
             creator_name=f0_record.creator_name,
             published_at=published_at,
             ingested_at=datetime.now(),
