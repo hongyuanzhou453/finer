@@ -684,6 +684,21 @@ class TestGlobalBasePolicyDirect:
         assert isinstance(rc.requires_human_review, bool)
         assert isinstance(rc.risk_notes, list)
 
+    def test_position_taking_hints_get_default_exit_rules(self, policy):
+        """Position-taking hints carry the v1 numeric exit-rule defaults,
+        which must stay equal to the historical F8 constants (zero drift)."""
+        rc = policy.compute_risk_constraints("add_position", 0.7)
+        assert rc.stop_loss_pct_hint == -0.10
+        assert rc.take_profit_pct_hint == 0.20
+        assert rc.max_holding_days_hint == 30
+
+    def test_watch_hints_get_no_exit_rules(self, policy):
+        """Non-position hints have no exit-rule hints."""
+        rc = policy.compute_risk_constraints("watch_only", 0.7)
+        assert rc.stop_loss_pct_hint is None
+        assert rc.take_profit_pct_hint is None
+        assert rc.max_holding_days_hint is None
+
 
 # =============================================================================
 # PolicyMappedIntent Tests
@@ -716,6 +731,19 @@ class TestPolicyMappedIntentOutput:
         batch = mapper.map_batch([intent])
         pmi = batch.mapped_intents[0]
         assert pmi.action_hint == "add_position"
+
+    def test_mapped_intent_carries_exit_rule_hints(self, mapper):
+        """Mapped intent carries the numeric exit-rule hints from risk constraints."""
+        intent = _make_intent(
+            actionability="explicit_action",
+            direction="bullish",
+            position_delta_hint="add",
+        )
+        batch = mapper.map_batch([intent])
+        pmi = batch.mapped_intents[0]
+        assert pmi.stop_loss_pct_hint == -0.10
+        assert pmi.take_profit_pct_hint == 0.20
+        assert pmi.max_holding_days_hint == 30
 
     def test_mapped_intent_carries_position_sizing_hint(self, mapper):
         """Mapped intent carries position sizing hint."""
