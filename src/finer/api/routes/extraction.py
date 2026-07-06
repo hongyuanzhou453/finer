@@ -14,6 +14,7 @@ from datetime import datetime
 import json
 import logging
 import asyncio
+import os
 
 from finer.paths import REPO_ROOT, DATA_ROOT
 
@@ -360,6 +361,33 @@ async def _run_extraction_pipeline_async(
                     model = "canonical-programmatic"
 
                 if actions:
+                    # F8 auto-backtest: evaluate each directional action against
+                    # real daily closes before persisting, so new extractions
+                    # land with backtest_result already attached. Fail-open —
+                    # any price/eval error leaves backtest_result as None
+                    # (opinions shows 待回测). Disable via FINER_F8_AUTO_BACKTEST=0.
+                    if os.environ.get("FINER_F8_AUTO_BACKTEST", "1") != "0":
+                        try:
+                            from finer.backtest.per_action import evaluate_action
+                            from finer.backtest.yahoo_prices import fetch_daily_closes
+
+                            closes_by_ticker: dict[str, list] = {}
+                            for a in actions:
+                                ticker = a.target.ticker_normalized or a.target.ticker
+                                if ticker not in closes_by_ticker:
+                                    closes_by_ticker[ticker] = fetch_daily_closes(ticker)
+                                result, _skip = evaluate_action(
+                                    a, closes_by_ticker[ticker]
+                                )
+                                if result is not None:
+                                    a.backtest_result = result
+                        except Exception as bt_exc:
+                            logger.warning(
+                                "F8 auto-backtest skipped for %s: %s",
+                                file_path.name,
+                                bt_exc,
+                            )
+
                     output_file = output_path / f"{file_path.stem}_actions.json"
                     output_data = {
                         "source_file": str(file_path),
@@ -369,6 +397,23 @@ async def _run_extraction_pipeline_async(
                     }
                     with open(output_file, "w", encoding="utf-8") as f:
                         json.dump(output_data, f, ensure_ascii=False, indent=2)
+
+                    # Keep the SQLite cache index fresh so index-backed reads
+                    # (repo.load fast path, timeline engine) see new actions
+                    # without a manual rebuild. Files stay authoritative.
+                    try:
+                        from finer.services.repository import TradeActionRepository
+
+                        repo = TradeActionRepository()
+                        for a in actions:
+                            repo.index_trade_action(a, str(output_file))
+                    except Exception as index_exc:
+                        logger.warning(
+                            "Failed to index extracted actions from %s: %s",
+                            output_file,
+                            index_exc,
+                        )
+
                     processed += 1
                     logger.info(f"Extracted {len(actions)} actions from {file_path.name}")
                 else:

@@ -275,25 +275,28 @@ def _cmd_backtest_run(args: argparse.Namespace) -> dict:
     from finer.backtest.storage import save_backtest_result
     from finer.schemas.trade_action import TradeAction
 
-    # Load TradeActions
+    # Load TradeActions. Handles all three persisted layouts: bare list,
+    # single-action dict, and the F5 batch wrapper {"actions": [...]}.
+    # from_dict (lax) restores string enums/datetimes from disk.
+    def _actions_from_json(data: object) -> list[TradeAction]:
+        if isinstance(data, dict) and isinstance(data.get("actions"), list):
+            items = data["actions"]
+        elif isinstance(data, list):
+            items = data
+        else:
+            items = [data]
+        return [TradeAction.from_dict(item) for item in items]
+
     actions_path = Path(args.actions)
     trade_actions: list[TradeAction] = []
 
     if actions_path.is_file():
         data = json_mod.loads(actions_path.read_text(encoding="utf-8"))
-        if isinstance(data, list):
-            for item in data:
-                trade_actions.append(TradeAction.model_validate(item))
-        else:
-            trade_actions.append(TradeAction.model_validate(data))
+        trade_actions.extend(_actions_from_json(data))
     elif actions_path.is_dir():
         for f in sorted(actions_path.glob("*.json")):
             data = json_mod.loads(f.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                for item in data:
-                    trade_actions.append(TradeAction.model_validate(item))
-            else:
-                trade_actions.append(TradeAction.model_validate(data))
+            trade_actions.extend(_actions_from_json(data))
     else:
         return {"error": f"Path not found: {actions_path}"}
 

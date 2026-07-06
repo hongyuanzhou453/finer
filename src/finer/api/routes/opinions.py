@@ -4,9 +4,8 @@ Reads real TradeAction data from F5/F6 layers via TradeActionRepository.
 Returns FinerError canonical envelope when data is unavailable.
 """
 
-import json
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
@@ -22,7 +21,13 @@ from finer.schemas.trade_action import (
     ValidationStatus,
 )
 from finer.services.repository import TradeActionRepository
-from finer.services.storage import DateRange
+from finer.timeline.stance_snapshot import (
+    build_snapshot,
+    diff_snapshots,
+    load_latest_snapshot_before,
+    persist_snapshot,
+    signal_clock_of,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +39,15 @@ router = APIRouter()
 
 class ActionStep(BaseModel):
     id: str
-    actionType: Literal["watch", "long", "short", "close_long", "close_short"]
+    actionType: Literal[
+        "watch", "long", "short", "add", "reduce", "close_long", "close_short"
+    ]
     triggerCondition: Optional[str] = None
     targetPriceLow: Optional[str] = None
     targetPriceHigh: Optional[str] = None
+    # Signed portfolio-fraction delta (+ = increase exposure); only set on
+    # add/reduce steps that carry a numeric delta.
+    positionDeltaPct: Optional[float] = None
 
 
 class TimelineOpinion(BaseModel):
@@ -45,18 +55,32 @@ class TimelineOpinion(BaseModel):
     timestamp: str
     ticker: str
     tickerName: Optional[str] = None
-    direction: Literal["bullish", "bearish", "neutral"]
+    # Full 5-way TradeDirection — risk_warning/watchlist are no longer
+    # collapsed into bearish/neutral (they carry distinct retail semantics).
+    direction: Literal["bullish", "bearish", "neutral", "watchlist", "risk_warning"]
     confidence: float = Field(..., ge=0, le=1)
+    # KOL belief strength from F3 (distinct from pipeline confidence) — the
+    # honest ranking signal for "此刻可跟"; None on legacy actions.
+    conviction: Optional[float] = Field(None, ge=0, le=1)
     verificationStatus: Literal["success", "failed", "pending"]
 
     # 验证结果
     priceChange: Optional[float] = None
     holdingDays: Optional[int] = None
+    exitReason: Optional[str] = None  # backtest exit_reason (stop_loss/target_reached/…)
 
     # 来源信息
     sourceText: str
     author: Optional[str] = None
     platform: Optional[str] = None
+    market: Optional[str] = None  # target market, e.g. "CN"
+    traceStatus: Optional[str] = None  # canonical_trace_status of the F5 action
+    instrumentType: Optional[str] = None  # stock/etf/index_future/…/unspecified — lets the UI downgrade non-tradable concepts
+    # Canonical execution clock (execution_timing.action_executable_at) — the
+    # real signal time. `timestamp` is the pipeline extraction moment, which
+    # collapses a whole batch onto one instant; consumers that need the true
+    # timeline (tide charts, latest-stance, freshness) should prefer this.
+    executableAt: Optional[str] = None
 
     # Action Chain
     actionChain: Optional[List[ActionStep]] = None
@@ -103,6 +127,8 @@ def _get_repository() -> TradeActionRepository:
 _ACTION_TYPE_MAP = {
     "long": "long",
     "short": "short",
+    "add": "add",
+    "reduce": "reduce",
     "close_long": "close_long",
     "close_short": "close_short",
     "buy_call": "long",
@@ -114,13 +140,14 @@ _ACTION_TYPE_MAP = {
     "buy_and_hold": "long",
 }
 
-# TradeDirection 枚举值到前端方向值的映射
+# TradeDirection 枚举值到前端方向值的映射（1:1 透传 5 向；
+# 仅对未知值兜底到 neutral）
 _DIRECTION_MAP = {
     "bullish": "bullish",
     "bearish": "bearish",
     "neutral": "neutral",
-    "watchlist": "neutral",
-    "risk_warning": "bearish",
+    "watchlist": "watchlist",
+    "risk_warning": "risk_warning",
 }
 
 # ValidationStatus 枚举值到前端验证状态值的映射
@@ -143,6 +170,7 @@ def _convert_action_step(step: TradeActionStep) -> ActionStep:
         triggerCondition=step.trigger_condition,
         targetPriceLow=str(step.target_price_low) if step.target_price_low is not None else None,
         targetPriceHigh=str(step.target_price_high) if step.target_price_high is not None else None,
+        positionDeltaPct=step.position_delta_pct,
     )
 
 
@@ -157,9 +185,22 @@ def trade_action_to_opinion(action: TradeAction) -> TimelineOpinion:
     # Extract price change from backtest result
     price_change = None
     holding_days = None
+    exit_reason = None
     if action.backtest_result:
         price_change = action.backtest_result.return_pct
         holding_days = action.backtest_result.holding_days
+        er = action.backtest_result.exit_reason
+        exit_reason = er.value if hasattr(er, "value") else er
+
+    # Canonical execution clock (real signal time vs extraction moment)
+    executable_at = None
+    if action.execution_timing:
+        clock = (
+            action.execution_timing.action_executable_at
+            or action.execution_timing.intent_effective_at
+        )
+        if clock is not None:
+            executable_at = clock.isoformat()
 
     # Map RLHF feedback
     rlhf_status: Optional[str] = None
@@ -186,6 +227,11 @@ def trade_action_to_opinion(action: TradeAction) -> TimelineOpinion:
     # Ticker name from target info
     ticker_name = action.target.company_name
 
+    trace_status = action.canonical_trace_status
+    trace_status_value = (
+        trace_status.value if hasattr(trace_status, "value") else trace_status
+    )
+
     return TimelineOpinion(
         id=action.trade_action_id,
         timestamp=action.timestamp.isoformat(),
@@ -193,12 +239,18 @@ def trade_action_to_opinion(action: TradeAction) -> TimelineOpinion:
         tickerName=ticker_name,
         direction=mapped_direction,  # type: ignore[arg-type]
         confidence=round(action.confidence, 2),
+        conviction=getattr(action, "conviction", None),
         verificationStatus=mapped_status,  # type: ignore[arg-type]
-        priceChange=round(price_change, 2) if price_change is not None else None,
+        priceChange=round(price_change, 4) if price_change is not None else None,
         holdingDays=holding_days,
+        exitReason=exit_reason,
         sourceText=action.source.evidence_text,
         author=author,
         platform=platform,
+        market=action.target.market,
+        traceStatus=trace_status_value,
+        instrumentType=action.target.instrument_type,
+        executableAt=executable_at,
         actionChain=action_chain,
         rlhfStatus=rlhf_status,  # type: ignore[arg-type]
         rlhfRating=rlhf_rating,
@@ -210,17 +262,27 @@ def trade_action_to_opinion(action: TradeAction) -> TimelineOpinion:
 # ============================================
 
 def _load_actions_from_dir(action_dir: Path) -> List[TradeAction]:
-    """Load all TradeAction JSON files from a directory (recursive)."""
+    """Load all TradeActions from a directory (recursive).
+
+    Covers both persisted layouts: single ``*.action.json`` files and batch
+    ``*_actions.json`` wrappers (current F5 extractor output).
+    """
     actions: List[TradeAction] = []
     if not action_dir.exists():
         return actions
-    for file_path in action_dir.glob("**/*.action.json"):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            actions.append(TradeAction.from_dict(data))
-        except Exception as e:
-            logger.warning("Failed to load TradeAction from %s: %s", file_path, e)
+    repo = _get_repository()
+    seen_files: set[Path] = set()
+    for pattern in ("**/*.action.json", "**/*_actions.json"):
+        for file_path in action_dir.glob(pattern):
+            if file_path in seen_files:
+                continue
+            seen_files.add(file_path)
+            try:
+                actions.extend(repo.load_actions_from_file(file_path))
+            except Exception as e:
+                logger.warning(
+                    "Failed to load TradeAction from %s: %s", file_path, e
+                )
     return actions
 
 
@@ -235,7 +297,10 @@ def _query_real_timeline(
 ) -> tuple[List[TimelineOpinion], int]:
     """Query real TradeAction data and convert to TimelineOpinion list.
 
-    Reads from F5 (via repository index) and F6 (direct file scan).
+    Reads F5 and F6 via direct file scans — the same single track as
+    _load_all_actions (/meta, /stats). The SQLite index is a cache that the F5
+    write path does not refresh, so it must not gate the main timeline
+    (otherwise /timeline silently misses actions that /meta counts).
     Deduplicates by trade_action_id.
 
     Returns:
@@ -247,37 +312,11 @@ def _query_real_timeline(
     seen_ids: set[str] = set()
     all_actions: List[TradeAction] = []
 
-    # --- F5 data: use repository index for efficient querying ---
-    date_range = DateRange(start=start_time, end=end_time)
-
-    if len(kol_list) == 1:
-        # Single KOL: use DB-level filter
-        records = repo.db.query(
-            creator_id=kol_list[0],
-            direction=direction_list[0] if len(direction_list) == 1 else None,
-            date_range=date_range,
-            limit=10000,
-            offset=0,
-        )
-    else:
-        records = repo.db.query(
-            direction=direction_list[0] if len(direction_list) == 1 else None,
-            date_range=date_range,
-            limit=10000,
-            offset=0,
-        )
-
-    for record in records:
-        file_path = record.get("file_path")
-        if not file_path:
-            continue
-        try:
-            action = repo._load_from_file(Path(file_path))
-            if action.trade_action_id not in seen_ids:
-                seen_ids.add(action.trade_action_id)
-                all_actions.append(action)
-        except Exception as e:
-            logger.warning("Failed to load TradeAction from %s: %s", file_path, e)
+    # --- F5 data: direct file scan of the canonical tier dir ---
+    for action in _load_actions_from_dir(repo.action_dir):
+        if action.trade_action_id not in seen_ids:
+            seen_ids.add(action.trade_action_id)
+            all_actions.append(action)
 
     # --- F6 data: direct file scan (reviewed actions) ---
     l6_dir = DATA_ROOT / "F6_reviewed"
@@ -286,10 +325,13 @@ def _query_real_timeline(
             seen_ids.add(action.trade_action_id)
             all_actions.append(action)
 
-    # --- In-memory filters for multi-value fields ---
-    if len(kol_list) > 1:
+    # --- Unified in-memory filters (applied to F5 and F6 alike) ---
+    all_actions = [
+        a for a in all_actions if start_time <= a.timestamp <= end_time
+    ]
+    if kol_list:
         all_actions = [a for a in all_actions if a.source.creator_id in kol_list]
-    if len(direction_list) > 1:
+    if direction_list:
         all_actions = [a for a in all_actions if a.direction.value in direction_list]
     if ticker_list:
         normalized_tickers = {t.upper() for t in ticker_list}
@@ -313,27 +355,21 @@ def _query_real_timeline(
 
 
 def _load_all_actions() -> List[TradeAction]:
-    """Load all TradeAction data from F5 (via repository) and F6 (file scan).
+    """Load all TradeAction data from F5 and F6 (direct file scans).
 
-    Deduplicates by trade_action_id.
+    Scans files as the authoritative source (both persisted layouts), so a
+    stale or empty SQLite index cannot hide F5 data. Deduplicates by
+    trade_action_id.
     """
     repo = _get_repository()
     seen_ids: set[str] = set()
     all_actions: List[TradeAction] = []
 
-    # F5 data via repository index
-    records = repo.db.query(limit=100000, offset=0)
-    for record in records:
-        file_path = record.get("file_path")
-        if not file_path:
-            continue
-        try:
-            action = repo._load_from_file(Path(file_path))
-            if action.trade_action_id not in seen_ids:
-                seen_ids.add(action.trade_action_id)
-                all_actions.append(action)
-        except Exception as e:
-            logger.warning("Failed to load TradeAction from %s: %s", file_path, e)
+    # F5 data via direct file scan of the canonical tier dir
+    for action in _load_actions_from_dir(repo.action_dir):
+        if action.trade_action_id not in seen_ids:
+            seen_ids.add(action.trade_action_id)
+            all_actions.append(action)
 
     # F6 data via direct file scan
     l6_dir = DATA_ROOT / "F6_reviewed"
@@ -373,6 +409,112 @@ def _get_real_meta() -> TimelineMeta:
     )
 
 
+# Sample-size-shrunk credibility: adjRate = (wins + K/2) / (settled + K), so a
+# tiny 4/4 record can't outrank a long consistently-good one. Single source of
+# truth for /stats/summary topKols and /changes score events (the dashboard
+# previously derived this client-side in kol-radar.ts).
+_CRED_PRIOR_K = 4
+_CRED_LOW_SAMPLE_N = 5
+
+_DIRECTION_CN = {
+    "bullish": "看多",
+    "bearish": "看空",
+    "neutral": "中性",
+    "watchlist": "观察",
+    "risk_warning": "风险提示",
+}
+
+
+def _credibility_score(settled: int, wins: int) -> int:
+    adj_rate = (wins + _CRED_PRIOR_K * 0.5) / (settled + _CRED_PRIOR_K)
+    return max(0, min(99, round(40 + 55 * adj_rate)))
+
+
+def _attributed_actions() -> List[TradeAction]:
+    """All actions with a real KOL attribution."""
+    return [
+        a
+        for a in _load_all_actions()
+        if a.source.creator_id
+        and a.source.creator_id.strip().lower() not in ("unknown", "none", "")
+    ]
+
+
+def _kol_credibility_map(actions: List[TradeAction]) -> Dict[str, int]:
+    settled: Dict[str, int] = {}
+    wins: Dict[str, int] = {}
+    kols: set[str] = set()
+    for a in actions:
+        k = a.source.creator_id or ""
+        kols.add(k)
+        bt = a.backtest_result
+        if bt and bt.return_pct is not None and (bt.holding_days or 0) > 0:
+            settled[k] = settled.get(k, 0) + 1
+            if bt.return_pct > 0:
+                wins[k] = wins.get(k, 0) + 1
+    return {k: _credibility_score(settled.get(k, 0), wins.get(k, 0)) for k in kols}
+
+
+def _history_change_events(actions: List[TradeAction]) -> List[dict]:
+    """Change events observable in the opinion history itself.
+
+    Flips = consecutive direction changes per (KOL, ticker) ordered by the
+    canonical signal clock; stop-loss exits come from real backtest results.
+    (Same semantics the dashboard adapter derived client-side before this
+    endpoint existed.)
+    """
+    events: List[dict] = []
+
+    groups: Dict[tuple, List[TradeAction]] = {}
+    for a in actions:
+        ticker = a.target.ticker_normalized or a.target.ticker
+        groups.setdefault((a.source.creator_id, ticker), []).append(a)
+
+    for (kol, ticker), lst in groups.items():
+        lst.sort(key=lambda a: (signal_clock_of(a), a.trade_action_id))
+        for prev_a, cur_a in zip(lst, lst[1:]):
+            if prev_a.direction != cur_a.direction:
+                events.append(
+                    {
+                        "id": f"flip-{cur_a.trade_action_id}",
+                        "type": "flip",
+                        "kolId": kol,
+                        "kolName": kol,
+                        "ticker": ticker,
+                        "companyName": cur_a.target.company_name or ticker,
+                        "fromDirection": prev_a.direction.value,
+                        "toDirection": cur_a.direction.value,
+                        "detail": (
+                            f"从{_DIRECTION_CN.get(prev_a.direction.value, prev_a.direction.value)}"
+                            f"转为{_DIRECTION_CN.get(cur_a.direction.value, cur_a.direction.value)}"
+                        ),
+                        "timestamp": signal_clock_of(cur_a),
+                    }
+                )
+
+    for a in actions:
+        bt = a.backtest_result
+        exit_reason = getattr(bt, "exit_reason", None) if bt else None
+        exit_value = getattr(exit_reason, "value", exit_reason)
+        if exit_value == "stop_loss":
+            ticker = a.target.ticker_normalized or a.target.ticker
+            events.append(
+                {
+                    "id": f"sl-{a.trade_action_id}",
+                    "type": "stop_loss",
+                    "kolId": a.source.creator_id,
+                    "kolName": a.source.creator_id,
+                    "ticker": ticker,
+                    "companyName": a.target.company_name or ticker,
+                    "detail": "跟单回测触发止损离场",
+                    "timestamp": signal_clock_of(a),
+                    "value": bt.return_pct,
+                }
+            )
+
+    return events
+
+
 def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
     """Get statistics summary from real data (F5 + F6)."""
     all_actions = _load_all_actions()
@@ -399,7 +541,13 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
     if not filtered:
         return {
             "total": 0,
-            "byDirection": {"bullish": 0, "bearish": 0, "neutral": 0},
+            "byDirection": {
+                "bullish": 0,
+                "bearish": 0,
+                "neutral": 0,
+                "watchlist": 0,
+                "risk_warning": 0,
+            },
             "byStatus": {"success": 0, "failed": 0, "pending": 0},
             "avgConfidence": 0.0,
             "avgPriceChange": 0.0,
@@ -407,24 +555,28 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
             "topKols": [],
         }
 
-    # Aggregate
-    by_direction: Dict[str, int] = {"bullish": 0, "bearish": 0, "neutral": 0}
+    # Aggregate — full 5-way direction buckets (no collapse)
+    by_direction: Dict[str, int] = {
+        "bullish": 0,
+        "bearish": 0,
+        "neutral": 0,
+        "watchlist": 0,
+        "risk_warning": 0,
+    }
     by_status: Dict[str, int] = {"success": 0, "failed": 0, "pending": 0}
     confidences: List[float] = []
     price_changes: List[float] = []
     ticker_counts: Dict[str, int] = {}
     ticker_success: Dict[str, List[bool]] = {}
     kol_counts: Dict[str, int] = {}
+    kol_settled: Dict[str, int] = {}
+    kol_wins: Dict[str, int] = {}
 
     for action in filtered:
-        # Direction
+        # Direction (5-way buckets cover every TradeDirection value)
         d = action.direction.value
         if d in by_direction:
             by_direction[d] += 1
-        elif d == "watchlist":
-            by_direction["neutral"] += 1
-        elif d == "risk_warning":
-            by_direction["bearish"] += 1
 
         # Validation status
         s = action.validation_status.value
@@ -446,10 +598,15 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
         elif action.validation_status == ValidationStatus.FAILED:
             ticker_success.setdefault(t, []).append(False)
 
-        # KOL counts
+        # KOL counts + settled follow-P&L record (feeds server-side credibility)
         kol = action.source.creator_id or ""
         if kol:
             kol_counts[kol] = kol_counts.get(kol, 0) + 1
+            bt = action.backtest_result
+            if bt and bt.return_pct is not None and (bt.holding_days or 0) > 0:
+                kol_settled[kol] = kol_settled.get(kol, 0) + 1
+                if bt.return_pct > 0:
+                    kol_wins[kol] = kol_wins.get(kol, 0) + 1
 
     avg_confidence = round(sum(confidences) / len(confidences), 2) if confidences else 0.0
     avg_price_change = round(sum(price_changes) / len(price_changes), 2) if price_changes else 0.0
@@ -467,12 +624,22 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
         for t, cnt in top_tickers
     ]
 
-    # Top KOLs
+    # Top KOLs — with server-side credibility (single source of truth; the
+    # dashboard previously derived this client-side in kol-radar.ts).
     top_kols = sorted(kol_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-    top_kol_list = [
-        {"author": k, "count": cnt, "avgRating": 0.0}
-        for k, cnt in top_kols
-    ]
+    top_kol_list = []
+    for k, cnt in top_kols:
+        settled = kol_settled.get(k, 0)
+        wins = kol_wins.get(k, 0)
+        top_kol_list.append({
+            "author": k,
+            "count": cnt,
+            "avgRating": 0.0,  # legacy field, kept for backward compat
+            "settledCount": settled,
+            "hitRate": round(wins / settled, 4) if settled else None,
+            "credibility": _credibility_score(settled, wins),
+            "lowSample": settled < _CRED_LOW_SAMPLE_N,
+        })
 
     return {
         "total": len(filtered),
@@ -584,6 +751,52 @@ async def get_stats_summary(
         )
 
 
+@router.get("/changes")
+async def get_changes(limit: int = Query(20, ge=1, le=100, description="事件数量上限")):
+    """近期异动：历史派生（翻向/止损）+ 每日立场快照对比（新增覆盖/隔日翻向/信誉变动）。
+
+    每次调用会把当日立场快照落盘到 data/F7_timeline/stance_snapshots/（当日内
+    幂等覆盖），与最近一份更早的快照做 diff。冷启动（无历史快照）时只返回
+    历史派生事件，快照 diff 随历史积累自然出现。
+    """
+    try:
+        actions = _attributed_actions()
+        credibility = _kol_credibility_map(actions)
+
+        today = date.today()
+        current = build_snapshot(actions, credibility, snapshot_date=today)
+        previous = load_latest_snapshot_before(today)
+        snapshot_events = diff_snapshots(previous[1], current) if previous else []
+        persist_snapshot(current)
+
+        # merge, dedupe by id (a same-day flip can appear in both sources)
+        merged: Dict[str, dict] = {}
+        for ev in _history_change_events(actions) + snapshot_events:
+            merged.setdefault(ev["id"], ev)
+        events = sorted(
+            merged.values(), key=lambda e: e.get("timestamp") or "", reverse=True
+        )[:limit]
+
+        return {
+            "ok": True,
+            "data": {
+                "events": events,
+                "snapshotDate": current["snapshot_date"],
+                "prevSnapshotDate": previous[0].isoformat() if previous else None,
+            },
+        }
+    except Exception as e:
+        logger.error("Failed to compute changes: %s", e, exc_info=True)
+        raise FinerError(
+            ErrorCode.F7_INT_001,
+            f"异动计算失败: {e}",
+            stage="F7",
+            operation="get_changes",
+            retryable=True,
+            fix_hint="检查 F5 数据与 data/F7_timeline/stance_snapshots/ 目录可写",
+        )
+
+
 @router.get("/{opinion_id}", response_model=TimelineOpinion)
 async def get_opinion_detail(opinion_id: str):
     """获取单个观点详情."""
@@ -594,17 +807,11 @@ async def get_opinion_detail(opinion_id: str):
         if action:
             return trade_action_to_opinion(action)
 
-        # F6 via direct file scan
+        # F6 via direct file scan (both persisted layouts)
         l6_dir = DATA_ROOT / "F6_reviewed"
-        for file_path in l6_dir.glob("**/*.action.json"):
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                candidate = TradeAction.from_dict(data)
-                if candidate.trade_action_id == opinion_id:
-                    return trade_action_to_opinion(candidate)
-            except Exception:
-                continue
+        for candidate in _load_actions_from_dir(l6_dir):
+            if candidate.trade_action_id == opinion_id:
+                return trade_action_to_opinion(candidate)
     except FinerError:
         raise
     except Exception as e:
