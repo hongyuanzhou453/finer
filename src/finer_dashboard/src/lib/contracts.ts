@@ -645,6 +645,47 @@ export type KOLTimelineEvent = {
   nameLineage?: NameLineage;
 };
 
+// =============================================================================
+// KOL Trading Style Profile (mirrors schemas/kol_profile.py, snake_case)
+// =============================================================================
+
+export type EntryStyle = "left_side" | "right_side" | "mixed" | "unknown";
+
+/** Hand-annotated trading style from configs/creators/*.yaml.
+ *  Tri-state semantics: null = 未标注, false = 明确不用, true = 明确使用. */
+export type DeclaredTradingStyle = {
+  uses_margin: boolean | null;
+  uses_leverage: boolean | null;
+  does_short: boolean | null;
+  entry_style: EntryStyle;
+  evidence_notes: string[];
+};
+
+/** Aggregate statistics over the KOL's attributed F5 TradeActions. */
+export type ObservedTradingStyle = {
+  sample_size: number;
+  directional_sample_size: number;
+  short_side_count: number;
+  short_ratio: number | null;
+  margin_mention_count: number;
+  leverage_mention_count: number;
+  left_side_count: number;
+  right_side_count: number;
+  entry_style_observed: EntryStyle;
+  entry_style_sample_size: number;
+  low_sample: boolean;
+  computed_at: string;
+  window_label: string;
+};
+
+/** Two-layer trading-style profile from GET /api/kol/style/{creator_id}. */
+export type TradingStyleProfile = {
+  creator_id: string;
+  display_name?: string | null;
+  declared: DeclaredTradingStyle | null;
+  observed: ObservedTradingStyle | null;
+};
+
 export type BacktestTask = {
   id: string;
   name: string;
@@ -1484,6 +1525,8 @@ export type TradeDirection =
 export type ActionType =
   | "long"
   | "short"
+  | "add"
+  | "reduce"
   | "close_long"
   | "close_short"
   | "buy_call"
@@ -1511,6 +1554,7 @@ export type ExitReason =
   | "time_exit"
   | "signal_reversal"
   | "manual"
+  | "end_of_period"
   | "unknown";
 
 export type MarketSession =
@@ -1553,6 +1597,8 @@ export type ActionStep = {
   target_price_low?: number | null;
   target_price_high?: number | null;
   position_size_pct?: number | null;
+  /** Signed portfolio-fraction delta: + = increase exposure, - = decrease. */
+  position_delta_pct?: number | null;
   notes?: string;
 };
 

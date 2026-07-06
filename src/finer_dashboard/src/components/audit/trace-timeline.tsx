@@ -17,6 +17,8 @@ import { Pill, SectionLabel, type Tone } from "./primitives";
 const ACTION_TYPE: Record<ActionType, string> = {
   long: "做多",
   short: "做空",
+  add: "加仓",
+  reduce: "减仓",
   close_long: "平多",
   close_short: "平空",
   buy_call: "买入看涨",

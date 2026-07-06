@@ -71,6 +71,18 @@ const DIRECTION_CONFIG: Record<OpinionDirection, { label: string; color: string;
     bg: "bg-stone-100 border-stone-300",
     icon: <Minus className="w-5 h-5" />,
   },
+  watchlist: {
+    label: "观察",
+    color: "text-amber-600",
+    bg: "bg-amber-50 border-amber-200",
+    icon: <Minus className="w-5 h-5" />,
+  },
+  risk_warning: {
+    label: "风险提示",
+    color: "text-teal-700",
+    bg: "bg-teal-50 border-teal-200",
+    icon: <TrendingDown className="w-5 h-5" />,
+  },
 };
 
 const VERIFICATION_CONFIG = {
@@ -83,9 +95,24 @@ const ACTION_TYPE_LABELS: Record<ActionStep["actionType"], string> = {
   watch: "观望",
   long: "做多",
   short: "做空",
+  add: "加仓",
+  reduce: "减仓",
   close_long: "平多",
   close_short: "平空",
 };
+
+// add/reduce 是仓位增减语义，方向由观点 direction 决定：
+// 看空观点下的加/减仓是对空头敞口的操作。
+function actionTypeLabel(
+  actionType: ActionStep["actionType"],
+  direction: OpinionDirection,
+): string {
+  if (direction === "bearish" || direction === "risk_warning") {
+    if (actionType === "add") return "加空仓";
+    if (actionType === "reduce") return "减空仓";
+  }
+  return ACTION_TYPE_LABELS[actionType];
+}
 
 // ============================================
 // 子组件: 验证结果卡片
@@ -146,9 +173,10 @@ function VerificationResult({ status, priceChange, holdingDays }: VerificationRe
 
 interface ActionChainDisplayProps {
   steps: ActionStep[];
+  direction: OpinionDirection;
 }
 
-function ActionChainDisplay({ steps }: ActionChainDisplayProps) {
+function ActionChainDisplay({ steps, direction }: ActionChainDisplayProps) {
   if (!steps || steps.length === 0) {
     return (
       <div className="text-sm text-foreground/40 italic">
@@ -168,13 +196,24 @@ function ActionChainDisplay({ steps }: ActionChainDisplayProps) {
             <div className="flex items-center gap-2 mb-2">
               <span className={cn(
                 "px-2 py-0.5 rounded text-xs font-bold",
-                step.actionType === "long" && "bg-emerald-100 text-emerald-700",
+                (step.actionType === "long" || step.actionType === "add") && "bg-emerald-100 text-emerald-700",
                 step.actionType === "short" && "bg-red-100 text-red-700",
+                step.actionType === "reduce" && "bg-orange-100 text-orange-700",
                 step.actionType === "watch" && "bg-blue-100 text-blue-700",
                 (step.actionType === "close_long" || step.actionType === "close_short") && "bg-purple-100 text-purple-700"
               )}>
-                {ACTION_TYPE_LABELS[step.actionType]}
+                {actionTypeLabel(step.actionType, direction)}
               </span>
+              {step.actionType === "add" && (
+                <span className="text-[10px] uppercase tracking-widest text-foreground/40">
+                  增持现有仓位
+                </span>
+              )}
+              {step.actionType === "reduce" && (
+                <span className="text-[10px] uppercase tracking-widest text-foreground/40">
+                  部分减持 · 非清仓
+                </span>
+              )}
             </div>
             <div className="space-y-1">
               {step.triggerCondition && (
@@ -188,6 +227,13 @@ function ActionChainDisplay({ steps }: ActionChainDisplayProps) {
                   {step.targetPriceLow && step.targetPriceHigh
                     ? `${step.targetPriceLow} - ${step.targetPriceHigh}`
                     : step.targetPriceLow || step.targetPriceHigh}
+                </div>
+              )}
+              {step.positionDeltaPct != null && (
+                <div className="text-xs text-foreground/60">
+                  <span className="font-medium">仓位变动:</span>{" "}
+                  {step.positionDeltaPct > 0 ? "+" : ""}
+                  {(step.positionDeltaPct * 100).toFixed(0)}%
                 </div>
               )}
             </div>
@@ -372,7 +418,7 @@ export function OpinionDetailModal({ opinion, open, onClose }: OpinionDetailModa
                 操作链
               </div>
               <div className={STYLES.card}>
-                <ActionChainDisplay steps={opinion.actionChain} />
+                <ActionChainDisplay steps={opinion.actionChain} direction={opinion.direction} />
               </div>
             </div>
           )}
