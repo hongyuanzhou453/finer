@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List
@@ -24,11 +25,57 @@ from finer.llm.router import ModelRouter
 from finer.policy.policy_mapper import PolicyMapper
 from finer.prompts.registry import PromptRegistry
 from finer.schemas.content_envelope import ContentEnvelope
+from finer.schemas.investment_intent import NormalizedInvestmentIntent
+from finer.schemas.policy import PolicyMappingBatch
 from finer.schemas.trade_action import TradeAction
 
 logger = logging.getLogger(__name__)
 
 _DATA_ROOT = Path("data")
+
+
+@dataclass(frozen=True)
+class GoldenPathResult:
+    """All canonical TradeActions produced from one ContentEnvelope.
+
+    ``run_golden_path`` previously returned only ``trade_actions[0]``, silently
+    dropping the rest when an envelope yielded multiple intents. This result
+    object exposes the full set; callers that only need the single
+    representative action use :attr:`primary_action`.
+    """
+
+    envelope_id: str
+    data_root: Path
+    trade_actions: List[TradeAction]
+    intents: List[NormalizedInvestmentIntent]
+    policy_batch: PolicyMappingBatch
+
+    @property
+    def primary_action(self) -> TradeAction:
+        """First TradeAction — the representative action for single-intent flows.
+
+        Raises:
+            ValueError: when no trade actions were produced. ``run_golden_path``
+                already raises before returning in that case, so a result handed
+                back to a caller always has at least one action.
+        """
+        if not self.trade_actions:
+            raise ValueError(
+                f"GoldenPathResult for {self.envelope_id} has no trade actions"
+            )
+        return self.trade_actions[0]
+
+    @property
+    def action_count(self) -> int:
+        return len(self.trade_actions)
+
+    @property
+    def intent_count(self) -> int:
+        return len(self.intents)
+
+    @property
+    def policy_mapping_count(self) -> int:
+        return len(self.policy_batch.mapped_intents)
 
 
 def _json_default(obj: Any) -> Any:
@@ -51,7 +98,7 @@ def run_golden_path(
     envelope: ContentEnvelope,
     *,
     data_root: Path | str = _DATA_ROOT,
-) -> TradeAction:
+) -> GoldenPathResult:
     """Run canonical F3→F4→F5 for a single ContentEnvelope.
 
     Args:
@@ -59,7 +106,9 @@ def run_golden_path(
         data_root: Root directory for writing intermediate artifacts.
 
     Returns:
-        TradeAction with canonical_trace_status == "canonical".
+        GoldenPathResult holding every canonical TradeAction (each with
+        canonical_trace_status == "canonical"). Use ``.primary_action`` for the
+        single representative action; ``.trade_actions`` for the full set.
 
     Raises:
         ValueError: If no intents are extracted or no actionable intents produced.
@@ -166,4 +215,10 @@ def run_golden_path(
         len(trade_actions), envelope.envelope_id,
     )
 
-    return trade_actions[0]
+    return GoldenPathResult(
+        envelope_id=envelope.envelope_id,
+        data_root=data_root,
+        trade_actions=trade_actions,
+        intents=intents,
+        policy_batch=batch,
+    )
