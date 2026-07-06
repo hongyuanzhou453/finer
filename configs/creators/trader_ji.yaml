@@ -23,3 +23,13 @@ default_horizons:
 notes:
   - prioritize sector- and theme-level events over single-stock views
   - map views to ETF or index proxies before stock-level proxies
+# 交易风格人工标注（declared 层，schemas/kol_profile.py:DeclaredTradingStyle）。
+# 三态：true=明确使用 / false=明确不用 / 缺省或 null=未标注。
+trading_style:
+  uses_margin: null
+  uses_leverage: null
+  does_short: false
+  entry_style: right_side
+  evidence_notes:
+    - 视频中多次强调“突破确认后再上车”，未见抄底语义
+    - 未观察到做空表述，暂标 does_short=false，待更多语料复核
