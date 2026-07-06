@@ -1,0 +1,39 @@
+# Finer-Skill: f2-entity-anchoring 可调面声明
+#
+# 状态: 脚手架 / 尚未 wire —— 当前没有代码读取本文件。
+# 值镜像源码硬编码值；wire 工作见模式路线图 M3。
+# 内核（禁改，不在本文件）: entity_anchoring.py 扫描算子 / EntityAnchor 契约 /
+#   word-boundary 规则 / entity_registry.py 作为 registry 真相源。
+
+# --- LLM 候选提议元参 ---
+llm_proposal:
+  # SOURCE: src/finer/enrichment/llm_entity_proposal.py:58,60
+  min_alias_len: 2
+  max_alias_len: 20
+  # SOURCE: src/finer/enrichment/llm_entity_proposal.py:147
+  max_text_chars: 4000
+  # 低错误率批量采纳阈值（建议值，见 docs/specs/2026-06-26-f2-llm-entity-proposal-impl.md）
+  # SOURCE: 当前为软建议，非代码常量
+  min_confidence_for_bulk_adopt: 0.8
+
+# --- 命中率回归基线（holdout 上测量；M1 落地 dev/holdout 切分后，本基线改为只在 holdout 量） ---
+hit_rate_baselines:
+  # SOURCE: scripts/check_f2_coverage_regression.py:67
+  curated_pdf_min: 0.532
+  # SOURCE: scripts/check_f2_coverage_regression.py:79
+  all_local_min: 0.165
+
+# --- 词表真相源（集中，禁止双份漂移；本文件不复制内容，只指针） ---
+lexicon_truth_source:
+  # SOURCE: src/finer/enrichment/entity_stoplist.py
+  noisy_upper_tokens: "entity_stoplist.NOISY_UPPER_TOKENS"
+  cn_generic_candidate_terms: "entity_stoplist.CN_GENERIC_CANDIDATE_TERMS"
+  cn_sector_theme_terms: "entity_stoplist.CN_SECTOR_THEME_TERMS"
+  registry: "entity_registry.ENTITY_REGISTRY"
+
+# --- M1 样本隔离（待落地）：all-local block-id 确定性切分 ---
+sample_isolation:
+  # 占位：M1 实现后填 dev/holdout 切分比例与哈希种子
+  partition_strategy: "content_id_hash"   # 按 block-id 哈希，可复现
+  seed: null                              # M1 落地时确定
+  holdout_fraction: null                  # M1 落地时确定

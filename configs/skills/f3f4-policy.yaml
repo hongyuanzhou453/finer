@@ -1,0 +1,52 @@
+# Finer-Skill: f3f4f5-policy 可调面声明
+#
+# 状态: 脚手架 / 尚未 wire —— 当前没有代码读取本文件。
+# 值镜像源码硬编码值；wire 工作见模式路线图 M3。
+# 内核（禁改，不在本文件）: global_base.py::_ACTION_RULES 规则表 /
+#   F3 只出 Intent 不出 TradeAction / F4 无 LLM。
+
+# --- F3 Intent 提取阈值 ---
+f3_intent:
+  # conviction 分桶（按命中信号数）
+  # SOURCE: src/finer/extraction/intent_extractor.py:491,493,495
+  conviction:
+    high_signal_count: 5      # >=5 信号 -> 0.75
+    high_value: 0.75
+    mid_signal_count: 3       # >=3 信号 -> 0.65
+    mid_value: 0.65
+    low_value: 0.55           # else -> 0.55
+  # confidence 计算
+  # SOURCE: src/finer/extraction/intent_extractor.py:498-505
+  confidence:
+    base: 0.7
+    symbol_match_bonus: 0.15  # 命中标的 -> 0.85
+    ambiguity_penalty: 0.05   # 每个 ambiguity_flag 扣
+    clamp_min: 0.35
+    clamp_max: 0.95
+
+# --- F4 Policy 仓位/风控阈值 ---
+f4_policy:
+  # 仓位规模 conviction 桶（qualitative: none/small/medium/large）
+  # SOURCE: src/finer/policy/global_base.py:~105-110
+  position_sizing_bands:
+    none_below: 0.0
+    small_at: 0.35
+    medium_at: 0.7
+    # 注: 当前无 "large" 桶（见 F3-F4-F5 探查），是否补 large 属内核变更，需评审
+  # 风控升级阈值
+  # SOURCE: src/finer/policy/global_base.py:~300-313
+  risk_flags:
+    human_review_below: 0.3   # conviction < 0.3 -> 人工复核
+    risk_note_below: 0.4      # conviction < 0.4 -> 风险备注
+
+# --- F5 TradeAction 置信阈值 ---
+f5_action:
+  # SOURCE: src/finer/extraction/trade_action_extractor.py:~131-133
+  confidence_high: 0.8        # 直接输出
+  confidence_medium: 0.5      # 进校验
+  confidence_low: 0.3         # 人工复核
+
+# --- 评价指标（M3 落地）: 用 F6 RLHF 标签做 conviction calibration ---
+evaluation:
+  metric: "conviction_calibration"   # 0.75 conviction 是否 ~75% 真实正确率
+  ground_truth_source: "F6 RLHF feedback (rating / is_correct)"
