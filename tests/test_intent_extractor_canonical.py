@@ -519,12 +519,13 @@ class TestCrossCutting:
 
 
 class TestEvidenceFallback:
-    """Test that LLMIntentExtractor falls back to block-level evidence
-    when LLM's evidence_text doesn't match any block text exactly."""
+    """CONTRACT CHANGE (2026-07-05): non-verbatim / empty evidence_text no
+    longer degrades to a block-level fallback span — the deterministic
+    validator treats it as a fabrication signal and REJECTS the intent
+    (the old fallback let unfaithful quotes reach F5 on live data)."""
 
-    def test_llm_evidence_no_match_falls_back_to_block_level(self):
-        """When evidence_text doesn't match block text, should use block-level span."""
-        # LLM returns evidence_text that doesn't exist verbatim in the block
+    def test_llm_evidence_no_match_rejected_by_validator(self):
+        """A quote that doesn't appear verbatim in any block → rejected."""
         llm_output = {
             "intents": [{
                 "target_name": "宁德时代",
@@ -543,14 +544,11 @@ class TestEvidenceFallback:
         envelope = make_test_envelope(SAMPLE_1_TEXT, "env_evidence_fallback")
         result = extractor.extract(envelope)
 
-        assert len(result.intents) == 1
-        intent = result.intents[0]
-        # Should have block-level fallback evidence, not empty
-        assert len(intent.evidence_span_ids) >= 1, \
-            "Intent has no evidence spans after fallback — evidence contract violated"
+        assert result.intents == []
+        assert any("evidence_not_verbatim" in n for n in result.processing_notes)
 
-    def test_llm_evidence_empty_falls_back_to_block_level(self):
-        """When LLM returns empty evidence_text, should use block-level span."""
+    def test_llm_evidence_empty_rejected_by_validator(self):
+        """Empty evidence_text cannot ground a proposal → rejected."""
         llm_output = {
             "intents": [{
                 "target_name": "宁德时代",
@@ -569,7 +567,5 @@ class TestEvidenceFallback:
         envelope = make_test_envelope(SAMPLE_1_TEXT, "env_evidence_empty")
         result = extractor.extract(envelope)
 
-        assert len(result.intents) == 1
-        intent = result.intents[0]
-        assert len(intent.evidence_span_ids) >= 1, \
-            "Intent has no evidence spans after empty evidence fallback"
+        assert result.intents == []
+        assert any("evidence_not_verbatim" in n for n in result.processing_notes)

@@ -542,7 +542,7 @@ class TestLLMExtractorAmbiguity:
                 "position_delta_hint": "add",
                 "conviction": 0.7,
                 "confidence": 0.75,
-                "evidence_text": "上周坚定抄底光模块",
+                "evidence_text": "我们坚定抄底光模块",
                 "ambiguity_notes": ["relative_time_unresolved: '上周'"],
                 "processing_notes": [],
             }],
@@ -574,6 +574,7 @@ class TestLLMExtractorEdgeCases:
                 "position_delta_hint": "none",
                 "conviction": 0.6,
                 "confidence": 0.8,
+                "evidence_text": "我看好宁德时代",
                 "ambiguity_notes": [],
                 "processing_notes": [],
             }],
@@ -599,6 +600,7 @@ class TestLLMExtractorEdgeCases:
                     "position_delta_hint": "none",
                     "conviction": 0.7,
                     "confidence": 0.85,
+                    "evidence_text": "看好宁德时代",
                     "ambiguity_notes": [],
                     "processing_notes": [],
                 },
@@ -610,6 +612,7 @@ class TestLLMExtractorEdgeCases:
                     "position_delta_hint": "hold",
                     "conviction": 0.65,
                     "confidence": 0.8,
+                    "evidence_text": "继续持有腾讯",
                     "ambiguity_notes": [],
                     "processing_notes": [],
                 },
@@ -621,3 +624,29 @@ class TestLLMExtractorEdgeCases:
         result = extractor.extract(envelope)
 
         assert len(result.intents) == 2
+
+
+class TestEntityTypePriority:
+    """_find_entities_in_text prefers tradeable instruments over index/sector."""
+
+    def test_stock_preferred_over_index(self):
+        """A specific stock outranks a market index mentioned in the same text.
+
+        Regression for the F5 data skew where ~1/3 of actions targeted 000001.SH
+        (上证指数) because the index name happened to match alongside a real stock.
+        """
+        from finer.extraction.intent_extractor import _find_entities_in_text
+
+        found = _find_entities_in_text("上证 苹果")  # index '上证' + stock '苹果'
+        assert found, "expected both the index and the stock to match"
+        name, entry = found[0]
+        assert entry[2] == "ticker", f"stock should rank first, got {entry[2]}"
+        assert name == "苹果"
+
+    def test_index_only_still_resolves(self):
+        """When only an index is present it is still returned (no stock to prefer)."""
+        from finer.extraction.intent_extractor import _find_entities_in_text
+
+        found = _find_entities_in_text("今天大盘很弱，上证跌了。")
+        assert found
+        assert found[0][1][2] == "index"
