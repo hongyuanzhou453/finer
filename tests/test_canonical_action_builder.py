@@ -187,6 +187,60 @@ class TestBuildSuccess:
         assert ta.metadata["action_hint_original"] == "add_position"
         assert ta.metadata["position_sizing_hint"] == "small"
         assert ta.metadata["holding_period_hint"] == "medium_term"
+        # No numeric exit hints on the mapped intent -> keys absent, so F8
+        # falls back to its module defaults.
+        assert "stop_loss_pct" not in ta.metadata
+        assert "take_profit_pct" not in ta.metadata
+        assert "max_holding_days" not in ta.metadata
+
+    def test_build_stores_exit_rule_hints_in_metadata(self):
+        """Numeric F4 exit-rule hints are propagated into metadata."""
+        builder = CanonicalActionBuilder()
+        intent = _make_intent()
+        mapped = _make_mapped_intent(
+            intent_id=intent.intent_id,
+            action_hint="add_position",
+        )
+        mapped = mapped.model_copy(update={
+            "stop_loss_pct_hint": -0.08,
+            "take_profit_pct_hint": 0.15,
+            "max_holding_days_hint": 20,
+        })
+
+        ta = builder.build(intent, mapped, [_uid("span-")], _make_timing())
+
+        assert ta.metadata["stop_loss_pct"] == -0.08
+        assert ta.metadata["take_profit_pct"] == 0.15
+        assert ta.metadata["max_holding_days"] == 20
+
+    def test_build_stores_style_signals_in_metadata(self):
+        """F3 trading-style signals are propagated when informative."""
+        builder = CanonicalActionBuilder()
+        intent = _make_intent()
+        intent = intent.model_copy(update={
+            "margin_flag": True,
+            "leverage_flag": False,
+            "entry_timing_style": "left_side",
+        })
+        mapped = _make_mapped_intent(intent_id=intent.intent_id)
+
+        ta = builder.build(intent, mapped, [_uid("span-")], _make_timing())
+
+        assert ta.metadata["margin_flag"] is True
+        assert ta.metadata["leverage_flag"] is False
+        assert ta.metadata["entry_timing_style"] == "left_side"
+
+    def test_build_omits_uninformative_style_signals(self):
+        """Default (None/unknown) style signals do not pollute metadata."""
+        builder = CanonicalActionBuilder()
+        intent = _make_intent()
+        mapped = _make_mapped_intent(intent_id=intent.intent_id)
+
+        ta = builder.build(intent, mapped, [_uid("span-")], _make_timing())
+
+        assert "margin_flag" not in ta.metadata
+        assert "leverage_flag" not in ta.metadata
+        assert "entry_timing_style" not in ta.metadata
 
     def test_build_has_canonical_tag(self):
         """TradeAction includes 'canonical' tag."""
@@ -348,9 +402,9 @@ class TestActionChainMapping:
         ta = self._build_with_hint("open_position")
         assert ta.action_chain[0].action_type == ActionType.LONG
 
-    def test_add_position_maps_to_long(self):
+    def test_add_position_maps_to_add(self):
         ta = self._build_with_hint("add_position")
-        assert ta.action_chain[0].action_type == ActionType.LONG
+        assert ta.action_chain[0].action_type == ActionType.ADD
 
     def test_close_position_maps_to_close_long(self):
         ta = self._build_with_hint("close_position")
@@ -358,9 +412,9 @@ class TestActionChainMapping:
 
     # Extended mappings (not in primary spec but supported)
 
-    def test_reduce_position_maps_to_close_long(self):
+    def test_reduce_position_maps_to_reduce(self):
         ta = self._build_with_hint("reduce_position")
-        assert ta.action_chain[0].action_type == ActionType.CLOSE_LONG
+        assert ta.action_chain[0].action_type == ActionType.REDUCE
 
     def test_hold_position_maps_to_hold(self):
         ta = self._build_with_hint("hold_position")

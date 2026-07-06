@@ -84,12 +84,12 @@ _ACTION_HINT_MAP: Dict[str, Tuple[ActionType, str, Optional[str]]] = {
     "watch_only":          (ActionType.WATCH,         None,    None),
     "review_required":     (ActionType.WATCH,         "under_review", "Flagged for manual review"),
     "open_position":       (ActionType.LONG,          None,    None),
-    "add_position":        (ActionType.LONG,          None,    None),
+    "add_position":        (ActionType.ADD,           None,    None),
     "close_position":      (ActionType.CLOSE_LONG,    None,    None),
     # Extended mappings for action_hints not in the primary spec
     "watch_or_no_trade":   (ActionType.WATCH,         None,    None),
     "avoid_or_watch_risk": (ActionType.WATCH,         None,    "Risk avoidance signal"),
-    "reduce_position":     (ActionType.CLOSE_LONG,    None,    "Partial position reduction"),
+    "reduce_position":     (ActionType.REDUCE,        None,    "Partial position reduction"),
     "hold_position":       (ActionType.HOLD,          None,    None),
 }
 
@@ -195,6 +195,8 @@ class CanonicalActionBuilder:
             action_chain=[action_step],
             # Confidence: use the lower of intent and policy confidence
             confidence=min(intent.confidence, policy_mapped_intent.mapping_confidence),
+            # KOL belief strength, distinct from extraction confidence
+            conviction=intent.conviction,
             # Validation
             validation_status=validation_status,
             requires_manual_review=(
@@ -204,11 +206,7 @@ class CanonicalActionBuilder:
             # Rationale
             rationale=self._build_rationale(intent, policy_mapped_intent, action_type),
             # Store policy hints in metadata for downstream consumers
-            metadata={
-                "action_hint_original": policy_mapped_intent.action_hint,
-                "position_sizing_hint": policy_mapped_intent.position_sizing_hint,
-                "holding_period_hint": policy_mapped_intent.holding_period_hint,
-            },
+            metadata=self._build_metadata(intent, policy_mapped_intent),
             tags=["canonical", "f3-f4-f5"],
         )
 
@@ -220,6 +218,42 @@ class CanonicalActionBuilder:
         )
 
         return ta
+
+    # ------------------------------------------------------------------
+    # Metadata helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_metadata(
+        intent: NormalizedInvestmentIntent,
+        policy_mapped_intent: PolicyMappedIntent,
+    ) -> Dict[str, object]:
+        """Collect policy hints and F3 style signals into TradeAction.metadata.
+
+        Numeric exit-rule hints are only written when present so that
+        downstream consumers (F8 per-action backtest) can distinguish
+        "policy configured" from "fall back to module defaults". The F3
+        trading-style signals feed the KOL trading-style profile aggregator
+        and are likewise only written when informative.
+        """
+        metadata: Dict[str, object] = {
+            "action_hint_original": policy_mapped_intent.action_hint,
+            "position_sizing_hint": policy_mapped_intent.position_sizing_hint,
+            "holding_period_hint": policy_mapped_intent.holding_period_hint,
+        }
+        if policy_mapped_intent.stop_loss_pct_hint is not None:
+            metadata["stop_loss_pct"] = policy_mapped_intent.stop_loss_pct_hint
+        if policy_mapped_intent.take_profit_pct_hint is not None:
+            metadata["take_profit_pct"] = policy_mapped_intent.take_profit_pct_hint
+        if policy_mapped_intent.max_holding_days_hint is not None:
+            metadata["max_holding_days"] = policy_mapped_intent.max_holding_days_hint
+        if intent.margin_flag is not None:
+            metadata["margin_flag"] = intent.margin_flag
+        if intent.leverage_flag is not None:
+            metadata["leverage_flag"] = intent.leverage_flag
+        if intent.entry_timing_style != "unknown":
+            metadata["entry_timing_style"] = intent.entry_timing_style
+        return metadata
 
     # ------------------------------------------------------------------
     # Validation helpers
