@@ -133,6 +133,29 @@ class PolicyRiskConstraints(BaseModel):
                     "Not a precise trigger — F5 resolves."
     )
 
+    stop_loss_pct_hint: Optional[float] = Field(
+        None,
+        lt=0,
+        description="Numeric stop-loss hint as signed fraction (e.g., -0.10 = exit "
+                    "at -10% adverse move). A hint for downstream simulation, not "
+                    "an execution instruction."
+    )
+
+    take_profit_pct_hint: Optional[float] = Field(
+        None,
+        gt=0,
+        description="Numeric take-profit hint as signed fraction (e.g., 0.20 = exit "
+                    "at +20% favorable move). A hint for downstream simulation, not "
+                    "an execution instruction."
+    )
+
+    max_holding_days_hint: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Maximum holding period hint in calendar days before time-based "
+                    "exit in downstream simulation."
+    )
+
     time_decay_days: Optional[int] = Field(
         None,
         ge=0,
@@ -515,6 +538,27 @@ class PolicyMappedIntent(BaseModel):
     holding_period_hint: HOLDING_PERIOD_HINT_LITERAL = Field(
         ...,
         description="Policy-guided holding period hint for F5 execution"
+    )
+
+    stop_loss_pct_hint: Optional[float] = Field(
+        None,
+        lt=0,
+        description="Numeric stop-loss hint carried from PolicyRiskConstraints "
+                    "(signed fraction, e.g., -0.10)"
+    )
+
+    take_profit_pct_hint: Optional[float] = Field(
+        None,
+        gt=0,
+        description="Numeric take-profit hint carried from PolicyRiskConstraints "
+                    "(signed fraction, e.g., 0.20)"
+    )
+
+    max_holding_days_hint: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Maximum holding period hint in calendar days carried from "
+                    "PolicyRiskConstraints"
     )
 
     # =========================================================================
