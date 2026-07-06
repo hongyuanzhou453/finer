@@ -374,6 +374,227 @@ class RuleBasedIntentExtractor:
         return _rule_based_extract_impl(envelope, self.VERSION)
 
 
+def _validate_llm_intents(
+    intents: List[NormalizedInvestmentIntent],
+    evidence_spans: List[EvidenceSpan],
+    envelope: ContentEnvelope,
+    processing_notes: List[str],
+) -> tuple[List[NormalizedInvestmentIntent], List[EvidenceSpan]]:
+    """Deterministic validator for LLM-proposed intents (constrained proposal).
+
+    The 2026-07-05 full-regen acceptance failed on three LLM failure modes this
+    validator closes:
+      1. evidence_not_verbatim — quotes that don't appear verbatim in any block
+         used to slip through via the block_level fallback span; now rejected.
+      2. direction_conflicts_evidence — a bullish intent whose own quote is
+         dominated by bearish lexicon (e.g. "走弱") is rejected, not trusted.
+      3. target_not_anchored — targets must match an F2 entity anchor by symbol
+         or by name; name matches normalize target_symbol to the anchor's
+         resolved symbol (kills hallucinated symbols). Skipped when the
+         envelope carries no anchors (raw-text path).
+    """
+    span_by_id = {s.evidence_span_id: s for s in evidence_spans}
+
+    # tolerate dict-shaped anchors (JSON round-trip)
+    anchors = []
+    for a in getattr(envelope, "entity_anchors", None) or []:
+        if isinstance(a, dict):
+            anchors.append(
+                {
+                    "symbol": a.get("resolved_symbol"),
+                    "names": [a.get("raw_text"), a.get("resolved_name")],
+                    "market": a.get("market"),
+                    "etype": a.get("entity_type"),
+                }
+            )
+        else:
+            anchors.append(
+                {
+                    "symbol": getattr(a, "resolved_symbol", None),
+                    "names": [
+                        getattr(a, "raw_text", None),
+                        getattr(a, "resolved_name", None),
+                    ],
+                    "market": getattr(a, "market", None),
+                    "etype": getattr(a, "entity_type", None),
+                }
+            )
+
+    kept: List[NormalizedInvestmentIntent] = []
+    kept_span_ids: set = set()
+    rejects: Dict[str, int] = {}
+
+    def reject(reason: str) -> None:
+        rejects[reason] = rejects.get(reason, 0) + 1
+
+    for intent in intents:
+        spans = [span_by_id[sid] for sid in intent.evidence_span_ids if sid in span_by_id]
+        verbatim = [s for s in spans if getattr(s, "span_type", "") == "intent_keyword"]
+
+        # 1) verbatim evidence hard gate
+        if not verbatim:
+            reject("evidence_not_verbatim")
+            continue
+
+        # 2) direction vs evidence lexicon
+        if intent.direction in ("bullish", "bearish"):
+            quote = " ".join(s.text for s in verbatim)
+            bull = sum(1 for kw in BULLISH_KEYWORDS if kw in quote)
+            bear = sum(1 for kw in BEARISH_KEYWORDS if kw in quote)
+            if intent.direction == "bullish" and bear > bull and bear > 0:
+                reject("direction_conflicts_evidence")
+                continue
+            if intent.direction == "bearish" and bull > bear and bull > 0:
+                reject("direction_conflicts_evidence")
+                continue
+
+        # 3) anchor grounding + symbol normalization
+        if anchors:
+            matched = None
+            for anc in anchors:
+                if intent.target_symbol and anc["symbol"] == intent.target_symbol:
+                    matched = anc
+                    break
+            if matched is None and intent.target_name:
+                for anc in anchors:
+                    for name in anc["names"]:
+                        if name and (
+                            name in intent.target_name or intent.target_name in name
+                        ):
+                            matched = anc
+                            break
+                    if matched:
+                        break
+            if matched is None:
+                reject("target_not_anchored")
+                continue
+            if intent.target_symbol != matched["symbol"]:
+                intent = intent.model_copy(
+                    update={
+                        "target_symbol": matched["symbol"],
+                        "market": matched["market"] or intent.market,
+                        "target_type": _REGISTRY_TYPE_TO_TARGET_TYPE.get(
+                            matched["etype"] or "", intent.target_type
+                        ),
+                    }
+                )
+
+        kept.append(intent)
+        kept_span_ids.update(intent.evidence_span_ids)
+
+    if rejects:
+        processing_notes.append(f"validator rejected: {rejects}")
+
+    kept_spans = [s for s in evidence_spans if s.evidence_span_id in kept_span_ids]
+    return kept, kept_spans
+
+
+def _dedupe_intents(
+    intents: List[NormalizedInvestmentIntent],
+    processing_notes: List[str],
+) -> List[NormalizedInvestmentIntent]:
+    """Merge duplicate intents for the same target + stance within one envelope.
+
+    The section loop emits one intent per section, so a target discussed in
+    several sections (or blindly attributed via the entity_anchors[0] fallback)
+    produced N near-identical intents — and N duplicate TradeActions downstream
+    (live data: 3× A股, 2× 光模块, 2× 腾讯 from single envelopes). One envelope
+    states one viewpoint per (target, direction, position hint); merging keeps
+    every evidence/block reference and the strongest conviction.
+    """
+    merged: Dict[tuple, NormalizedInvestmentIntent] = {}
+    order: List[tuple] = []
+    dup_count = 0
+
+    for intent in intents:
+        key = (
+            intent.target_symbol or intent.target_name,
+            intent.direction,
+            intent.position_delta_hint,
+        )
+        base = merged.get(key)
+        if base is None:
+            merged[key] = intent
+            order.append(key)
+            continue
+
+        dup_count += 1
+        time_horizon = (
+            base.time_horizon_hint
+            if base.time_horizon_hint != "unknown"
+            else intent.time_horizon_hint
+        )
+        merged[key] = base.model_copy(
+            update={
+                "block_ids": list(dict.fromkeys([*base.block_ids, *intent.block_ids])),
+                "evidence_span_ids": list(
+                    dict.fromkeys([*base.evidence_span_ids, *intent.evidence_span_ids])
+                ),
+                "ambiguity_flags": list(
+                    dict.fromkeys([*base.ambiguity_flags, *intent.ambiguity_flags])
+                ),
+                "conviction": max(base.conviction, intent.conviction),
+                "confidence": max(base.confidence, intent.confidence),
+                "time_horizon_hint": time_horizon,
+            }
+        )
+
+    if dup_count:
+        processing_notes.append(
+            f"deduped {dup_count} duplicate intent(s) within envelope"
+        )
+    result = [merged[k] for k in order]
+
+    # Second pass: ONE direction per target per envelope (prompt §1b). Multiple
+    # directions on the same target within one envelope — bullish×bearish, but
+    # also bearish×neutral etc. — are a contradiction, not a flip; real flips
+    # live across envelopes over time. Keep the dominant-conviction side
+    # (flagged for review) unless an intent carries an explicit 'stance_change'
+    # flag marking a narrated reversal. Same-direction groups are left alone
+    # (sanctioned hold+add compound emits two intents).
+    by_target: Dict[str, List[NormalizedInvestmentIntent]] = {}
+    for intent in result:
+        by_target.setdefault(
+            str(intent.target_symbol or intent.target_name), []
+        ).append(intent)
+
+    drop_ids: set = set()
+    replacements: Dict[int, NormalizedInvestmentIntent] = {}
+    for group in by_target.values():
+        directions = {i.direction for i in group}
+        narrated = any(
+            "stance_change" in (f or "") for i in group for f in i.ambiguity_flags
+        )
+        if len(directions) > 1 and not narrated:
+            opposed = group
+            winner = max(opposed, key=lambda i: (i.conviction, i.confidence))
+            replacements[id(winner)] = winner.model_copy(
+                update={
+                    "block_ids": list(
+                        dict.fromkeys(b for i in opposed for b in i.block_ids)
+                    ),
+                    "evidence_span_ids": list(
+                        dict.fromkeys(s for i in opposed for s in i.evidence_span_ids)
+                    ),
+                    "ambiguity_flags": list(
+                        dict.fromkeys(
+                            [*winner.ambiguity_flags, "conflicting_direction_in_envelope"]
+                        )
+                    ),
+                }
+            )
+            drop_ids.update(id(i) for i in opposed if i is not winner)
+
+    if drop_ids:
+        result = [
+            replacements.get(id(i), i) for i in result if id(i) not in drop_ids
+        ]
+        processing_notes.append(
+            f"collapsed {len(drop_ids)} contradictory same-target stance(s) within envelope"
+        )
+    return result
+
+
 def _rule_based_extract_impl(
     envelope: ContentEnvelope,
     extractor_version: str = "rule_based_v1",
@@ -502,7 +723,9 @@ def _rule_based_extract_impl(
             confidence = 0.75
         if ambiguity_flags:
             confidence -= 0.05 * len(ambiguity_flags)
-        confidence = max(0.35, min(0.95, confidence))
+        # round: 0.85 - 0.05 leaves a float residue (0.7999999999999999) that
+        # leaks into persisted actions and API output
+        confidence = round(max(0.35, min(0.95, confidence)), 3)
 
         # Time horizon
         time_horizon = "unknown"
@@ -533,6 +756,9 @@ def _rule_based_extract_impl(
 
         intents.append(intent)
         all_evidence_spans.extend(section_evidence)
+
+    # One envelope = one viewpoint per (target, stance) — merge section dupes
+    intents = _dedupe_intents(intents, processing_notes)
 
     result = IntentExtractionResult(
         envelope_id=envelope.envelope_id,
@@ -578,7 +804,10 @@ class LLMIntentExtractor:
         router: ModelRouter,
         prompt_registry: PromptRegistry,
         extractor_version: str = "llm_v1",
-        temperature: float = 0.3,
+        # Extraction must be as deterministic as the API allows: at 0.3 the
+        # same envelope yielded 0 vs 3 surviving actions across two runs
+        # (verified live 2026-07-05), which is unacceptable for a pipeline.
+        temperature: float = 0.0,
     ):
         self._router = router
         self._prompt_registry = prompt_registry
@@ -632,6 +861,10 @@ class LLMIntentExtractor:
                 system_prompt=system_prompt,
                 task_type="text",
                 temperature=self._temperature,
+                # Long transcripts emit many intents; the registry default
+                # (8192) truncated real responses mid-JSON (unterminated
+                # string at ~27.5k chars, verified on live data).
+                max_tokens=16384,
             )
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
@@ -790,6 +1023,17 @@ class LLMIntentExtractor:
                 valid_position_hints = {"open", "add", "reduce", "hold", "exit", "none", "unknown"}
                 valid_time_horizons = {"intraday", "short_term", "medium_term", "long_term", "unknown"}
 
+                # Trading style signals (auxiliary; never affect the four axes)
+                margin_flag = raw.get("margin_flag")
+                if not isinstance(margin_flag, bool):
+                    margin_flag = None
+                leverage_flag = raw.get("leverage_flag")
+                if not isinstance(leverage_flag, bool):
+                    leverage_flag = None
+                entry_timing_style = str(raw.get("entry_timing_style", "unknown"))
+                if entry_timing_style not in {"left_side", "right_side", "unknown"}:
+                    entry_timing_style = "unknown"
+
                 if direction not in valid_directions:
                     direction = "unknown"
                 if actionability not in valid_actionability:
@@ -814,6 +1058,9 @@ class LLMIntentExtractor:
                     confidence=confidence,
                     sentiment_score=sentiment_score,
                     time_horizon_hint=time_horizon,  # type: ignore[arg-type]
+                    margin_flag=margin_flag,
+                    leverage_flag=leverage_flag,
+                    entry_timing_style=entry_timing_style,  # type: ignore[arg-type]
                     evidence_span_ids=[s.evidence_span_id for s in intent_evidence_spans],
                     ambiguity_flags=ambiguity_notes,
                 )
@@ -825,12 +1072,173 @@ class LLMIntentExtractor:
                 processing_notes.append(f"Intent {i}: failed to construct — {e}")
                 continue
 
+        # Deterministic validator (constrained proposal): verbatim evidence,
+        # direction-lexicon consistency, anchor grounding + symbol normalization.
+        intents, evidence_spans = _validate_llm_intents(
+            intents, evidence_spans, envelope, processing_notes
+        )
+
+        # Same envelope-level dedup as the rule-based path — the LLM can also
+        # restate one viewpoint across output items.
+        intents = _dedupe_intents(intents, processing_notes)
+
         return IntentExtractionResult(
             envelope_id=envelope.envelope_id,
             intents=intents,
             evidence_spans=evidence_spans,
             extractor_version=self._version,
             processing_notes=processing_notes,
+        )
+
+
+# Notes emitted by LLMIntentExtractor.extract() when the CALL itself failed
+# (vs. a run that genuinely extracted nothing). Such runs carry no information
+# about the content and must not count toward the consensus vote base.
+_LLM_FAILURE_MARKERS = ("LLM call exception", "LLM returned None")
+
+
+class ConsensusIntentExtractor:
+    """N-run majority-vote consensus over a single-shot LLM extractor.
+
+    The MiMo endpoint is non-deterministic at temperature=0 (verified live
+    2026-07-05: the same envelope yielded 4 vs 7 surviving intents across two
+    runs, and the winner of a flagged contradictory pair flipped direction).
+    Sampling noise is not client-fixable, so stability is bought with
+    redundancy: run the base extractor N times and keep only stances —
+    (target, direction) pairs — that a majority of valid runs agree on.
+    宁缺毋假: a stance that cannot win a majority is noise, not a viewpoint.
+
+    Each run's result is already validator-filtered and direction-collapsed
+    (one direction per target per run), so every run casts exactly one vote
+    per target. A direction split with no majority vetoes the whole target.
+
+    The winning stance keeps its best supporter INTACT (highest confidence,
+    then conviction) — its quote, conviction and evidence spans stay a
+    self-consistent, auditable unit; vote counts go to processing_notes.
+
+    Runs whose LLM call failed outright are excluded from the vote base and
+    retried (up to `max_extra_attempts` spare calls) — a shrunken base
+    silently raises the bar for everyone else (live smoke 2026-07-05: one
+    dead run turned 3-run majority into 2-run unanimity and halved the
+    output). If fewer than 2 valid runs remain after retries, extract()
+    raises so the caller's rule-based fallback takes over (a consensus of
+    one is not a consensus).
+    """
+
+    VERSION = "llm_consensus_v1"
+
+    def __init__(
+        self,
+        base_extractor: "LLMIntentExtractor",
+        runs: int = 3,
+        max_extra_attempts: int = 2,
+    ):
+        if runs < 2:
+            raise ValueError("consensus needs at least 2 runs")
+        self._base = base_extractor
+        self._runs = runs
+        self._max_extra = max_extra_attempts
+
+    def extract(self, envelope: ContentEnvelope) -> IntentExtractionResult:
+        valid: List[IntentExtractionResult] = []
+        notes: List[str] = []
+
+        attempt = 0
+        while len(valid) < self._runs and attempt < self._runs + self._max_extra:
+            attempt += 1
+            try:
+                result = self._base.extract(envelope)
+            except Exception as e:
+                notes.append(f"[attempt {attempt}] raised: {e}")
+                continue
+            failed = not result.intents and any(
+                marker in note
+                for note in result.processing_notes
+                for marker in _LLM_FAILURE_MARKERS
+            )
+            if failed:
+                notes.append(
+                    f"[attempt {attempt}] LLM call failed — excluded from vote base"
+                )
+                continue
+            valid.append(result)
+            notes.append(f"[attempt {attempt}] {len(result.intents)} intents")
+            notes.extend(f"[attempt {attempt}] {n}" for n in result.processing_notes)
+
+        if len(valid) < 2:
+            raise RuntimeError(
+                f"consensus vote base collapsed: {len(valid)}/{self._runs} runs valid"
+            )
+
+        threshold = len(valid) // 2 + 1
+
+        # (target, direction) → (run_index, intent) supporters. Votes are
+        # counted per DISTINCT RUN, not per intent: a sanctioned same-direction
+        # compound pair (hold+add) inside one run must not let a single run
+        # cast two votes and beat the majority threshold on its own.
+        supporters: Dict[tuple, List[tuple]] = {}
+        order: List[tuple] = []
+        for run_idx, result in enumerate(valid):
+            for intent in result.intents:
+                key = (str(intent.target_symbol or intent.target_name), intent.direction)
+                if key not in supporters:
+                    supporters[key] = []
+                    order.append(key)
+                supporters[key].append((run_idx, intent))
+
+        # Targets where bullish AND bearish each drew votes across runs: the
+        # content genuinely voices both sides, so a 2:1 majority is a sampling
+        # coin-flip (live smoke 2026-07-05: GOOGL came out bearish 2/3 in one
+        # consensus round and bullish 2/3 in the next). For such contested
+        # targets an opposing direction survives only on a UNANIMOUS vote
+        # (e.g. a narrated stance_change where every run lands on the final
+        # stance) — otherwise both sides are vetoed. 宁缺毋假.
+        contested = {
+            t
+            for (t, d) in supporters
+            if d == "bullish" and (t, "bearish") in supporters
+        }
+
+        kept_intents: List[NormalizedInvestmentIntent] = []
+        kept_spans: List[EvidenceSpan] = []
+        for key in order:
+            group = supporters[key]
+            target, direction = key
+            run_votes = {ri for ri, _ in group}
+            required = (
+                len(valid)
+                if target in contested and direction in ("bullish", "bearish")
+                else threshold
+            )
+            if len(run_votes) < required:
+                notes.append(
+                    f"consensus vetoed: {target} {direction} "
+                    f"({len(run_votes)}/{len(valid)} runs"
+                    + (", contested direction" if required > threshold else "")
+                    + ")"
+                )
+                continue
+            winner_idx, winner = max(
+                group, key=lambda t: (t[1].confidence, t[1].conviction)
+            )
+            convictions = sorted(round(i.conviction, 2) for _, i in group)
+            notes.append(
+                f"consensus kept: {target} {direction} "
+                f"({len(run_votes)}/{len(valid)} runs, convictions {convictions})"
+            )
+            kept_intents.append(winner)
+            kept_spans.extend(
+                s
+                for s in valid[winner_idx].evidence_spans
+                if s.evidence_span_id in winner.evidence_span_ids
+            )
+
+        return IntentExtractionResult(
+            envelope_id=envelope.envelope_id,
+            intents=kept_intents,
+            evidence_spans=kept_spans,
+            extractor_version=self.VERSION,
+            processing_notes=notes,
         )
 
 

@@ -79,6 +79,12 @@ TIME_HORIZON_LITERAL = Literal[
     "unknown",
 ]
 
+ENTRY_TIMING_STYLE_LITERAL = Literal[
+    "left_side",   # 左侧：抄底/越跌越买/逢低布局
+    "right_side",  # 右侧：突破追入/放量确认/趋势确立后进
+    "unknown",
+]
+
 
 # =============================================================================
 # NormalizedInvestmentIntent Model
@@ -211,6 +217,33 @@ class NormalizedInvestmentIntent(BaseModel):
     time_horizon_hint: TIME_HORIZON_LITERAL = Field(
         "unknown",
         description="Implied time horizon from context"
+    )
+
+    # =========================================================================
+    # Trading Style Signals (auxiliary)
+    # =========================================================================
+    # These are auxiliary style observations feeding the KOL trading-style
+    # profile. They never affect direction/actionability/position mapping.
+
+    margin_flag: Optional[bool] = Field(
+        None,
+        description="True if the KOL explicitly mentions margin financing "
+                    "(融资/两融/融资买入) for this intent; None = not mentioned "
+                    "(never guessed)"
+    )
+
+    leverage_flag: Optional[bool] = Field(
+        None,
+        description="True if the KOL explicitly mentions leverage (杠杆/合约/"
+                    "X倍/期货保证金) for this intent; None = not mentioned "
+                    "(never guessed)"
+    )
+
+    entry_timing_style: ENTRY_TIMING_STYLE_LITERAL = Field(
+        "unknown",
+        description="Entry timing style signal: left_side = contrarian entries "
+                    "(抄底/越跌越买/逢低布局), right_side = trend-following entries "
+                    "(突破追入/放量确认); unknown when no explicit semantics"
     )
 
     # =========================================================================
