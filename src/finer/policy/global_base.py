@@ -326,8 +326,20 @@ class GlobalBasePolicy:
             for flag in ambiguity_flags:
                 risk_notes.append(f"Ambiguity: {flag}")
 
+        # Numeric exit-rule hints for downstream simulation (F8 per-action).
+        # v1: flat defaults identical to the historical F8 constants, so
+        # backtest results stay unchanged; per-horizon tuning belongs to
+        # higher policy layers.
+        position_taking = action_hint in (
+            "open_position", "add_position", "reduce_position",
+            "close_position", "hold_position",
+        )
+
         return PolicyRiskConstraints(
             max_position_hint=max_pos,
             requires_human_review=requires_review,
             risk_notes=risk_notes,
+            stop_loss_pct_hint=-0.10 if position_taking else None,
+            take_profit_pct_hint=0.20 if position_taking else None,
+            max_holding_days_hint=30 if position_taking else None,
         )
