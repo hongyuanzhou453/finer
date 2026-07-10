@@ -93,6 +93,39 @@ _ACTION_HINT_MAP: Dict[str, Tuple[ActionType, str, Optional[str]]] = {
     "hold_position":       (ActionType.HOLD,          None,    None),
 }
 
+def build_action_metadata(
+    intent: NormalizedInvestmentIntent,
+    policy_mapped_intent: PolicyMappedIntent,
+) -> Dict[str, object]:
+    """Collect policy hints and F3 style signals into TradeAction.metadata.
+
+    Shared by CanonicalActionBuilder and pipeline/canonical_runner so every
+    F5 construction path carries the same downstream contract. Numeric
+    exit-rule hints are only written when present so that F8 per-action
+    backtest can distinguish "policy configured" from "fall back to module
+    defaults". The F3 trading-style signals feed the KOL trading-style
+    profile aggregator and are likewise only written when informative.
+    """
+    metadata: Dict[str, object] = {
+        "action_hint_original": policy_mapped_intent.action_hint,
+        "position_sizing_hint": policy_mapped_intent.position_sizing_hint,
+        "holding_period_hint": policy_mapped_intent.holding_period_hint,
+    }
+    if policy_mapped_intent.stop_loss_pct_hint is not None:
+        metadata["stop_loss_pct"] = policy_mapped_intent.stop_loss_pct_hint
+    if policy_mapped_intent.take_profit_pct_hint is not None:
+        metadata["take_profit_pct"] = policy_mapped_intent.take_profit_pct_hint
+    if policy_mapped_intent.max_holding_days_hint is not None:
+        metadata["max_holding_days"] = policy_mapped_intent.max_holding_days_hint
+    if intent.margin_flag is not None:
+        metadata["margin_flag"] = intent.margin_flag
+    if intent.leverage_flag is not None:
+        metadata["leverage_flag"] = intent.leverage_flag
+    if intent.entry_timing_style != "unknown":
+        metadata["entry_timing_style"] = intent.entry_timing_style
+    return metadata
+
+
 # Map F3 direction to TradeDirection enum
 _DIRECTION_MAP: Dict[str, TradeDirection] = {
     "bullish":  TradeDirection.BULLISH,
@@ -228,32 +261,7 @@ class CanonicalActionBuilder:
         intent: NormalizedInvestmentIntent,
         policy_mapped_intent: PolicyMappedIntent,
     ) -> Dict[str, object]:
-        """Collect policy hints and F3 style signals into TradeAction.metadata.
-
-        Numeric exit-rule hints are only written when present so that
-        downstream consumers (F8 per-action backtest) can distinguish
-        "policy configured" from "fall back to module defaults". The F3
-        trading-style signals feed the KOL trading-style profile aggregator
-        and are likewise only written when informative.
-        """
-        metadata: Dict[str, object] = {
-            "action_hint_original": policy_mapped_intent.action_hint,
-            "position_sizing_hint": policy_mapped_intent.position_sizing_hint,
-            "holding_period_hint": policy_mapped_intent.holding_period_hint,
-        }
-        if policy_mapped_intent.stop_loss_pct_hint is not None:
-            metadata["stop_loss_pct"] = policy_mapped_intent.stop_loss_pct_hint
-        if policy_mapped_intent.take_profit_pct_hint is not None:
-            metadata["take_profit_pct"] = policy_mapped_intent.take_profit_pct_hint
-        if policy_mapped_intent.max_holding_days_hint is not None:
-            metadata["max_holding_days"] = policy_mapped_intent.max_holding_days_hint
-        if intent.margin_flag is not None:
-            metadata["margin_flag"] = intent.margin_flag
-        if intent.leverage_flag is not None:
-            metadata["leverage_flag"] = intent.leverage_flag
-        if intent.entry_timing_style != "unknown":
-            metadata["entry_timing_style"] = intent.entry_timing_style
-        return metadata
+        return build_action_metadata(intent, policy_mapped_intent)
 
     # ------------------------------------------------------------------
     # Validation helpers

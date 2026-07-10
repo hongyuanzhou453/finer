@@ -53,6 +53,7 @@ from finer.schemas.policy import (
     PolicyMappingBatch,
     PolicyMappingResult,
 )
+from finer.extraction.canonical_action_builder import build_action_metadata
 from finer.extraction.timing_builder import build_execution_timing
 from finer.schemas.trade_action import (
     ActionStep,
@@ -77,10 +78,13 @@ EXECUTABLE_HINTS: set[str] = {
 }
 
 ACTION_HINT_TO_ACTION_TYPE: dict[str, ActionType] = {
+    # Position-delta hints keep their fine-grained semantics (ADD = add to
+    # existing exposure, REDUCE = partial reduction ≠ close) — the same
+    # mapping as CanonicalActionBuilder._ACTION_HINT_MAP.
     "open_position": ActionType.LONG,
-    "add_position": ActionType.LONG,
+    "add_position": ActionType.ADD,
     "close_position": ActionType.CLOSE_LONG,
-    "reduce_position": ActionType.CLOSE_LONG,
+    "reduce_position": ActionType.REDUCE,
     "hold_position": ActionType.HOLD,
     # Opinion tier: pure viewpoints materialize as WATCH actions (timeline
     # tracking + 观点兑现回测), never as executable positions. Dropping them
@@ -732,8 +736,10 @@ def _build_actions_programmatic(
             time_horizon=mapped.holding_period_hint,
             requires_manual_review=mapped.requires_human_review,
             rationale=_build_action_rationale(intent, mapped, evidence_text),
+            # Shared metadata contract (exit-rule hints + F3 style signals)
+            # plus the runner's own tier marker.
             metadata={
-                "action_hint_original": mapped.action_hint,
+                **build_action_metadata(intent, mapped),
                 "tier": "opinion" if mapped.action_hint in OPINION_TIER_HINTS else "trade",
             },
         )
@@ -936,6 +942,10 @@ Only include actions for the executable policy mappings listed above. Return [] 
             conviction=matched_intent.conviction,
             time_horizon=matched_mapped.holding_period_hint,
             rationale=f"LLM-guided F5: {raw.get('notes', matched_mapped.action_hint)}",
+            metadata={
+                **build_action_metadata(matched_intent, matched_mapped),
+                "tier": "trade",
+            },
         )
         actions.append(ta)
 
