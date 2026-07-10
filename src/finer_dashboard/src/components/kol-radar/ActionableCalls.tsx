@@ -10,8 +10,15 @@ import {
   DirectionTag,
   DIRECTION_META,
 } from "@/components/kol-snapshot/primitives";
+import { DEMO_RADAR_LINKS, auditHref, kolHref, type RadarLinks } from "./links";
 
-export function ActionableCalls({ calls }: { calls: ActionCall[] }) {
+export function ActionableCalls({
+  calls,
+  links = DEMO_RADAR_LINKS,
+}: {
+  calls: ActionCall[];
+  links?: RadarLinks;
+}) {
   const top = calls.slice(0, 6);
 
   if (!top.length) {
@@ -28,7 +35,7 @@ export function ActionableCalls({ calls }: { calls: ActionCall[] }) {
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Link
-                  href={`/demo/kol/${call.kolId}`}
+                  href={kolHref(links, call.kolId)}
                   className="text-sm font-semibold text-[var(--foreground)] hover:text-[var(--morningstar-red)] hover:underline"
                 >
                   {call.kolName}
@@ -98,15 +105,20 @@ export function ActionableCalls({ calls }: { calls: ActionCall[] }) {
               “{call.evidenceText}”
             </blockquote>
 
-            {/* 下钻到 L4 单条证据审计 */}
-            <div className="mt-3 border-t border-[var(--grid-line)] pt-2">
-              <Link
-                href={`/demo/audit/${call.id}`}
-                className="text-[11px] text-[var(--accent-teal)] hover:underline"
-              >
-                查看证据链 →
-              </Link>
-            </div>
+            {/* 下钻到单条证据审计（数据源无审计页时不渲染入口） */}
+            {(() => {
+              const href = auditHref(links, call.id, call.kolId);
+              return href ? (
+                <div className="mt-3 border-t border-[var(--grid-line)] pt-2">
+                  <Link
+                    href={href}
+                    className="text-[11px] text-[var(--accent-teal)] hover:underline"
+                  >
+                    查看证据链 →
+                  </Link>
+                </div>
+              ) : null;
+            })()}
           </article>
         );
       })}

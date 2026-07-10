@@ -1020,6 +1020,27 @@ export function deriveEarningsBoard(
   return rows.sort((a, b) => b.cumReturn - a.cumReturn);
 }
 
+/**
+ * 全量数据中最近一笔结算的日期（YYYY-MM-DD），无已结算观点时为 null。
+ * 供收益榜空态解释「为什么窗口是空的」——历史批次语料的结算时点可能
+ * 远早于当前窗口。口径与 deriveEarningsBoard 一致（settle = timestamp +
+ * holdingDays）。
+ */
+export function deriveLatestSettleDate(data: KOLRadarData): string | null {
+  let latest = -Infinity;
+  for (const k of data.kols) {
+    for (const v of k.viewpoints) {
+      if (!isSettled(v)) continue;
+      const settleTs =
+        new Date(v.timestamp).getTime() + (v.holdingDays ?? 0) * 86_400_000;
+      if (settleTs > latest) latest = settleTs;
+    }
+  }
+  return Number.isFinite(latest)
+    ? new Date(latest).toISOString().slice(0, 10)
+    : null;
+}
+
 /** Shared hero verdict mapping, reused by the market-sentiment block. */
 export function stanceVerdict(net: number): {
   label: string;

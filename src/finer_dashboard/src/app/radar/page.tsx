@@ -7,7 +7,7 @@
  */
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { KOLRadar } from "@/components/kol-radar";
+import { KOLRadar, LIVE_RADAR_LINKS } from "@/components/kol-radar";
 import {
   fetchLiveRadarData,
   type LiveRadarResult,
@@ -74,7 +74,7 @@ export default function LiveRadarPage() {
               对照设计标杆 →
             </Link>
           </div>
-          <KOLRadar data={result.data} />
+          <KOLRadar data={result.data} links={LIVE_RADAR_LINKS} />
         </>
       )}
     </main>

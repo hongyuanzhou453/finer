@@ -16,12 +16,15 @@
  */
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   deriveEarningsBoard,
+  deriveLatestSettleDate,
   type KOLRadarData,
 } from "@/lib/fixtures/kol-radar";
 import { fmtPct } from "@/components/kol-snapshot/primitives";
+import { DEMO_RADAR_LINKS, kolHref, type RadarLinks } from "./links";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 30 } as const;
 
@@ -34,7 +37,13 @@ function returnColor(value: number): string {
   return value >= 0 ? "var(--chart-up)" : "var(--chart-down)";
 }
 
-export function EarningsRace({ data }: { data: KOLRadarData }) {
+export function EarningsRace({
+  data,
+  links = DEMO_RADAR_LINKS,
+}: {
+  data: KOLRadarData;
+  links?: RadarLinks;
+}) {
   const [windowDays, setWindowDays] = useState<7 | 30>(7);
   const rows = deriveEarningsBoard(data, windowDays);
   const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(r.cumReturn)), 0);
@@ -78,6 +87,12 @@ export function EarningsRace({ data }: { data: KOLRadarData }) {
           {rows.length === 0 ? (
             <div className="py-8 text-center text-xs text-[var(--ink-soft)]">
               该窗口内暂无已结算观点
+              {(() => {
+                const latest = deriveLatestSettleDate(data);
+                return latest ? (
+                  <span className="tabular-nums"> · 最近一笔结算 {latest}</span>
+                ) : null;
+              })()}
             </div>
           ) : (
             <AnimatePresence initial={false} mode="popLayout">
@@ -109,7 +124,12 @@ export function EarningsRace({ data }: { data: KOLRadarData }) {
 
                     {/* KOL identity */}
                     <div className="flex items-center gap-2 whitespace-nowrap">
-                      <span className="font-semibold text-[var(--foreground)]">{r.name}</span>
+                      <Link
+                        href={kolHref(links, r.kolId)}
+                        className="font-semibold text-[var(--foreground)] hover:text-[var(--morningstar-red)] hover:underline"
+                      >
+                        {r.name}
+                      </Link>
                       <span className="rounded-sm bg-[var(--surface-muted)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ink-soft)]">
                         {r.style}
                       </span>

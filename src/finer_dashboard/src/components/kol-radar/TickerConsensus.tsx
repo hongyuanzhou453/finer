@@ -10,6 +10,7 @@ import {
   ReturnChip,
 } from "@/components/kol-snapshot/primitives";
 import type { ConsensusRow } from "@/lib/fixtures/kol-radar";
+import { DEMO_RADAR_LINKS, tickerHref, type RadarLinks } from "./links";
 
 const BULL_COLOR = DIRECTION_META.bullish.color; // 红 = 看多 (China convention)
 const BEAR_COLOR = DIRECTION_META.bearish.color; // 绿 = 看空
@@ -136,7 +137,13 @@ function ConsensusCard({ row }: { row: ConsensusRow }) {
   );
 }
 
-export function TickerConsensus({ rows }: { rows: ConsensusRow[] }) {
+export function TickerConsensus({
+  rows,
+  links = DEMO_RADAR_LINKS,
+}: {
+  rows: ConsensusRow[];
+  links?: RadarLinks;
+}) {
   const visible = rows.slice(0, 8);
   if (!visible.length) {
     return (
@@ -145,16 +152,24 @@ export function TickerConsensus({ rows }: { rows: ConsensusRow[] }) {
   }
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {visible.map((row) => (
-        <Link
-          key={row.ticker}
-          href={`/demo/ticker/${row.ticker}`}
-          className="block transition-opacity hover:opacity-90"
-          aria-label={`${row.companyName} 标的横截面`}
-        >
-          <ConsensusCard row={row} />
-        </Link>
-      ))}
+      {visible.map((row) => {
+        const href = tickerHref(links, row.ticker);
+        return href ? (
+          <Link
+            key={row.ticker}
+            href={href}
+            className="block transition-opacity hover:opacity-90"
+            aria-label={`${row.companyName} 标的横截面`}
+          >
+            <ConsensusCard row={row} />
+          </Link>
+        ) : (
+          // 数据源无标的横截面页 → 纯展示，不假装可下钻
+          <div key={row.ticker}>
+            <ConsensusCard row={row} />
+          </div>
+        );
+      })}
     </div>
   );
 }

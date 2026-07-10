@@ -8,6 +8,7 @@ import React from "react";
 import Link from "next/link";
 import type { CredibilityRow } from "@/lib/fixtures/kol-radar";
 import { DirectionTag, fmtConfidence } from "@/components/kol-snapshot/primitives";
+import { DEMO_RADAR_LINKS, kolHref, type RadarLinks } from "./links";
 
 const TREND_META: Record<CredibilityRow["trend"], { glyph: string; color: string; label: string }> = {
   up: { glyph: "↑", color: "var(--chart-up)", label: "上升" },
@@ -23,7 +24,13 @@ function stanceColor(label: CredibilityRow["stanceLabel"]): string {
       : "#8a8278";
 }
 
-export function CredibilityBoard({ rows }: { rows: CredibilityRow[] }) {
+export function CredibilityBoard({
+  rows,
+  links = DEMO_RADAR_LINKS,
+}: {
+  rows: CredibilityRow[];
+  links?: RadarLinks;
+}) {
   return (
     <div className="finer-scrollbar -mx-1 overflow-x-auto px-1">
       <table className="top-rule-table min-w-[600px]">
@@ -57,7 +64,7 @@ export function CredibilityBoard({ rows }: { rows: CredibilityRow[] }) {
               <td className="align-top">
                 <div className="flex items-center gap-2 whitespace-nowrap">
                   <Link
-                    href={`/demo/kol/${r.kolId}`}
+                    href={kolHref(links, r.kolId)}
                     className="font-semibold text-[var(--foreground)] hover:text-[var(--morningstar-red)] hover:underline"
                   >
                     {r.name}

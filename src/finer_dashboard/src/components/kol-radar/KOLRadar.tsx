@@ -21,8 +21,15 @@ import { ChangeFeed } from "./ChangeFeed";
 import { CredibilityBoard } from "./CredibilityBoard";
 import { ActionableCalls } from "./ActionableCalls";
 import { TickerConsensus } from "./TickerConsensus";
+import { DEMO_RADAR_LINKS, type RadarLinks } from "./links";
 
-export function KOLRadar({ data = KOL_RADAR_FIXTURE }: { data?: KOLRadarData }) {
+export function KOLRadar({
+  data = KOL_RADAR_FIXTURE,
+  links = DEMO_RADAR_LINKS,
+}: {
+  data?: KOLRadarData;
+  links?: RadarLinks;
+}) {
   const sentiment = deriveMarketSentiment(data);
   const changes = deriveChangeFeed(data);
   const board = deriveCredibilityBoard(data);
@@ -66,7 +73,7 @@ export function KOLRadar({ data = KOL_RADAR_FIXTURE }: { data?: KOLRadarData }) 
           note="按窗口内已结算跟单收益 · 等权累计"
         />
         <div className="editorial-panel mt-3 rounded-sm p-4">
-          <EarningsRace data={data} />
+          <EarningsRace data={data} links={links} />
         </div>
       </section>
 
@@ -92,7 +99,7 @@ export function KOLRadar({ data = KOL_RADAR_FIXTURE }: { data?: KOLRadarData }) 
           note="按信誉分排名（含样本量校正）· 点击 KOL 进问责页"
         />
         <div className="editorial-panel mt-3 rounded-sm p-4">
-          <CredibilityBoard rows={board} />
+          <CredibilityBoard rows={board} links={links} />
         </div>
       </section>
 
@@ -105,7 +112,7 @@ export function KOLRadar({ data = KOL_RADAR_FIXTURE }: { data?: KOLRadarData }) 
           note="可信度 × 信念 × 新鲜度排序 · 模型聚合，非荐股"
         />
         <div className="mt-3">
-          <ActionableCalls calls={calls} />
+          <ActionableCalls calls={calls} links={links} />
         </div>
       </section>
 
@@ -118,7 +125,7 @@ export function KOLRadar({ data = KOL_RADAR_FIXTURE }: { data?: KOLRadarData }) 
           note="多 KOL 覆盖优先 · 分歧 / 拥挤预警"
         />
         <div className="mt-3">
-          <TickerConsensus rows={consensus} />
+          <TickerConsensus rows={consensus} links={links} />
         </div>
       </section>
 
