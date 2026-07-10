@@ -47,8 +47,16 @@ live 端到端（uvicorn :8000 + preview :3000，console 无错误）：
 - `GET /api/opinions/timeline` actionChain 分布：watch 35 / reduce 4 / add 2 / close_long 1。
 - `/audit` 列表出现 `reduce_position` 真实 action。
 
+## 追加：雷达下钻链接路由化 + 空态可解释（同日第二轮，commit 923bd813）
+
+- kol-radar 组件原硬编码 `/demo/*` 下钻链接，LIVE `/radar` 页点 KOL/审计/标的会静默跳回 fixture 页。新增可序列化 `RadarLinks` 上下文（`components/kol-radar/links.ts`，纯数据跨 RSC 边界 + 模块级 `kolHref/tickerHref/auditHref` helper）：demo 缺省不变；`/radar` 注入 `LIVE_RADAR_LINKS`（KOL→`/radar/kol/[id]`，审计→`/audit?kol=` 深链，标的横截面无 live 页则降级纯卡片）。收益榜行同步获得 KOL 下钻链接。
+- 收益榜空态增加解释：显示全量数据的最近一笔结算日期（`deriveLatestSettleDate`）。核实 live 空态为诚实结果：现役语料 32 笔结算全部落在 2026-03~04（最近 2026-04-29），周/月窗口确实无数据。
+- 验证：build exit 0；`/radar` 无任何 demo 串页链接、空态显示「最近一笔结算 2026-04-29」；`/demo/kol-radar` 链接全量回归无泄漏；console 无错误。
+
 ## 未解决项（Open Issues）
 
 1. 融资/杠杆维度观测仍为 0——语料中确无相关表述（LLM 判定 null 符合「不猜」规则），非缺陷；待覆盖含两融/杠杆表述的语料后自然出真值。
 2. `OpinionTimeline`/`OpinionDetailModal` 组件尚无页面消费（预置组件），加/减仓文案已过类型与构建验证，视觉验收待该组件上页。
 3. 8000 端口旧 uvicorn 实例已被替换为新代码实例（旧实例无 `/api/kol/style` 路由）。
+4. live 标的横截面页（`/radar/ticker/*` 对应物）尚不存在，标的共识卡在 live 侧暂为纯展示。
+5. live 收益榜要出数据需新鲜语料入库（现役批次结算时点均在 4 月底前）。
