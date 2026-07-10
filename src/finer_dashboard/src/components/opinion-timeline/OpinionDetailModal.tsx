@@ -101,15 +101,21 @@ const ACTION_TYPE_LABELS: Record<ActionStep["actionType"], string> = {
   close_short: "平空",
 };
 
-// add/reduce 是仓位增减语义，方向由观点 direction 决定：
-// 看空观点下的加/减仓是对空头敞口的操作。
+// add/reduce 是仓位增减语义，方向由观点 direction 决定。注意 direction 是
+// 跟单符号（follow-trade sign）而非持仓侧：减多仓=卖出信号（bearish），
+// 减空仓=买回信号（bullish）。canonical runner 对 reduce_position 恒给
+// bearish——那是减多仓，不能标成减空仓。
 function actionTypeLabel(
   actionType: ActionStep["actionType"],
   direction: OpinionDirection,
 ): string {
-  if (direction === "bearish" || direction === "risk_warning") {
-    if (actionType === "add") return "加空仓";
-    if (actionType === "reduce") return "减空仓";
+  if (actionType === "add") {
+    return direction === "bearish" || direction === "risk_warning"
+      ? "加空仓"
+      : "加仓";
+  }
+  if (actionType === "reduce") {
+    return direction === "bullish" ? "减空仓" : "减仓";
   }
   return ACTION_TYPE_LABELS[actionType];
 }
