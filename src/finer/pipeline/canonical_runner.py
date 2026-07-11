@@ -53,7 +53,7 @@ from finer.schemas.policy import (
     PolicyMappingBatch,
     PolicyMappingResult,
 )
-from finer.extraction.canonical_action_builder import build_action_metadata
+from finer.extraction.action_composer import compose_trade_action
 from finer.extraction.timing_builder import build_execution_timing
 from finer.schemas.trade_action import (
     ActionStep,
@@ -166,6 +166,7 @@ async def run_canonical_from_artifacts(
     envelope: ContentEnvelope,
     temporal_anchors: Optional[List[Any]] = None,
     strategy: str = "programmatic",
+    extractor_version: Optional[str] = None,
 ) -> CanonicalRunnerResult:
     """Canonical F3 → F4 → F5 pipeline consuming upstream artifacts.
 
@@ -212,6 +213,7 @@ async def run_canonical_from_artifacts(
             f2_symbol_map=f2_symbol_map,
             f2_block_map=f2_block_map,
             temporal_anchors=temporal_list,
+            extractor_version=extractor_version,
         )
     else:
         result = await _build_actions_llm(
@@ -222,6 +224,7 @@ async def run_canonical_from_artifacts(
             f2_symbol_map=f2_symbol_map,
             f2_block_map=f2_block_map,
             temporal_anchors=temporal_list,
+            extractor_version=extractor_version,
         )
 
     result.total_intents = len(intents)
@@ -424,6 +427,10 @@ async def run_canonical_from_envelope(
     f2_span_by_id, f2_symbol_map, f2_block_map = _index_f2_evidence(envelope)
     temporal_list = list(getattr(envelope, "temporal_anchors", []) or [])
 
+    f3_version = getattr(intent_result, "extractor_version", None)
+    if not isinstance(f3_version, str):
+        # Non-string versions (absent attribute, mocks) mean "unstamped".
+        f3_version = None
     if strategy == "programmatic":
         result = _build_actions_programmatic(
             intents=intents,
@@ -433,6 +440,7 @@ async def run_canonical_from_envelope(
             f2_symbol_map=f2_symbol_map,
             f2_block_map=f2_block_map,
             temporal_anchors=temporal_list,
+            extractor_version=f3_version,
         )
     else:
         text = "\n".join(
@@ -447,6 +455,7 @@ async def run_canonical_from_envelope(
             f2_block_map=f2_block_map,
             temporal_anchors=temporal_list,
             text=text,
+            extractor_version=f3_version,
         )
 
     logger.info(
@@ -586,6 +595,7 @@ def _build_actions_programmatic(
     f2_symbol_map: Optional[Dict[str, List[str]]] = None,
     f2_block_map: Optional[Dict[str, List[str]]] = None,
     temporal_anchors: Optional[List[Any]] = None,
+    extractor_version: Optional[str] = None,
 ) -> CanonicalRunnerResult:
     """Build TradeActions deterministically from policy hints.
 
@@ -700,12 +710,17 @@ def _build_actions_programmatic(
             evidence_ids, f2_span_by_id, block_texts=_block_texts(envelope)
         )
 
-        ta = TradeAction(
-            intent_id=intent.intent_id,
-            policy_id=mapped.policy_id,
+        # confidence = pipeline structural certainty (lower of F3/F4);
+        # conviction = KOL belief strength from F3 — the two were conflated
+        # before, which is why every live action showed the same flat
+        # confidence. Assembly is delegated to the single canonical composer;
+        # empty evidence is legal here only because the F2 gate above already
+        # ran (envelopes without an F2 index pass through as "partial").
+        ta = compose_trade_action(
+            intent=intent,
+            policy_mapped_intent=mapped,
             evidence_span_ids=evidence_ids,
             execution_timing=timing,
-            effective_trade_at=None,
             source=SourceInfo(
                 creator_id=envelope.creator_id or "unknown",
                 content_id=envelope.envelope_id,
@@ -727,21 +742,15 @@ def _build_actions_programmatic(
                     position_size_pct=position_pct,
                 ),
             ],
-            # confidence = pipeline structural certainty (lower of F3/F4, same
-            # semantics as CanonicalActionBuilder); conviction = KOL belief
-            # strength from F3 — the two were conflated before, which is why
-            # every live action showed the same flat confidence.
-            confidence=min(intent.confidence, mapped.mapping_confidence),
-            conviction=intent.conviction,
+            rationale=_build_action_rationale(intent, mapped, evidence_text),
             time_horizon=mapped.holding_period_hint,
             requires_manual_review=mapped.requires_human_review,
-            rationale=_build_action_rationale(intent, mapped, evidence_text),
-            # Shared metadata contract (exit-rule hints + F3 style signals)
-            # plus the runner's own tier marker.
-            metadata={
-                **build_action_metadata(intent, mapped),
+            extra_metadata={
                 "tier": "opinion" if mapped.action_hint in OPINION_TIER_HINTS else "trade",
             },
+            allow_empty_evidence=True,
+            extractor_version=extractor_version,
+            f5_strategy="programmatic",
         )
         actions.append(ta)
 
@@ -762,6 +771,7 @@ async def _build_actions_llm(
     f2_block_map: Optional[Dict[str, List[str]]] = None,
     temporal_anchors: Optional[List[Any]] = None,
     text: Optional[str] = None,
+    extractor_version: Optional[str] = None,
 ) -> CanonicalRunnerResult:
     """Build TradeActions using LLM with policy context, then backfill trace IDs.
 
@@ -841,6 +851,7 @@ Only include actions for the executable policy mappings listed above. Return [] 
         return _build_actions_programmatic(
             intents, policy_batch, envelope,
             f2_span_by_id, f2_symbol_map, f2_block_map, temporal_anchors,
+            extractor_version=extractor_version,
         )
 
     # Backfill trace IDs from policy mappings
@@ -914,9 +925,9 @@ Only include actions for the executable policy mappings listed above. Return [] 
             evidence_ids, f2_span_by_id, block_texts=_block_texts(envelope)
         )
 
-        ta = TradeAction(
-            intent_id=matched_intent.intent_id,
-            policy_id=matched_mapped.policy_id,
+        ta = compose_trade_action(
+            intent=matched_intent,
+            policy_mapped_intent=matched_mapped,
             evidence_span_ids=evidence_ids,
             execution_timing=timing,
             source=SourceInfo(
@@ -938,14 +949,14 @@ Only include actions for the executable policy mappings listed above. Return [] 
                     position_size_pct=raw.get("position_size_pct"),
                 ),
             ],
-            confidence=raw.get("confidence", matched_intent.confidence),
-            conviction=matched_intent.conviction,
-            time_horizon=matched_mapped.holding_period_hint,
             rationale=f"LLM-guided F5: {raw.get('notes', matched_mapped.action_hint)}",
-            metadata={
-                **build_action_metadata(matched_intent, matched_mapped),
-                "tier": "trade",
-            },
+            # LLM path trusts the model's own calibration when provided.
+            confidence=raw.get("confidence", matched_intent.confidence),
+            time_horizon=matched_mapped.holding_period_hint,
+            extra_metadata={"tier": "trade"},
+            allow_empty_evidence=True,
+            extractor_version=extractor_version,
+            f5_strategy="llm_guided",
         )
         actions.append(ta)
 

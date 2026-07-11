@@ -1,18 +1,18 @@
-"""Pipeline package — Declarative pipeline orchestration.
+"""Pipeline package.
 
-Provides both the legacy synchronous API (init_storage, register_directory,
-run_perception_pipeline, dry_run_pipeline) and the new PipelineOrchestrator
-for end-to-end async pipeline processing.
+Canonical F3→F4→F5 execution lives in ``finer.pipeline.canonical_runner``
+(import it directly). The deprecated L0-L8 ``PipelineOrchestrator`` is no
+longer re-exported here — importing ``finer.pipeline`` must not load the
+quarantined orchestrator module (it lazily imports the legacy direct
+extractor). Reach it explicitly via ``finer.pipeline.orchestrator`` if a
+migration task truly needs it.
 
-Legacy usage (backward compatible):
+Legacy storage helpers stay re-exported for the CLI:
     from finer.pipeline import init_storage, register_directory
-
-New usage:
-    from finer.pipeline import PipelineOrchestrator, PipelineResult
 """
 
-# Re-export legacy functions from the original module
-# (now living in finer.pipeline._legacy)
+# Re-export legacy storage/dry-run helpers from finer.pipeline._legacy
+# (still used by cli.py init-storage / register-dir / dry-run).
 from finer.pipeline._legacy import (
     init_storage,
     register_directory,
@@ -20,27 +20,9 @@ from finer.pipeline._legacy import (
     dry_run_pipeline,
 )
 
-# Re-export new orchestrator API
-from finer.pipeline.orchestrator import (
-    PipelineOrchestrator,
-    PipelineResult,
-    BacktestPipelineResult,
-    DateRange,
-    StageResult,
-    StageCompletionTracker,
-)
-
 __all__ = [
-    # Legacy
     "init_storage",
     "register_directory",
     "run_perception_pipeline",
     "dry_run_pipeline",
-    # New
-    "PipelineOrchestrator",
-    "PipelineResult",
-    "BacktestPipelineResult",
-    "DateRange",
-    "StageResult",
-    "StageCompletionTracker",
 ]

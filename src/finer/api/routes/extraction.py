@@ -16,6 +16,8 @@ import logging
 import asyncio
 import os
 
+from finer.errors import ErrorCode
+from finer.errors.exceptions import FinerError
 from finer.paths import REPO_ROOT, DATA_ROOT
 
 router = APIRouter()
@@ -200,58 +202,30 @@ async def extract_trade_actions(request: ExtractionRequest):
         raise HTTPException(status_code=500, detail=f"提取失败: {e}")
 
 
-@router.post("/batch", response_model=List[ExtractionResponse])
+@router.post("/batch")
 async def batch_extract(request: BatchExtractionRequest):
-    # DEPRECATED: Legacy extraction endpoint. New code should use canonical F3→F4→F5 pipeline.
-    """批量提取 Trade Actions.
+    """批量提取 Trade Actions — GONE (410).
 
-    Args:
-        request: 包含多个待提取项目的请求
-
-    Returns:
-        List[ExtractionResponse] 每个项目的提取结果
+    Retired: this was the last live consumer of the legacy direct
+    ``TradeActionExtractor`` path, which bypasses F3 Intent / F4 Policy and
+    produces non-canonical actions. Dashboard has zero callers (verified
+    2026-07-11). The request/response models are kept so existing clients
+    get a typed 410 with a fix_hint instead of a 404.
     """
-    try:
-        from finer.extraction.trade_action_extractor import TradeActionExtractor
-
-        extractor = TradeActionExtractor()
-
-        # 执行批量提取
-        results = await extractor.batch_extract(
-            items=request.items,
-            parallel=request.parallel,
-            max_concurrency=request.max_concurrency,
-        )
-
-        # 转换结果
-        responses = []
-        for result in results:
-            if result.success:
-                actions = [_action_to_response(a) for a in result.actions]
-                responses.append(ExtractionResponse(
-                    success=True,
-                    actions=actions,
-                    total_actions=len(actions),
-                    avg_confidence=result.avg_confidence,
-                    model=extractor.model_version,
-                    processing_time_ms=0,
-                ))
-            else:
-                responses.append(ExtractionResponse(
-                    success=False,
-                    actions=[],
-                    total_actions=0,
-                    avg_confidence=0.0,
-                    model=extractor.model_version,
-                    processing_time_ms=0,
-                    error=result.error,
-                ))
-
-        return responses
-
-    except Exception as e:
-        logger.error(f"Batch extraction failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"批量提取失败: {e}")
+    raise FinerError(
+        ErrorCode.API_NTF_001,
+        "POST /api/extraction/batch has been retired: the legacy direct "
+        "extraction path bypasses F3→F4 and produces non-canonical actions.",
+        status_code=410,
+        stage="F5",
+        operation="batch_extract",
+        retryable=False,
+        details={
+            "requested_items": len(request.items),
+            "fix_hint": "Use POST /api/extraction/pipeline (canonical "
+                        "F3→F4→F5 over F2-anchored envelopes) instead.",
+        },
+    )
 
 
 @router.post("/pipeline")
