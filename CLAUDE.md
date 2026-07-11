@@ -70,6 +70,7 @@ F0 (Intake) → F1 (Standardize) → F1.5 (Topic Assembly) → F2 (Anchor) → F
 **公共模块**（任何 F-stage 可调用）：
 - `services/llm.py` — LLM 统一调用
 - `services/finance_skills_client.py` — 金融数据（带 TTL 缓存）
+- `services/kol_registry.py` — KOL 注册表（configs/creators/*.yaml 只读真值，TTL 缓存；任何 F-stage 可查询）
 - `schemas/` — 数据契约
 - `config.py`, `paths.py`, `manifests.py` — 配置与路径
 

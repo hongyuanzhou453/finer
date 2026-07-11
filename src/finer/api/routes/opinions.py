@@ -626,13 +626,21 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
 
     # Top KOLs — with server-side credibility (single source of truth; the
     # dashboard previously derived this client-side in kol-radar.ts).
+    from finer.services.kol_registry import get_registry
+
+    registry = get_registry()
     top_kols = sorted(kol_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     top_kol_list = []
     for k, cnt in top_kols:
         settled = kol_settled.get(k, 0)
         wins = kol_wins.get(k, 0)
+        # `author` stays the raw creator_id — it is the join key the frontend
+        # uses (credibilityOverrides); registry adds display fields only.
+        profile = registry.get(k)
         top_kol_list.append({
             "author": k,
+            "displayName": profile.display_name if profile and profile.display_name else k,
+            "styleLabel": profile.style_label if profile else None,
             "count": cnt,
             "avgRating": 0.0,  # legacy field, kept for backward compat
             "settledCount": settled,
@@ -776,6 +784,16 @@ async def get_changes(limit: int = Query(20, ge=1, le=100, description="事件�
         events = sorted(
             merged.values(), key=lambda e: e.get("timestamp") or "", reverse=True
         )[:limit]
+
+        # Presentation decoration at the API boundary: both event sources
+        # carry raw creator_ids; the registry supplies display names in one
+        # place (kolId stays the raw join key).
+        from finer.services.kol_registry import get_registry
+
+        registry = get_registry()
+        for ev in events:
+            if ev.get("kolId"):
+                ev["kolName"] = registry.display_name(ev["kolId"])
 
         return {
             "ok": True,

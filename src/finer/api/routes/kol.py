@@ -176,11 +176,12 @@ def _rating_from_backtest(kol_id: str, backtest: Dict[str, Any]) -> KOLRatingRes
             result=result_label,
         ))
 
+    reg_name, reg_platform = _registry_identity(kol_id, "Backtest")
     return KOLRatingResponse(
         rating={
             "kolId": kol_id,
-            "name": kol_id,
-            "platform": "Backtest",
+            "name": reg_name,
+            "platform": reg_platform,
             "overallRating": overall_rating,
             "avgReturn": round(avg_return_per_trade, 2),
             "successRate": round(win_rate, 2),
@@ -199,11 +200,12 @@ def _empty_rating(kol_id: str) -> KOLRatingResponse:
     Returned in place of synthetic random fallback. Frontend gracefully renders
     empty timeline / focus areas / opinions.
     """
+    reg_name, reg_platform = _registry_identity(kol_id, "Unknown")
     return KOLRatingResponse(
         rating={
             "kolId": kol_id,
-            "name": kol_id,
-            "platform": "Unknown",
+            "name": reg_name,
+            "platform": reg_platform,
             "overallRating": 0.0,
             "avgReturn": 0.0,
             "successRate": 0.0,
@@ -317,11 +319,12 @@ def _calculate_kol_rating(kol_id: str) -> KOLRatingResponse:
             result=action.get("validation_status", "pending"),
         ))
 
+    reg_name, reg_platform = _registry_identity(kol_id, "Internal")
     return KOLRatingResponse(
         rating={
             "kolId": kol_id,
-            "name": kol_id,
-            "platform": "Internal",
+            "name": reg_name,
+            "platform": reg_platform,
             "overallRating": overall_rating,
             "avgReturn": round(avg_return, 2),
             "successRate": round(success_rate, 2),
@@ -384,6 +387,23 @@ class KOLListItem(BaseModel):
     enabled: bool = True
 
 
+def _registry_identity(kol_id: str, fallback_platform: str) -> tuple[str, str]:
+    """(name, platform) from the creator registry, byte-for-byte fallback on miss.
+
+    Exact-match only (no alias resolution): action data attributed to a
+    historical canonical id (e.g. kol_cat_lord_fire) keeps its own row here
+    instead of silently merging into the registered profile's row.
+    """
+    from finer.services.kol_registry import get_registry
+
+    profile = get_registry().get(kol_id)
+    if profile is None:
+        return kol_id, fallback_platform
+    name = profile.display_name or kol_id
+    platform = profile.platforms[0] if profile.platforms else fallback_platform
+    return name, platform
+
+
 def _discover_kol_ids() -> List[str]:
     """Discover all KOL IDs from data layers.
 
@@ -421,6 +441,17 @@ def _discover_kol_ids() -> List[str]:
                 # Give at least 1 weight so it sorts above never-seen ids.
                 kol_ids[kol_id] = max(kol_ids[kol_id], 1)
 
+    # 3. Registry profiles: a freshly onboarded creator (YAML only, no data
+    # yet) appears in the list immediately with an empty rating — "加一份
+    # YAML 即上架". Zero weight so data-backed KOLs sort first.
+    try:
+        from finer.services.kol_registry import get_registry
+
+        for profile in get_registry().list_profiles():
+            kol_ids.setdefault(profile.creator_id, 0)
+    except Exception:  # registry must never take the list down
+        pass
+
     # Stable sort: count desc, then id asc for determinism on ties.
     return [k for k, _ in sorted(kol_ids.items(), key=lambda x: (-x[1], x[0]))]
 
@@ -431,10 +462,14 @@ async def list_kols_enriched():
     kol_ids = _discover_kol_ids()
     result: List[KOLListItem] = []
 
+    from finer.services.kol_registry import get_registry
+
+    registry = get_registry()
     for kol_id in kol_ids:
         rating = _calculate_kol_rating(kol_id)
         dim_scores = {d.dimension: d.score for d in rating.dimensions}
         r = rating.rating
+        profile = registry.get(kol_id)
 
         result.append(KOLListItem(
             id=kol_id,
@@ -447,6 +482,7 @@ async def list_kols_enriched():
             total_opinions=r.get("totalOpinions", 0),
             last_active=rating.timeline[0].date if rating.timeline else "",
             tags=rating.focusAreas[:3],
+            enabled=profile.enabled if profile else True,
         ))
 
     return result

@@ -56,27 +56,17 @@ def load_declared_style(
     creator_id: str,
     root: Path = REPO_ROOT,
 ) -> Optional[DeclaredTradingStyle]:
-    """Load the hand-annotated trading style from the creator YAML.
+    """Load the hand-annotated trading style from the creator registry.
 
-    Returns None when the creator config or its ``trading_style`` block is
-    missing — "not annotated" is a first-class state, not an error.
+    Returns None when the creator profile or its ``trading_style`` block is
+    missing/invalid — "not annotated" is a first-class state, not an error.
+    Delegates to KOLRegistry (the file-truth reader over configs/creators/),
+    which owns the block-isolation semantics; signature kept for existing
+    callers.
     """
-    try:
-        config = load_creator_config(root, creator_id)
-    except FileNotFoundError:
-        return None
+    from finer.services.kol_registry import get_registry
 
-    block = config.get("trading_style")
-    if not isinstance(block, dict):
-        return None
-
-    try:
-        return DeclaredTradingStyle.model_validate(block)
-    except Exception as e:
-        logger.warning(
-            "Invalid trading_style block in creator config %s: %s", creator_id, e
-        )
-        return None
+    return get_registry(root).declared_style(creator_id)
 
 
 def compute_observed_style(
@@ -160,11 +150,10 @@ def build_style_profile(
     ]
     observed = compute_observed_style(attributed)
 
-    display_name: Optional[str] = None
-    try:
-        display_name = load_creator_config(root, creator_id).get("display_name")
-    except FileNotFoundError:
-        pass
+    from finer.services.kol_registry import get_registry
+
+    profile = get_registry(root).get(creator_id)
+    display_name: Optional[str] = profile.display_name if profile else None
 
     return TradingStyleProfile(
         creator_id=creator_id,

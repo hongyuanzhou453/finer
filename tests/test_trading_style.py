@@ -104,6 +104,25 @@ class TestLoadDeclaredStyle:
         assert declared.does_short is False
         assert declared.entry_style == "right_side"
 
+    def test_invalid_block_keeps_display_name(self, tmp_path):
+        """块隔离钉子：trading_style 无效不得拖垮档案其余字段（display_name）。"""
+        _write_creator_yaml(tmp_path, "k4", {
+            "creator_id": "k4",
+            "display_name": "老四",
+            "trading_style": {"entry_style": "not_a_valid_style"},
+        })
+        assert load_declared_style("k4", root=tmp_path) is None
+        profile = build_style_profile(
+            "k4", repository=_EmptyRepo(), root=tmp_path
+        )
+        assert profile.display_name == "老四"
+        assert profile.declared is None
+
+
+class _EmptyRepo:
+    def load_all_actions(self):
+        return []
+
 
 # =============================================================================
 # Observed layer
