@@ -334,6 +334,48 @@ class MarketEnrichment(BaseModel):
     )
 
 
+class PipelineSnapshot(BaseModel):
+    """Pipeline version anchor captured when human feedback is recorded.
+
+    A feedback record without this block cannot answer "which pipeline
+    version produced the output being judged", which makes the resulting
+    DPO pairs unusable across prompt/model revisions. Server-side filled
+    from the reviewed TradeAction (never trusted from the client).
+    """
+    model_config = ConfigDict(strict=True)
+
+    f5_model: Optional[str] = Field(
+        None,
+        description="F5 wrapper model label (e.g. 'canonical-f2-envelope')"
+    )
+    extractor_version: Optional[str] = Field(
+        None,
+        description="F3 extractor version stamped on the action "
+                    "(e.g. 'llm_consensus_v1'; 'v1.0' = unstamped legacy)"
+    )
+    prompt_version: Optional[str] = Field(
+        None,
+        description="Prompt template version from the action's version_info"
+    )
+    schema_version: Optional[str] = Field(
+        None,
+        description="Schema version from the action's version_info"
+    )
+    config_hash: Optional[str] = Field(
+        None,
+        description="Extraction config hash from the action's version_info"
+    )
+    trade_action_source_file: Optional[str] = Field(
+        None,
+        description="F5 file the reviewed action was loaded from"
+    )
+    action_snapshot: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Frozen copy of the judged fields (evidence_text, ticker, "
+                    "direction, action_chain summary) — survives later regens"
+    )
+
+
 class RLHFFeedback(BaseModel):
     """Reinforcement Learning from Human Feedback fields."""
     model_config = ConfigDict(strict=True)

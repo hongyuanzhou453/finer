@@ -1615,6 +1615,19 @@ export type ExecutionTiming = {
   timing_policy_id: string;
 };
 
+/** F6 pipeline version anchor on a feedback record (mirrors
+ *  schemas/trade_action.py:PipelineSnapshot). Server-side filled from the
+ *  reviewed action — clients never supply it. */
+export type PipelineSnapshot = {
+  f5_model?: string | null;
+  extractor_version?: string | null;
+  prompt_version?: string | null;
+  schema_version?: string | null;
+  config_hash?: string | null;
+  trade_action_source_file?: string | null;
+  action_snapshot: Record<string, unknown>;
+};
+
 /** F5 trade action (audit subset of the full Pydantic TradeAction). */
 export type TradeAction = {
   trade_action_id: string;
