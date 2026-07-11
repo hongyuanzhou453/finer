@@ -11,7 +11,7 @@ Trading style profile（交易风格画像）为双层结构：
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ENTRY_STYLE_LITERAL = Literal["left_side", "right_side", "mixed", "unknown"]
 
@@ -215,6 +215,78 @@ class TradingStyleProfile(BaseModel):
     observed: Optional[ObservedTradingStyle] = Field(
         default=None,
         description="观测层；该 KOL 无归属 action 数据时为 None",
+    )
+
+
+class CreatorProfile(BaseModel):
+    """configs/creators/{creator_id}.yaml 的注册表档案。
+
+    文件即真相源：KOLRegistry（services/kol_registry.py）只读加载本模型，
+    TTL 到期自动重读——改档案 = 改 YAML，无写 API。主键 creator_id 与
+    文件名 stem 一致（人类可读串，非 KOLProfileManager 的 kol_{uuid} 体系）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    creator_id: str = Field(
+        ...,
+        description="全系统人类可读主键；必须与 YAML 文件名 stem 一致",
+    )
+    display_name: Optional[str] = Field(
+        default=None,
+        description="产品展示名；缺省时消费方回退 creator_id",
+    )
+    handle: Optional[str] = Field(
+        default=None,
+        description="社媒昵称；缺省回退 display_name",
+    )
+    style_label: Optional[str] = Field(
+        default=None,
+        description="产品风格标签（radar 卡片展示，如「个股短线」）；未知留空",
+    )
+    specialties: list[str] = Field(
+        default_factory=list,
+        description="擅长领域标签（如 半导体、恒生科技）",
+    )
+    aliases: list[str] = Field(
+        default_factory=list,
+        description="指向该 creator 的一切别名：中文名、hashtag、历史 canonical id",
+    )
+    platforms: list[str] = Field(
+        default_factory=list,
+        description="内容来源平台：bilibili / feishu / wechat / image_upload 等",
+    )
+    platform_identities: list[PlatformIdentity] = Field(
+        default_factory=list,
+        description="平台账号身份（registry.resolve 的 {platform}:{account_id} 索引）",
+    )
+    content_types: list[str] = Field(
+        default_factory=list,
+        description="内容类型：weekly_strategy / daily_pre / chat_export 等",
+    )
+    markets: list[str] = Field(
+        default_factory=list,
+        description="覆盖市场：US / HK / A",
+    )
+    focus: list[str] = Field(
+        default_factory=list,
+        description="重点维度：sector / theme / single_stock",
+    )
+    default_horizons: list[str] = Field(
+        default_factory=list,
+        description="默认时间周期：daily / weekly / swing",
+    )
+    notes: list[str] = Field(
+        default_factory=list,
+        description="备注（含建档来源与待补标记）",
+    )
+    trading_style: Optional[DeclaredTradingStyle] = Field(
+        default=None,
+        description="declared 交易风格标注；块缺失或无效均为 None（未标注）",
+    )
+    enabled: bool = Field(
+        default=True,
+        description="false = list 默认隐藏（档案保留，soft-off）",
     )
 
 
