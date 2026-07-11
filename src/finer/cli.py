@@ -109,6 +109,30 @@ def build_parser() -> argparse.ArgumentParser:
     bt_show = bt_sub.add_parser("show", help="Show details of a saved backtest")
     bt_show.add_argument("backtest_id", help="Backtest ID to show")
 
+    # ── Incremental pipeline driver (F0→F8) ─────────────────────
+    drive_cmd = subparsers.add_parser(
+        "pipeline-drive",
+        help="Fill missing F1/F2/F5 outputs for imported content, then settle (F8)",
+    )
+    drive_cmd.add_argument("--limit", type=int, default=None, help="Max content items per pass")
+    drive_cmd.add_argument(
+        "--watch", type=int, default=None, metavar="SECONDS",
+        help="Keep driving on an interval (Ctrl+C to stop)",
+    )
+    drive_cmd.add_argument("--dry-run", action="store_true", help="Report the plan; write nothing")
+    drive_cmd.add_argument("--no-settle", action="store_true", help="Skip the F8 settle step")
+
+    # ── F8 settle lifecycle ──────────────────────────────────────
+    settle_cmd = subparsers.add_parser(
+        "settle",
+        help="Settle PENDING actions with terminal backtest results (VERIFIED/FAILED)",
+    )
+    settle_cmd.add_argument(
+        "--apply", action="store_true",
+        help="Write back (default is dry-run). Backs up data/F5_executed first.",
+    )
+    settle_cmd.add_argument("--limit", type=int, default=None, help="Max PENDING actions to process")
+
     return parser
 
 
@@ -166,6 +190,75 @@ def _cmd_feishu_watch(args: argparse.Namespace) -> dict:
                 time.sleep(1)
 
     return {"status": "stopped", "cycles": cycle}
+
+
+def _cmd_pipeline_drive(args: argparse.Namespace) -> dict:
+    from finer.pipeline.driver import drive_once
+
+    def _one_pass() -> dict:
+        return drive_once(
+            limit=args.limit,
+            run_settle=not args.no_settle,
+            dry_run=args.dry_run,
+        ).to_dict()
+
+    if args.watch is None:
+        return _one_pass()
+
+    running = True
+
+    def _sigint_handler(sig, frame):
+        nonlocal running
+        print("\n⏹  Stopping pipeline driver...")
+        running = False
+
+    signal.signal(signal.SIGINT, _sigint_handler)
+    print(f"🚚  Driving pipeline (interval: {args.watch}s{' · dry-run' if args.dry_run else ''})")
+    print("   Press Ctrl+C to stop.\n")
+
+    cycle = 0
+    last: dict = {}
+    while running:
+        cycle += 1
+        print(f"── Drive cycle {cycle} ──")
+        try:
+            last = _one_pass()
+            print(
+                f"   f1={last['f1_ran']} f2={last['f2_ran']} f5={last['f5_ran']} "
+                f"skipped={last['skipped_complete']} failures={len(last['failures'])}"
+            )
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+
+        if running:
+            for _ in range(args.watch):
+                if not running:
+                    break
+                time.sleep(1)
+
+    return {"status": "stopped", "cycles": cycle, "last_report": last}
+
+
+def _cmd_settle(args: argparse.Namespace) -> dict:
+    import shutil
+    from datetime import datetime
+
+    from finer.backtest.settle import settle_actions
+    from finer.paths import DATA_ROOT
+
+    backup: str | None = None
+    if args.apply:
+        src = DATA_ROOT / "F5_executed"
+        if src.exists():
+            dst = DATA_ROOT / f"F5_executed.bak-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            shutil.copytree(src, dst)
+            backup = str(dst)
+            print(f"backup -> {dst}")
+
+    report = settle_actions(dry_run=not args.apply, limit=args.limit)
+    result = report.to_dict()
+    result["backup"] = backup
+    return result
 
 
 def _cmd_inbox_status(args: argparse.Namespace) -> dict:
@@ -413,6 +506,10 @@ def main() -> None:
         else:
             parser.error(f"unknown backtest subcommand: {args.bt_command}")
             return
+    elif args.command == "pipeline-drive":
+        result = _cmd_pipeline_drive(args)
+    elif args.command == "settle":
+        result = _cmd_settle(args)
     else:
         parser.error(f"unknown command: {args.command}")
         return

@@ -275,12 +275,17 @@ async def _run_extraction_pipeline_async(
     output_path: Path,
     limit: int,
 ):
-    """异步执行提取管线 (canonical F3→F4→F5)."""
+    """异步执行提取管线 (canonical F3→F4→F5).
+
+    Per-file work is delegated to pipeline/driver.execute_f5_for_envelope —
+    the single per-envelope F5 implementation shared with the incremental
+    driver (route stays orchestration-only).
+    """
+    from finer.pipeline.driver import execute_f5_for_envelope
+
     try:
-        # Ensure output dir exists even when called outside the route handler.
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # 查找输入文件
         input_files = list(input_path.glob("**/*.json"))[:limit]
         logger.info(f"Found {len(input_files)} files to process in {input_path}")
 
@@ -289,111 +294,17 @@ async def _run_extraction_pipeline_async(
 
         for file_path in input_files:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                context = {
-                    "source_id": str(file_path),
-                    "source_file": file_path.name,
-                }
-
-                from finer.pipeline.canonical_runner import (
-                    run_canonical_from_envelope,
-                    run_canonical_extraction,
+                count, _model = await execute_f5_for_envelope(
+                    file_path,
+                    output_path,
+                    persist_root=output_path.parent,
                 )
-
-                # Prefer the canonical F2-envelope path so F3/F5 consume the
-                # entity/temporal anchors. Fall back to the legacy raw-text path
-                # only when the file is not a serialized ContentEnvelope.
-                envelope = None
-                if isinstance(data, dict) and "blocks" in data:
-                    try:
-                        from finer.schemas.content_envelope import ContentEnvelope
-
-                        envelope = ContentEnvelope.model_validate(data)
-                    except Exception as exc:
-                        logger.warning(
-                            "F2 envelope validation failed for %s (%s); using raw-text fallback",
-                            file_path.name, exc,
-                        )
-                        envelope = None
-
-                if envelope is not None:
-                    context["kol_id"] = getattr(envelope, "creator_id", None)
-                    # persist_dir = data root (F5_executed's parent) so F3/F4
-                    # sidecars land where the audit assembler reads them.
-                    actions = await run_canonical_from_envelope(
-                        envelope, context, persist_dir=output_path.parent
-                    )
-                    model = "canonical-f2-envelope"
-                else:
-                    text = data.get("text") or data.get("content") or data.get("clean_text", "")
-                    if not text:
-                        logger.warning(f"No text content in {file_path}")
-                        continue
-                    actions = await run_canonical_extraction(text, context)
-                    model = "canonical-programmatic"
-
-                if actions:
-                    # F8 auto-backtest: evaluate each directional action against
-                    # real daily closes before persisting, so new extractions
-                    # land with backtest_result already attached. Fail-open —
-                    # any price/eval error leaves backtest_result as None
-                    # (opinions shows 待回测). Disable via FINER_F8_AUTO_BACKTEST=0.
-                    if os.environ.get("FINER_F8_AUTO_BACKTEST", "1") != "0":
-                        try:
-                            from finer.backtest.per_action import evaluate_action
-                            from finer.backtest.yahoo_prices import fetch_daily_closes
-
-                            closes_by_ticker: dict[str, list] = {}
-                            for a in actions:
-                                ticker = a.target.ticker_normalized or a.target.ticker
-                                if ticker not in closes_by_ticker:
-                                    closes_by_ticker[ticker] = fetch_daily_closes(ticker)
-                                result, _skip = evaluate_action(
-                                    a, closes_by_ticker[ticker]
-                                )
-                                if result is not None:
-                                    a.backtest_result = result
-                        except Exception as bt_exc:
-                            logger.warning(
-                                "F8 auto-backtest skipped for %s: %s",
-                                file_path.name,
-                                bt_exc,
-                            )
-
-                    output_file = output_path / f"{file_path.stem}_actions.json"
-                    output_data = {
-                        "source_file": str(file_path),
-                        "extracted_at": datetime.now().isoformat(),
-                        "model": model,
-                        "actions": [a.model_dump(mode="json") for a in actions],
-                    }
-                    with open(output_file, "w", encoding="utf-8") as f:
-                        json.dump(output_data, f, ensure_ascii=False, indent=2)
-
-                    # Keep the SQLite cache index fresh so index-backed reads
-                    # (repo.load fast path, timeline engine) see new actions
-                    # without a manual rebuild. Files stay authoritative.
-                    try:
-                        from finer.services.repository import TradeActionRepository
-
-                        repo = TradeActionRepository()
-                        for a in actions:
-                            repo.index_trade_action(a, str(output_file))
-                    except Exception as index_exc:
-                        logger.warning(
-                            "Failed to index extracted actions from %s: %s",
-                            output_file,
-                            index_exc,
-                        )
-
+                if count:
                     processed += 1
-                    logger.info(f"Extracted {len(actions)} actions from {file_path.name}")
+                    logger.info(f"Extracted {count} actions from {file_path.name}")
                 else:
                     failed += 1
                     logger.warning(f"No actions extracted from {file_path.name}")
-
             except Exception as e:
                 failed += 1
                 logger.error(f"Failed to process {file_path}: {e}")
