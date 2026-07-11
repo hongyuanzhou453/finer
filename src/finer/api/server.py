@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from finer.api.routes import files, review, stats, integrations, streams, sources, enrichment, bilibili, wechat, rlhf, extraction, aggregation, system, opinions, metrics, lineage, sentiment, backtest, bbdown, text_analysis, kol, kol_style, f0_index, annotation, audit
+from finer.api.routes import files, review, stats, integrations, streams, sources, enrichment, bilibili, wechat, rlhf, extraction, aggregation, system, opinions, metrics, lineage, sentiment, backtest, bbdown, text_analysis, kol, kol_style, kol_registry, f0_index, annotation, audit
 from finer.api.middleware import setup_auth_middleware
 from finer.errors import register_error_handlers
 
@@ -58,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(text_analysis.router, prefix="/api/text-analysis", tags=["text-analysis"])
     app.include_router(kol.router, prefix="/api/kol", tags=["kol"])
     app.include_router(kol_style.router, prefix="/api/kol", tags=["kol"])
+    app.include_router(kol_registry.router, prefix="/api/kol", tags=["kol"])
     app.include_router(annotation.router, prefix="/api/annotation", tags=["annotation"])
     app.include_router(f0_index.router)
     app.include_router(audit.router, prefix="/api/audit", tags=["audit"])

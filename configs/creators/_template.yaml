@@ -1,0 +1,42 @@
+# ═══════════════════════════════════════════════════════════════════
+# Creator 档案模板 — 复制为 configs/creators/{creator_id}.yaml
+#
+# 本文件即真相源：KOLRegistry（src/finer/services/kol_registry.py）只读
+# 加载，TTL 60s 自动生效，无需重启服务。改档案 = 改 YAML。
+# Schema：src/finer/schemas/kol_profile.py:CreatorProfile
+#
+# Onboarding 一个新 KOL：
+#   1. 复制本文件为 {creator_id}.yaml（文件名 stem 即主键，人类可读串）
+#   2. 填 display_name / aliases / platform_identities（渠道映射）
+#   3. 飞书渠道：configs/feishu.yaml 的 watched_chats 加 default_creator
+#   4. 60s 内 registry 生效：/radar、topKols、/kol 列表自动带出真名与风格
+#   5. F5 出现该 creator 的 action 后，observed 画像自动激活
+#
+# 下划线开头的文件名（如本模板）不会被注册表加载。
+# ═══════════════════════════════════════════════════════════════════
+creator_id: example_kol          # 必填；必须与文件名 stem 一致
+display_name: 示例KOL             # 产品展示名；缺省回退 creator_id
+handle: 示例KOL                   # 社媒昵称；缺省回退 display_name
+style_label: 个股短线              # 产品风格标签（radar 卡片展示）；未知留空
+specialties: []                  # 擅长领域标签，如 [半导体, 恒生科技]
+aliases: []                      # 指向该 creator 的一切别名：中文名、hashtag、历史 canonical id
+platforms: []                    # 内容来源平台：bilibili / feishu / wechat / image_upload ...
+platform_identities: []          # 渠道映射（registry.resolve 的 "{platform}:{account_id}" 索引）
+#  - platform: feishu
+#    account_id: oc_xxxxxxxx     # 群 chat_id 或账号 id
+#    account_name: 某某群
+#    metadata: {identity_kind: watched_chat}
+content_types: []                # weekly_strategy / daily_pre / chat_export / bilibili_video ...
+markets: []                      # US / HK / A
+focus: []                        # sector / theme / single_stock
+default_horizons: []             # daily / weekly / swing
+notes: []
+enabled: true                    # false = 列表默认隐藏（档案保留）
+# 交易风格人工标注（declared 层，schemas/kol_profile.py:DeclaredTradingStyle）。
+# 三态：true=明确使用 / false=明确不用 / 缺省或 null=未标注。块整体可省略。
+# trading_style:
+#   uses_margin: null
+#   uses_leverage: null
+#   does_short: null
+#   entry_style: unknown         # left_side / right_side / mixed / unknown
+#   evidence_notes: []

@@ -1,0 +1,24 @@
+creator_id: 9you
+display_name: 9友
+handle: 9友
+style_label: null                # 待补：需人工标注产品风格标签
+specialties: []                  # 待补
+aliases:
+  - 9友
+  - 九友
+  - 9you
+platforms:
+  - feishu
+platform_identities:
+  - platform: feishu
+    account_id: oc_29eb19dc7e439a09d6d1b16295356f29   # configs/feishu.yaml watched_chats
+    account_name: 20269友沟通群
+    metadata: {identity_kind: watched_chat}
+content_types:
+  - chat_export                  # creator_patterns.json file_patterns: chat_history_*.md
+markets: []                      # 待补
+focus: []                        # 待补
+default_horizons: []             # 待补
+notes:
+  - 档案初建（2026-07-11）：字段抄自 configs/feishu.yaml 与 data/classification_memory/creator_patterns.json；标注字段待补
+enabled: true

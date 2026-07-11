@@ -686,6 +686,37 @@ export type TradingStyleProfile = {
   observed: ObservedTradingStyle | null;
 };
 
+/** Platform account identity (mirrors schemas/kol_profile.py:PlatformIdentity). */
+export type PlatformIdentity = {
+  platform: string;
+  account_id: string;
+  account_name?: string | null;
+  avatar_url?: string | null;
+  verified: boolean;
+  follower_count?: number | null;
+  metadata: Record<string, unknown>;
+};
+
+/** configs/creators/*.yaml 注册表档案（GET /api/kol/registry，mirrors
+ *  schemas/kol_profile.py:CreatorProfile）。文件即真相源，只读。 */
+export type CreatorProfile = {
+  creator_id: string;
+  display_name: string | null;
+  handle: string | null;
+  style_label: string | null;
+  specialties: string[];
+  aliases: string[];
+  platforms: string[];
+  platform_identities: PlatformIdentity[];
+  content_types: string[];
+  markets: string[];
+  focus: string[];
+  default_horizons: string[];
+  notes: string[];
+  trading_style: DeclaredTradingStyle | null;
+  enabled: boolean;
+};
+
 export type BacktestTask = {
   id: string;
   name: string;
