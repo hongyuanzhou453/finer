@@ -8,7 +8,10 @@
  * HONESTY RULES (what live data genuinely lacks today):
  *  - changes = []            — backend has no snapshot-diff service yet
  *  - narrative = placeholder — no F7/LLM synthesis endpoint yet
- *  - style/specialties = 未知 — no KOL profile registry wired to opinions
+ *  - name/style/specialties  — real values come from the KOL registry
+ *    (/api/kol/registry); the raw creator_id / "风格未标注" / [] placeholders
+ *    remain only as the fallback when the registry is unreachable or the
+ *    creator is not registered.
  *  - opinions without a real author are EXCLUDED from KOL grouping (counted,
  *    surfaced in the banner) instead of pooling into a fake "unknown" KOL.
  */
@@ -23,7 +26,7 @@ import type {
   SnapshotViewpoint,
   ViewpointDirection,
 } from "@/lib/fixtures/kol-snapshot";
-import type { TradingStyleProfile } from "@/lib/contracts";
+import type { CreatorProfile, TradingStyleProfile } from "@/lib/contracts";
 
 /** Backend TimelineOpinion as serialized on the wire (5-way direction). */
 interface LiveOpinion {
@@ -168,6 +171,32 @@ async function fetchCredibilityOverrides(): Promise<
   }
 }
 
+/**
+ * KOL profile registry from GET /api/kol/registry — the truth source for
+ * display_name / style_label / specialties. Failure-tolerant (same pattern as
+ * fetchCredibilityOverrides): returns undefined so the raw creator_id
+ * placeholders stand as fallback and rendering matches the pre-registry state.
+ */
+async function fetchRegistry(): Promise<
+  Map<string, CreatorProfile> | undefined
+> {
+  try {
+    const res = await fetch("/api/kol/registry", { cache: "no-store" });
+    if (!res.ok) return undefined;
+    const body = await res.json();
+    const creators = (body.data ?? body)?.creators;
+    if (!Array.isArray(creators)) return undefined;
+    const out = new Map<string, CreatorProfile>();
+    for (const c of creators as CreatorProfile[]) {
+      if (typeof c?.creator_id !== "string") continue;
+      out.set(c.creator_id, c);
+    }
+    return out.size ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const DIRECTION_LABEL: Record<ViewpointDirection, string> = {
   bullish: "看多",
   bearish: "看空",
@@ -273,25 +302,32 @@ export async function fetchLiveRadarData(): Promise<LiveRadarResult> {
     }
   }
 
-  const kols: RadarKOL[] = [...byAuthor.entries()].map(([author, vps]) => ({
-    kolId: author,
-    name: author, // no display-name registry yet — handle IS the name
-    handle: author,
-    style: "风格未标注",
-    platform: platformByAuthor.get(author) ?? "—",
-    specialties: [],
-    viewpoints: vps.sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
-  }));
-
   const allTs = attributed.map(clockOf).sort();
   const periodLabel = allTs.length
     ? `${allTs[0].slice(0, 10)} — ${allTs[allTs.length - 1].slice(0, 10)}`
     : "—";
 
-  const [credibilityOverrides, serverChanges] = await Promise.all([
+  const [credibilityOverrides, serverChanges, registry] = await Promise.all([
     fetchCredibilityOverrides(),
     fetchServerChanges(),
+    fetchRegistry(),
   ]);
+
+  // Registry-backed KOL metadata. Every fallback is byte-identical to the
+  // pre-registry placeholders, so a failed registry fetch renders unchanged.
+  const kols: RadarKOL[] = [...byAuthor.entries()].map(([author, vps]) => {
+    const p = registry?.get(author);
+    return {
+      kolId: author, // never remapped — keys credibilityOverrides/toSnapshotData
+      name: p?.display_name ?? author,
+      handle: p?.handle ?? p?.display_name ?? author,
+      style: p?.style_label ?? "风格未标注",
+      // Observed platform wins; registry declaration is only the fallback.
+      platform: platformByAuthor.get(author) ?? p?.platforms?.[0] ?? "—",
+      specialties: p?.specialties ?? [],
+      viewpoints: vps.sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+    };
+  });
 
   return {
     data: {
@@ -299,9 +335,14 @@ export async function fetchLiveRadarData(): Promise<LiveRadarResult> {
       periodLabel,
       kols,
       // Server snapshot-diff service is the primary source (persists daily
-      // stance snapshots + credibility moves); client history derivation
-      // remains only as an offline fallback.
-      changes: serverChanges ?? deriveLiveChanges(attributed),
+      // stance snapshots + credibility moves; display names decorated
+      // server-side); the client history derivation is only an offline
+      // fallback, so decorate its raw kolIds with registry names here.
+      changes: (serverChanges ?? deriveLiveChanges(attributed)).map((ev) =>
+        ev.kolId
+          ? { ...ev, kolName: registry?.get(ev.kolId)?.display_name ?? ev.kolName }
+          : ev,
+      ),
       credibilityOverrides,
     },
     totalOpinions: opinions.length,
