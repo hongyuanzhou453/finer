@@ -1,5 +1,14 @@
 creator_id: trader_ji
 display_name: trader韭
+handle: trader韭
+style_label: 板块与主题轮动        # 从 focus/notes 语义拟定，待人工复核
+specialties:
+  - 板块轮动
+  - 主题投资
+  - ETF 代理
+aliases:
+  - trader韭
+  - 韭
 platforms:
   - bilibili
   - image_upload
@@ -23,3 +32,14 @@ default_horizons:
 notes:
   - prioritize sector- and theme-level events over single-stock views
   - map views to ETF or index proxies before stock-level proxies
+  - style_label/specialties 从 focus/notes 语义拟定（2026-07-11），待人工复核
+# 交易风格人工标注（declared 层，schemas/kol_profile.py:DeclaredTradingStyle）。
+# 三态：true=明确使用 / false=明确不用 / 缺省或 null=未标注。
+trading_style:
+  uses_margin: null
+  uses_leverage: null
+  does_short: false
+  entry_style: right_side
+  evidence_notes:
+    - 视频中多次强调“突破确认后再上车”，未见抄底语义
+    - 未观察到做空表述，暂标 does_short=false，待更多语料复核

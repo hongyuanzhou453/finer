@@ -8,6 +8,7 @@ Consolidates:
 
 from __future__ import annotations
 
+import re
 from typing import Dict, Tuple, Optional
 
 # (normalized_ticker, market, entity_type)
@@ -51,6 +52,20 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
 
     "AMD":     ("AMD",    "US", "ticker"),
     "超微":     ("AMD",    "US", "ticker"),
+
+    "美光":     ("MU",     "US", "ticker"),
+    "美光科技": ("MU",     "US", "ticker"),
+    "Micron":  ("MU",     "US", "ticker"),
+    "Micron Technology": ("MU", "US", "ticker"),
+    "MU":      ("MU",     "US", "ticker"),
+
+    "希捷":     ("STX",    "US", "ticker"),
+    "希捷科技": ("STX",    "US", "ticker"),
+    "希捷科技控股": ("STX", "US", "ticker"),
+    "希捷科技控股有限公司": ("STX", "US", "ticker"),
+    "Seagate": ("STX",    "US", "ticker"),
+    "Seagate Technology": ("STX", "US", "ticker"),
+    "STX":     ("STX",    "US", "ticker"),
 
     "英特尔":   ("INTC",   "US", "ticker"),
     "INTC":    ("INTC",   "US", "ticker"),
@@ -109,6 +124,49 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     "小鹏":     ("XPEV",   "US", "ticker"),
     "XPEV":    ("XPEV",   "US", "ticker"),
 
+    # ── HK Stocks (human-confirmed F2 registry gaps) ────────────────────────
+    "新华保险": ("1336.HK", "HK", "ticker"),
+    "1336":    ("1336.HK", "HK", "ticker"),
+    "1336.HK": ("1336.HK", "HK", "ticker"),
+
+    "民生银行": ("1988.HK", "HK", "ticker"),
+    "1988":    ("1988.HK", "HK", "ticker"),
+    "1988.HK": ("1988.HK", "HK", "ticker"),
+
+    "吉利汽车": ("0175.HK", "HK", "ticker"),
+    "吉利":     ("0175.HK", "HK", "ticker"),
+    "0175":    ("0175.HK", "HK", "ticker"),
+    "0175.HK": ("0175.HK", "HK", "ticker"),
+
+    # 地平线机器人（Horizon Robotics）— F2 LLM 提议核验插入（2026-06-26），9660.HK
+    "地平线":     ("9660.HK", "HK", "ticker"),
+    "地平线机器人": ("9660.HK", "HK", "ticker"),
+    "9660":    ("9660.HK", "HK", "ticker"),
+    "9660.HK": ("9660.HK", "HK", "ticker"),
+
+    "蓝思科技": ("6613.HK", "HK", "ticker"),
+    "6613":    ("6613.HK", "HK", "ticker"),
+    "6613.HK": ("6613.HK", "HK", "ticker"),
+
+    "中国光大银行": ("6818.HK", "HK", "ticker"),
+    "6818":        ("6818.HK", "HK", "ticker"),
+    "6818.HK":     ("6818.HK", "HK", "ticker"),
+
+    "华能国际电力股份": ("0902.HK", "HK", "ticker"),
+    "0902":            ("0902.HK", "HK", "ticker"),
+    "0902.HK":         ("0902.HK", "HK", "ticker"),
+
+    "安踏":     ("2020.HK", "HK", "ticker"),
+    "安踏体育": ("2020.HK", "HK", "ticker"),
+    "ANTA":    ("2020.HK", "HK", "ticker"),
+
+    "速腾聚创":     ("2498.HK", "HK", "ticker"),
+    "速腾聚创科技": ("2498.HK", "HK", "ticker"),
+    "RoboSense":    ("2498.HK", "HK", "ticker"),
+    "ROBOSENSE":    ("2498.HK", "HK", "ticker"),
+    "2498":         ("2498.HK", "HK", "ticker"),
+    "2498.HK":      ("2498.HK", "HK", "ticker"),
+
     # ── CN Stocks ──────────────────────────────────────────────────────────
     "茅台":     ("600519.SH", "CN", "ticker"),
     "贵州茅台": ("600519.SH", "CN", "ticker"),
@@ -127,6 +185,18 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     "立讯精密": ("002475.SZ", "CN", "ticker"),
     "寒武纪":   ("688256.SH", "CN", "ticker"),
     "五粮液":   ("000858.SZ", "CN", "ticker"),
+    "中宠股份": ("002891.SZ", "CN", "ticker"),
+    "002891":  ("002891.SZ", "CN", "ticker"),
+    "TCL":      ("000100.SZ", "CN", "ticker"),
+    "TCL科技":  ("000100.SZ", "CN", "ticker"),
+    "000100":   ("000100.SZ", "CN", "ticker"),
+
+    # ── TW Stocks ──────────────────────────────────────────────────────────
+    "南亚科技": ("2408.TW", "TW", "ticker"),
+    "南亚科技股份": ("2408.TW", "TW", "ticker"),
+    "南亚科技股份有限公司": ("2408.TW", "TW", "ticker"),
+    "南亚科":   ("2408.TW", "TW", "ticker"),
+    "2408":     ("2408.TW", "TW", "ticker"),
 
     # ── CN Indices ─────────────────────────────────────────────────────────
     "大A":     ("000001.SH", "CN", "index"),
@@ -137,6 +207,36 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     "创业板":   ("399006.SZ", "CN", "index"),
     "沪深300": ("000300.SH", "CN", "index"),
     "中证500": ("000905.SH", "CN", "index"),
+
+    # ── US Indices ─────────────────────────────────────────────────────────
+    "费城半导体": ("SOX", "US", "index"),
+    "费城半导体指数": ("SOX", "US", "index"),
+    "PHLX Semiconductor": ("SOX", "US", "index"),
+    "SOX":      ("SOX", "US", "index"),
+    "VIX":      ("VIX", "US", "index"),
+    "恐慌指数": ("VIX", "US", "index"),
+    "KOSPI":    ("KS11", "KR", "index"),
+    "韩国综合指数": ("KS11", "KR", "index"),
+    "标普500": ("SPX", "US", "index"),
+    "S&P 500": ("SPX", "US", "index"),
+    "SP500":   ("SPX", "US", "index"),
+    "SPX":     ("SPX", "US", "index"),
+    "美元指数": ("DXY", "US", "index"),
+    "DXY":     ("DXY", "US", "index"),
+
+    # ── US ETFs ────────────────────────────────────────────────────────────
+    "QQQ":      ("QQQ", "US", "etf"),
+    "纳指100ETF": ("QQQ", "US", "etf"),
+    "SOXX":     ("SOXX", "US", "etf"),
+    "SOXL":     ("SOXL", "US", "etf"),
+    "SMH":      ("SMH", "US", "etf"),
+    "IGV":      ("IGV", "US", "etf"),
+    "EWY":      ("EWY", "US", "etf"),
+    "SPY":      ("SPY", "US", "etf"),
+
+    # ── Commodities ────────────────────────────────────────────────────────
+    "WTI":      ("WTI", "COMMODITY", "commodity"),
+    "WTI原油": ("WTI", "COMMODITY", "commodity"),
 
     # ── Crypto ─────────────────────────────────────────────────────────────
     "比特币":   ("BTC", "CRYPTO", "crypto"),
@@ -157,11 +257,52 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     "CSIQ":    ("CSIQ",   "US", "ticker"),
 
     # ── Sectors / Themes ────────────────────────────────────────────────────
+    # sector 占位符号不可交易；F5 经 configs/sector_proxies.yaml 映射到
+    # ETF 代理（enrichment/sector_proxy.py）。新增 sector 别名时同步补
+    # proxies 条目，否则该板块观点会以 sector_proxy_not_configured 被拒。
     "绿电":     ("GREEN_POWER", "CN", "sector"),
     "储能":     ("ENERGY_STORAGE", "CN", "sector"),
     "算电协同": ("COMPUTE_POWER", "CN", "sector"),
+    "算力":     ("COMPUTE_POWER", "CN", "sector"),
     "新能源":   ("NEW_ENERGY", "CN", "sector"),
     "光模块":   ("OPTICAL_MODULE", "CN", "sector"),
+
+    # ── Sector proxy expansion (2026-07-11, curated with sector_proxies.yaml) ──
+    "半导体":   ("SEMICONDUCTOR", "CN", "sector"),
+    "芯片":     ("SEMICONDUCTOR", "CN", "sector"),
+    "光伏":     ("PHOTOVOLTAIC", "CN", "sector"),
+    "锂电池":   ("LITHIUM_BATTERY", "CN", "sector"),
+    "锂电":     ("LITHIUM_BATTERY", "CN", "sector"),
+    "券商":     ("BROKERAGE", "CN", "sector"),
+    "创新药":   ("PHARMA_INNOVATION", "CN", "sector"),
+    "军工":     ("DEFENSE_MILITARY", "CN", "sector"),
+    # 「黄金」「机器人」裸词在聊天语料噪声高（黄金坑/黄金周、"1 个机器人"
+    # bot 语义），「金价」是矿业股/宏观讨论的高频上下文词——且 F5 现在会
+    # 把 sector 锚定放行成真 ETF action，只收 KOL 指称板块时的实际用语
+    # （2026-07-11 审查 high finding；金价 撞 test_select_candidates 实证）。
+    "黄金板块": ("GOLD", "CN", "sector"),
+    "黄金股":   ("GOLD", "CN", "sector"),
+    "现货黄金": ("GOLD", "CN", "sector"),
+    "恒生科技": ("HSTECH", "HK", "sector"),
+    "人形机器人": ("ROBOTICS", "CN", "sector"),
+    "机器人板块": ("ROBOTICS", "CN", "sector"),
+    "机器人概念": ("ROBOTICS", "CN", "sector"),
+    "人工智能": ("AI_COMPUTING", "CN", "sector"),
+    "白酒":     ("LIQUOR", "CN", "sector"),
+
+    # ── F2 gap-review additions (2026-06-26, human-triaged from all-local gap scan) ──
+    "中金公司":  ("3908.HK", "HK", "ticker"),
+    "中金":     ("3908.HK", "HK", "ticker"),
+    "CICC":    ("3908.HK", "HK", "ticker"),
+    "曹操出行":  ("2643.HK", "HK", "ticker"),
+    "高盛":     ("GS",      "US", "ticker"),
+    "GS":      ("GS",      "US", "ticker"),
+    "三菱日联":  ("MUFG",    "US", "ticker"),
+    "MUFG":    ("MUFG",    "US", "ticker"),
+    "SAP":     ("SAP",     "US", "ticker"),
+    "思爱普":   ("SAP",     "US", "ticker"),
+    "CoreWeave":("CRWV",   "US", "ticker"),
+    "CRWV":    ("CRWV",    "US", "ticker"),
 }
 
 
@@ -186,3 +327,41 @@ def get_market(name: str) -> Optional[str]:
     """Get the market for an entity name."""
     entry = ENTITY_REGISTRY.get(name)
     return entry[1] if entry else None
+
+
+# ── Tradable-symbol validation (F5 pseudo-ticker gate) ──────────────────────
+
+# Strict ticker shapes: CN/HK numeric-with-suffix, or 1-5 uppercase letters
+# (US tickers, index codes like SOX, crypto codes like BTC). Kept in sync with
+# enrichment.llm_entity_proposal's validator regexes.
+_TRADABLE_SYMBOL_RE = re.compile(r"^\d{4,6}\.(HK|SH|SZ)$|^[A-Z]{1,5}$")
+
+# Registry symbols that denote real instruments. Sector placeholders
+# (储能→ENERGY_STORAGE) are registry values but NOT tradable — they must go
+# through the sector-proxy mapping, never through this set.
+_TRADABLE_KNOWN_SYMBOLS: frozenset = frozenset(
+    ticker for (ticker, _market, etype) in ENTITY_REGISTRY.values() if etype != "sector"
+)
+
+
+def matches_tradable_format(symbol: Optional[str]) -> bool:
+    """Strict ticker-shape check only (no registry membership).
+
+    Single truth for the tradable-symbol shape — also used by
+    ``enrichment.sector_proxy`` to validate configured proxy instruments.
+    """
+    return bool(symbol) and bool(_TRADABLE_SYMBOL_RE.match(symbol))
+
+
+def is_plausible_tradable_symbol(symbol: Optional[str]) -> bool:
+    """True if ``symbol`` can honestly sit in ``TargetInfo.ticker``.
+
+    Either a known non-sector registry symbol, or a string matching the strict
+    ticker format. Everything else (Chinese names, sector placeholders,
+    free-form LLM inventions) is a pseudo-ticker and must be rejected upstream.
+    """
+    if not symbol:
+        return False
+    if symbol in _TRADABLE_KNOWN_SYMBOLS:
+        return True
+    return matches_tradable_format(symbol)

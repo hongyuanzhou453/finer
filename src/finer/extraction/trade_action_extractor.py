@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import warnings
 from datetime import datetime
@@ -455,6 +456,20 @@ class TradeActionExtractor:
             DeprecationWarning,
             stacklevel=2,
         )
+        # Quarantine hard gate (P0 #1 单一真相源收口): every extract path of
+        # this module funnels through here, and this is the only route to the
+        # module's legacy ``TradeAction(`` construction — which bypasses F3
+        # Intent / F4 Policy and the canonical composer. New code must never
+        # wire it; read-only migration tooling opts in explicitly.
+        if os.environ.get("FINER_ALLOW_LEGACY_PIPELINE", "").strip() != "1":
+            raise RuntimeError(
+                "TradeActionExtractor.extract_from_text is quarantined legacy: "
+                "it constructs non-canonical TradeActions (no intent_id / "
+                "policy_id / evidence trace). Use the F3→F4→F5 canonical "
+                "pipeline (finer.pipeline.canonical_runner). Set "
+                "FINER_ALLOW_LEGACY_PIPELINE=1 only for read-only migration "
+                "tooling."
+            )
         llm = await self._ensure_llm_client()
         if not llm:
             logger.error("No LLM client available")

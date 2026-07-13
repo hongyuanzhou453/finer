@@ -394,7 +394,12 @@ class AnnotationStore:
                     }
                 )
         else:
-            source_rows = self._sample_pair_rows(self._pairs_source_rows(), sample_size, seed)
+            # full-review 模式返回全量、忽略 sample_size（与 _pairs_quality 一致）。
+            # 修复: 前端无条件传 sample_size 曾把 full 模式降级为抽样，导致只能审 30 条。
+            if self.full_pair_review_required:
+                source_rows = self._pairs_source_rows()
+            else:
+                source_rows = self._sample_pair_rows(self._pairs_source_rows(), sample_size, seed)
             for row in source_rows:
                 ann = annotations.get(row["pair_id"])
                 item_status = self._annotation_status(task_id, ann)
@@ -1003,7 +1008,11 @@ class AnnotationStore:
                 "duplicate",
                 "other",
             ],
-            "pair_sample_size": DEFAULT_PAIR_SAMPLE_SIZE,
+            "pair_sample_size": (
+                len(self._pairs_source_rows())
+                if self.full_pair_review_required
+                else DEFAULT_PAIR_SAMPLE_SIZE
+            ),
             "pair_sample_seed": DEFAULT_PAIR_SAMPLE_SEED,
             "entity_aliases": entity_aliases,
         }

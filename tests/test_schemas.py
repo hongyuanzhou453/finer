@@ -95,6 +95,33 @@ class TestActionStep:
         with pytest.raises(ValidationError):
             ActionStep(sequence=0, action_type=ActionType.WATCH)
 
+    def test_action_step_delta_sign_matches_action_type(self):
+        """position_delta_pct must be + for ADD, - for REDUCE."""
+        add = ActionStep(sequence=1, action_type=ActionType.ADD, position_delta_pct=0.1)
+        assert add.position_delta_pct == 0.1
+        reduce = ActionStep(
+            sequence=1, action_type=ActionType.REDUCE, position_delta_pct=-0.25
+        )
+        assert reduce.position_delta_pct == -0.25
+
+    def test_action_step_delta_sign_violations_rejected(self):
+        """Wrong-signed or zero deltas raise ValidationError."""
+        with pytest.raises(ValidationError):
+            ActionStep(sequence=1, action_type=ActionType.ADD, position_delta_pct=-0.1)
+        with pytest.raises(ValidationError):
+            ActionStep(sequence=1, action_type=ActionType.REDUCE, position_delta_pct=0.1)
+        with pytest.raises(ValidationError):
+            ActionStep(sequence=1, action_type=ActionType.ADD, position_delta_pct=0.0)
+
+    def test_action_step_delta_optional_and_unrestricted_for_other_types(self):
+        """Delta is optional; non-ADD/REDUCE steps accept either sign."""
+        step = ActionStep(sequence=1, action_type=ActionType.ADD)
+        assert step.position_delta_pct is None
+        long_step = ActionStep(
+            sequence=1, action_type=ActionType.LONG, position_delta_pct=0.3
+        )
+        assert long_step.position_delta_pct == 0.3
+
 
 # =============================================================================
 # TargetInfo Tests
@@ -844,12 +871,12 @@ class TestExecutionTiming:
 
     def test_execution_timing_with_all_fields(self):
         """Test ExecutionTiming with all optional fields set."""
-        now = datetime.now()
-        effective = datetime(2026, 4, 15, 9, 30, 0)
+        published = datetime(2026, 4, 15, 9, 30, 0)
+        effective = datetime(2026, 4, 15, 10, 0, 0)
         timing = ExecutionTiming(
-            intent_published_at=now,
+            intent_published_at=published,
             intent_effective_at=effective,
-            action_decision_at=now,
+            action_decision_at=published,
             action_executable_at=datetime(2026, 4, 16, 9, 30, 0),
             market="US",
             timezone="America/New_York",

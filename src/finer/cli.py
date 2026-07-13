@@ -81,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     md_sync.add_argument("--start", help="Start date (YYYYMMDD)")
     md_sync.add_argument("--end", help="End date (YYYYMMDD)")
+    md_sync.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan sync without requiring TUSHARE_TOKEN, network calls, or writes",
+    )
 
     md_status = md_sub.add_parser("status", help="Show sync status")
 
@@ -103,6 +108,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     bt_show = bt_sub.add_parser("show", help="Show details of a saved backtest")
     bt_show.add_argument("backtest_id", help="Backtest ID to show")
+
+    # ── Incremental pipeline driver (F0→F8) ─────────────────────
+    drive_cmd = subparsers.add_parser(
+        "pipeline-drive",
+        help="Fill missing F1/F2/F5 outputs for imported content, then settle (F8)",
+    )
+    drive_cmd.add_argument("--limit", type=int, default=None, help="Max content items per pass")
+    drive_cmd.add_argument(
+        "--watch", type=int, default=None, metavar="SECONDS",
+        help="Keep driving on an interval (Ctrl+C to stop)",
+    )
+    drive_cmd.add_argument("--dry-run", action="store_true", help="Report the plan; write nothing")
+    drive_cmd.add_argument("--no-settle", action="store_true", help="Skip the F8 settle step")
+
+    # ── F8 settle lifecycle ──────────────────────────────────────
+    settle_cmd = subparsers.add_parser(
+        "settle",
+        help="Settle PENDING actions with terminal backtest results (VERIFIED/FAILED)",
+    )
+    settle_cmd.add_argument(
+        "--apply", action="store_true",
+        help="Write back (default is dry-run). Backs up data/F5_executed first.",
+    )
+    settle_cmd.add_argument("--limit", type=int, default=None, help="Max PENDING actions to process")
 
     return parser
 
@@ -163,6 +192,75 @@ def _cmd_feishu_watch(args: argparse.Namespace) -> dict:
     return {"status": "stopped", "cycles": cycle}
 
 
+def _cmd_pipeline_drive(args: argparse.Namespace) -> dict:
+    from finer.pipeline.driver import drive_once
+
+    def _one_pass() -> dict:
+        return drive_once(
+            limit=args.limit,
+            run_settle=not args.no_settle,
+            dry_run=args.dry_run,
+        ).to_dict()
+
+    if args.watch is None:
+        return _one_pass()
+
+    running = True
+
+    def _sigint_handler(sig, frame):
+        nonlocal running
+        print("\n⏹  Stopping pipeline driver...")
+        running = False
+
+    signal.signal(signal.SIGINT, _sigint_handler)
+    print(f"🚚  Driving pipeline (interval: {args.watch}s{' · dry-run' if args.dry_run else ''})")
+    print("   Press Ctrl+C to stop.\n")
+
+    cycle = 0
+    last: dict = {}
+    while running:
+        cycle += 1
+        print(f"── Drive cycle {cycle} ──")
+        try:
+            last = _one_pass()
+            print(
+                f"   f1={last['f1_ran']} f2={last['f2_ran']} f5={last['f5_ran']} "
+                f"skipped={last['skipped_complete']} failures={len(last['failures'])}"
+            )
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+
+        if running:
+            for _ in range(args.watch):
+                if not running:
+                    break
+                time.sleep(1)
+
+    return {"status": "stopped", "cycles": cycle, "last_report": last}
+
+
+def _cmd_settle(args: argparse.Namespace) -> dict:
+    import shutil
+    from datetime import datetime
+
+    from finer.backtest.settle import settle_actions
+    from finer.paths import DATA_ROOT
+
+    backup: str | None = None
+    if args.apply:
+        src = DATA_ROOT / "F5_executed"
+        if src.exists():
+            dst = DATA_ROOT / f"F5_executed.bak-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            shutil.copytree(src, dst)
+            backup = str(dst)
+            print(f"backup -> {dst}")
+
+    report = settle_actions(dry_run=not args.apply, limit=args.limit)
+    result = report.to_dict()
+    result["backup"] = backup
+    return result
+
+
 def _cmd_inbox_status(args: argparse.Namespace) -> dict:
     import json as json_mod
     from finer.config import load_feishu_config
@@ -203,12 +301,41 @@ def _cmd_inbox_status(args: argparse.Namespace) -> dict:
 def _cmd_market_data_sync(args: argparse.Namespace) -> dict:
     from finer.market_data.config import load_market_data_config
     from finer.market_data.service import MarketDataSyncService
+    from finer.market_data.status import build_sync_plan
 
-    config = load_market_data_config()
     start = _parse_date_arg(args.start) if args.start else None
     end = _parse_date_arg(args.end) if args.end else None
+    if not args.all and not args.table:
+        return {"error": "specify --all or --table"}
+    if getattr(args, "dry_run", False):
+        return build_sync_plan(
+            table=args.table,
+            sync_all=args.all,
+            start=start,
+            end=end,
+        )
 
-    with MarketDataSyncService(config) as svc:
+    try:
+        config = load_market_data_config(require_token=True)
+    except ValueError as exc:
+        return {
+            "status": "error",
+            "error": str(exc),
+            "token_configured": False,
+            "hint": "Set TUSHARE_TOKEN for real sync, or run with --dry-run to inspect the local plan.",
+        }
+
+    try:
+        svc_context = MarketDataSyncService(config)
+    except ImportError as exc:
+        return {
+            "status": "error",
+            "error": str(exc),
+            "token_configured": True,
+            "hint": "Install market data extras before real sync: pip install 'finer[market-data]'",
+        }
+
+    with svc_context as svc:
         if args.all:
             return svc.sync_all()
         elif args.table == "trade_cal":
@@ -228,13 +355,9 @@ def _cmd_market_data_sync(args: argparse.Namespace) -> dict:
 
 
 def _cmd_market_data_status(_args: argparse.Namespace) -> dict:
-    from finer.market_data.config import load_market_data_config
-    from finer.market_data.service import MarketDataSyncService
+    from finer.market_data.status import inspect_market_data
 
-    config = load_market_data_config()
-    with MarketDataSyncService(config) as svc:
-        status = svc.sync_status()
-    return {k: str(v) if v else "never" for k, v in status.items()}
+    return inspect_market_data()
 
 
 def _cmd_backtest_run(args: argparse.Namespace) -> dict:
@@ -245,25 +368,28 @@ def _cmd_backtest_run(args: argparse.Namespace) -> dict:
     from finer.backtest.storage import save_backtest_result
     from finer.schemas.trade_action import TradeAction
 
-    # Load TradeActions
+    # Load TradeActions. Handles all three persisted layouts: bare list,
+    # single-action dict, and the F5 batch wrapper {"actions": [...]}.
+    # from_dict (lax) restores string enums/datetimes from disk.
+    def _actions_from_json(data: object) -> list[TradeAction]:
+        if isinstance(data, dict) and isinstance(data.get("actions"), list):
+            items = data["actions"]
+        elif isinstance(data, list):
+            items = data
+        else:
+            items = [data]
+        return [TradeAction.from_dict(item) for item in items]
+
     actions_path = Path(args.actions)
     trade_actions: list[TradeAction] = []
 
     if actions_path.is_file():
         data = json_mod.loads(actions_path.read_text(encoding="utf-8"))
-        if isinstance(data, list):
-            for item in data:
-                trade_actions.append(TradeAction.model_validate(item))
-        else:
-            trade_actions.append(TradeAction.model_validate(data))
+        trade_actions.extend(_actions_from_json(data))
     elif actions_path.is_dir():
         for f in sorted(actions_path.glob("*.json")):
             data = json_mod.loads(f.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                for item in data:
-                    trade_actions.append(TradeAction.model_validate(item))
-            else:
-                trade_actions.append(TradeAction.model_validate(data))
+            trade_actions.extend(_actions_from_json(data))
     else:
         return {"error": f"Path not found: {actions_path}"}
 
@@ -380,6 +506,10 @@ def main() -> None:
         else:
             parser.error(f"unknown backtest subcommand: {args.bt_command}")
             return
+    elif args.command == "pipeline-drive":
+        result = _cmd_pipeline_drive(args)
+    elif args.command == "settle":
+        result = _cmd_settle(args)
     else:
         parser.error(f"unknown command: {args.command}")
         return

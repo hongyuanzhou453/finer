@@ -179,9 +179,9 @@ class TestUSTiming:
 class TestTemporalAnchorResolution:
     """Test intent_effective_at extraction from temporal anchors."""
 
-    def test_effective_trade_at_preferred(self) -> None:
-        """effective_trade_at takes precedence over mentioned_at."""
-        effective = datetime(2026, 4, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    def test_effective_trade_at_used(self) -> None:
+        """An explicit effective_trade_at anchor (>= published) populates the clock."""
+        effective = datetime(2026, 4, 23, 11, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
         mentioned = datetime(2026, 4, 22, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
         anchors = [
             _make_anchor("mentioned_at", mentioned),
@@ -195,8 +195,12 @@ class TestTemporalAnchorResolution:
 
         assert result.intent_effective_at == effective
 
-    def test_mentioned_at_fallback(self) -> None:
-        """Falls back to mentioned_at when no effective_trade_at."""
+    def test_mentioned_at_is_not_used_as_effective(self) -> None:
+        """mentioned_at is a contextual reference, NOT the effective time.
+
+        Previously this fell back to mentioned_at; that conflation is the bug
+        that produced intent_effective_at < intent_published_at on every action.
+        """
         mentioned = datetime(2026, 4, 22, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
         anchors = [_make_anchor("mentioned_at", mentioned)]
         envelope = _make_envelope(datetime(2026, 4, 23, 10, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
@@ -205,7 +209,30 @@ class TestTemporalAnchorResolution:
             envelope=envelope, market="CN", temporal_anchors=anchors,
         )
 
-        assert result.intent_effective_at == mentioned
+        assert result.intent_effective_at is None
+
+    def test_past_mentioned_at_does_not_invert_clocks(self) -> None:
+        """Regression for the real F2 data: published_at + many past mentioned_at.
+
+        Mirrors data/F2_anchored, where envelopes carry a published_at anchor plus
+        dozens of mentioned_at anchors resolving to an earlier date. The effective
+        clock must stay unresolved (None), never the past date, and the chain must
+        be forward-only.
+        """
+        published = datetime(2026, 3, 22, tzinfo=ZoneInfo("Asia/Shanghai"))
+        past = datetime(2026, 3, 9, tzinfo=ZoneInfo("Asia/Shanghai"))
+        anchors = [_make_anchor("published_at", published)] + [
+            _make_anchor("mentioned_at", past) for _ in range(5)
+        ]
+        envelope = _make_envelope(published)
+
+        result = build_execution_timing(
+            envelope=envelope, market="CN", temporal_anchors=anchors,
+        )
+
+        assert result.intent_effective_at is None
+        assert result.action_decision_at >= result.intent_published_at
+        assert result.action_executable_at >= result.action_decision_at
 
     def test_no_anchors(self) -> None:
         """No temporal anchors → intent_effective_at is None."""

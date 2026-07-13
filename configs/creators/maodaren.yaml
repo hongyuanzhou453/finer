@@ -1,0 +1,27 @@
+creator_id: maodaren
+display_name: 猫大人
+handle: 猫大人
+style_label: null                # 待补：需人工标注产品风格标签
+specialties: []                  # 待补
+aliases:
+  - 猫大人
+  - maodaren
+  - 猫
+  # feishu_f0_importer 默认 canonical id（历史体系）；registry.resolve
+  # 把它归并到本档案，为 F0 creator_mapping 断链修复铺路。
+  - kol_cat_lord_fire
+platforms:
+  - feishu
+platform_identities:
+  - platform: feishu
+    account_id: oc_6ff7bde4c69b7ca19f3a2f7fda426885   # configs/feishu.yaml watched_chats
+    account_name: 猫大人会员内容体验同步
+    metadata: {identity_kind: watched_chat}
+content_types:
+  - chat_export
+markets: []                      # 待补
+focus: []                        # 待补
+default_horizons: []             # 待补
+notes:
+  - 档案初建（2026-07-11）：字段抄自 configs/feishu.yaml 与 data/classification_memory/creator_patterns.json；标注字段待补
+enabled: true

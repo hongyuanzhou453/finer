@@ -15,6 +15,7 @@ import {
   Loader2,
   AlertTriangle,
   Tag,
+  ShieldCheck,
 } from "lucide-react";
 import type { NameLineage } from "@/lib/contracts";
 import { useAsyncData } from "@/lib/hooks/useAsyncData";
@@ -302,8 +303,15 @@ export default function KOLDetailPage() {
         </div>
       )}
 
-      {/* Backtest Link */}
-      <div className="mt-8 flex justify-end">
+      {/* Actions */}
+      <div className="mt-8 flex justify-end gap-3">
+        <Link
+          href={`/audit?kol=${kolId}`}
+          className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--table-border)] bg-white text-foreground/70 rounded-md hover:border-morningstar-red/30 hover:text-morningstar-red transition-colors text-sm font-medium"
+        >
+          <ShieldCheck className="w-4 h-4" />
+          在审计台查看证据链
+        </Link>
         <Link
           href={`/kol/${kolId}/backtest`}
           className="inline-flex items-center gap-2 px-4 py-2 bg-morningstar-red text-white rounded-md hover:bg-morningstar-red/90 transition-colors text-sm font-medium"

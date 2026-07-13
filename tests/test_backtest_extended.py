@@ -291,6 +291,18 @@ class TestBuildCnProvider:
         assert isinstance(provider, MockPriceProvider)
         assert provider.get_price('000001.SZ', '2024-01-15') is not None
 
+    def test_daily_kline_without_parquet_falls_back_to_mock(self, tmp_path, monkeypatch):
+        """Non-Parquet files or empty partition dirs must not enable Tushare."""
+        import finer.paths
+        from finer.backtest.prices import _build_cn_provider
+
+        (tmp_path / 'daily_kline' / 'date=20240115').mkdir(parents=True)
+        (tmp_path / 'daily_kline' / '.DS_Store').write_text('', encoding='utf-8')
+        monkeypatch.setattr(finer.paths, 'MARKET_PARQUET_DIR', tmp_path)
+
+        provider = _build_cn_provider()
+        assert isinstance(provider, MockPriceProvider)
+
     def test_synced_daily_kline_uses_tushare_provider(self, tmp_path, monkeypatch):
         """daily_kline with at least one partition → TusharePriceProvider."""
         import finer.paths
@@ -299,6 +311,7 @@ class TestBuildCnProvider:
 
         partition = tmp_path / 'daily_kline' / 'date=20240115'
         partition.mkdir(parents=True)
+        (partition / 'data.parquet').write_bytes(b'placeholder')
         monkeypatch.setattr(finer.paths, 'MARKET_PARQUET_DIR', tmp_path)
 
         provider = _build_cn_provider()

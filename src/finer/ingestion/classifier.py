@@ -63,19 +63,47 @@ _TAG_TO_TYPE: dict[str, str] = {
 }
 
 
-def _extract_tags(text: str) -> tuple[str | None, str | None]:
+def _merged_creator_tags() -> dict[str, str]:
+    """Static tag map merged with KOL registry aliases (registry wins).
+
+    The static ``_TAG_TO_CREATOR`` stays as the baseline: it routes
+    pseudo-creators (研报 → _research) that will never have a registry
+    profile, and it is the safety net when the registry is unavailable —
+    F0 ingestion must never go down because a services import failed.
+    Registry aliases layer on top so onboarding a creator (one YAML) makes
+    its hashtags classify correctly without touching this module.
+    """
+    mapping = dict(_TAG_TO_CREATOR)
+    try:
+        from finer.services.kol_registry import get_registry
+
+        for profile in get_registry().list_profiles():
+            mapping[profile.creator_id] = profile.creator_id
+            for alias in profile.aliases:
+                if alias:
+                    mapping[alias] = profile.creator_id
+    except Exception:
+        logger.warning("kol_registry unavailable, using static tag map", exc_info=True)
+    return mapping
+
+
+def _extract_tags(
+    text: str,
+    tag_map: dict[str, str] | None = None,
+) -> tuple[str | None, str | None]:
     """Extract creator_id and source_type from hashtags in text."""
+    creator_map = tag_map if tag_map is not None else _TAG_TO_CREATOR
     tags = _TAG_PATTERN.findall(text)
     creator_id = None
     source_type = None
-    
+
     for tag in tags:
         tag_lower = tag.lower()
-        if tag in _TAG_TO_CREATOR:
-            creator_id = _TAG_TO_CREATOR[tag]
-        elif tag_lower in _TAG_TO_CREATOR:
-            creator_id = _TAG_TO_CREATOR[tag_lower]
-        
+        if tag in creator_map:
+            creator_id = creator_map[tag]
+        elif tag_lower in creator_map:
+            creator_id = creator_map[tag_lower]
+
         if tag in _TAG_TO_TYPE:
             source_type = _TAG_TO_TYPE[tag]
         elif tag_lower in _TAG_TO_TYPE:
@@ -205,6 +233,8 @@ class FileClassifier:
         self.rules = config.get("classification", {}).get("rules", [])
         self.default = config.get("classification", {}).get("default", {})
         self.ai_enabled = config.get("classification", {}).get("ai_enabled", False)
+        # Static baseline + registry aliases (see _merged_creator_tags).
+        self._tag_to_creator = _merged_creator_tags()
 
     def classify(
         self,
@@ -226,7 +256,7 @@ class FileClassifier:
         published_at = _infer_date(filename, sent_at)
 
         # ── Priority 1: Explicit tags ──
-        tag_creator, tag_type = _extract_tags(context_text)
+        tag_creator, tag_type = _extract_tags(context_text, self._tag_to_creator)
         if tag_creator and tag_type:
             return ClassificationResult(
                 creator_id=tag_creator,

@@ -80,7 +80,23 @@ class DeepSeekClient:
         retry_base_delay: float = 1.0,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
-        self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        # When the generic FINER_LLM_* override points this client at another
+        # endpoint, the key must follow the endpoint via FINER_LLM_API_KEY_ENV.
+        # Previously base_url/model honored the override but the key stayed
+        # hardcoded to DEEPSEEK_API_KEY, sending DeepSeek's key to (e.g.) the
+        # MiMo endpoint → 401.
+        generic_url = os.getenv("FINER_LLM_BASE_URL") if not (
+            base_url or os.getenv("DEEPSEEK_BASE_URL")
+        ) else None
+        key_env = os.getenv("FINER_LLM_API_KEY_ENV") if generic_url else None
+
+        if api_key:
+            self.api_key = api_key
+        elif key_env:
+            self.api_key = os.getenv(key_env) or os.getenv("DEEPSEEK_API_KEY")
+        else:
+            self.api_key = os.getenv("DEEPSEEK_API_KEY")
+
         self.base_url = (
             base_url
             or os.getenv("DEEPSEEK_BASE_URL")
@@ -94,7 +110,9 @@ class DeepSeekClient:
         self.transport = transport
 
         if not self.api_key:
-            raise DeepSeekConfigurationError("DEEPSEEK_API_KEY is not configured")
+            raise DeepSeekConfigurationError(
+                f"API key is not configured ({key_env or 'DEEPSEEK_API_KEY'})"
+            )
 
     @classmethod
     def from_env(cls, **kwargs: Any) -> "DeepSeekClient":

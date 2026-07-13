@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -36,6 +37,18 @@ from typing import Any, Callable, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from finer.paths import DATA_ROOT, REPO_ROOT
+
+# Quarantine hard gate (P0 #1 单一真相源收口): importing this module is an
+# error for new code — it lazily wires the legacy direct TradeActionExtractor
+# and L0-L8 stage naming. Read-only migration tooling opts in explicitly with
+# the same escape hatch that unlocks the legacy extractor entry.
+if os.environ.get("FINER_ALLOW_LEGACY_PIPELINE", "").strip() != "1":
+    raise ImportError(
+        "finer.pipeline.orchestrator is quarantined (deprecated L0-L8 "
+        "pipeline). Use finer.pipeline.canonical_runner / finer.pipeline."
+        "driver. Set FINER_ALLOW_LEGACY_PIPELINE=1 only for read-only "
+        "migration tooling."
+    )
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, LayoutGrid, ListFilter } from "lucide-react";
+import { Activity, LayoutGrid, ListFilter, ShieldCheck } from "lucide-react";
 import type {
   BacktestSummary,
   KOL,
@@ -184,6 +184,13 @@ export default function ResearchPage() {
             </select>
           </div>
 
+          <Link
+            href={selectedId ? `/audit?kol=${selectedId}` : "/audit"}
+            className="hidden items-center gap-1.5 rounded-sm border border-[var(--table-border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-foreground/70 transition-colors hover:border-foreground/30 sm:inline-flex"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" strokeWidth={1.8} />
+            审计台
+          </Link>
           <Link
             href="/kol"
             className="hidden items-center gap-1.5 rounded-sm border border-[var(--table-border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-foreground/70 transition-colors hover:border-foreground/30 sm:inline-flex"

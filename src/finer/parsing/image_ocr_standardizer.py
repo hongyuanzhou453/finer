@@ -26,12 +26,15 @@ import hashlib
 import logging
 import mimetypes
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from finer.llm.client import LLMClient
 from finer.model_config import get_vision_registry
+from finer.parsing.layout_ocr_client import LayoutOCRClient
+from finer.parsing.ocr_quality import gate_vision_output
 from finer.schemas.content import ContentRecord
 from finer.schemas.content_envelope import (
     BlockProvenance,
@@ -86,6 +89,7 @@ class ImageOCRLayoutStandardizer:
 
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self._llm = llm_client
+        self._layout_client: Optional[LayoutOCRClient] = None
 
     def standardize(self, f0_record: ContentRecord, raw_path: Path) -> ContentEnvelope:
         """Full F1 standardization pipeline for image content."""
@@ -104,15 +108,26 @@ class ImageOCRLayoutStandardizer:
             blocks = self._chunk_ocr_markdown(ocr_markdown, raw_path)
             source_hash = self._hash_text(ocr_markdown)
         else:
-            vision_text = self._extract_via_vision_api(raw_path)
-            if vision_text:
-                model_name = self._resolve_llm_model_name()
-                blocks = self._chunk_ocr_markdown(vision_text, raw_path, model_name=model_name)
-                source_hash = self._hash_text(vision_text)
-            else:
-                llm_error = getattr(self._llm, "last_error", None) if self._llm else "no_llm_client"
-                blocks = self._build_fallback_blocks(f0_record, raw_path, llm_error=llm_error)
+            # Design 1: layout-aware OCR (Qwen-VL-OCR) is the primary OCR engine —
+            # it returns text WITH pixel bbox, so blocks gain region-level
+            # provenance. Fall back to MiMo chat-vision text (bbox=None) only when
+            # layout OCR is unavailable or fails, preserving robustness.
+            regions = self._extract_layout_regions(raw_path)
+            if regions:
+                blocks = self._build_blocks_from_regions(
+                    regions, raw_path, model_name=self._resolve_layout_model_name()
+                )
                 source_hash = self._hash_file(raw_path)
+            else:
+                vision_text = self._extract_via_vision_api(raw_path)
+                if vision_text:
+                    model_name = self._resolve_llm_model_name()
+                    blocks = self._chunk_ocr_markdown(vision_text, raw_path, model_name=model_name)
+                    source_hash = self._hash_text(vision_text)
+                else:
+                    llm_error = getattr(self._llm, "last_error", None) if self._llm else "no_llm_client"
+                    blocks = self._build_fallback_blocks(f0_record, raw_path, llm_error=llm_error)
+                    source_hash = self._hash_file(raw_path)
 
         # Step 1b: Guard — if extraction produced no usable blocks, emit a
         # failure block so the envelope never passes silently as empty.
@@ -238,7 +253,10 @@ class ImageOCRLayoutStandardizer:
     # -------------------------------------------------------------------------
 
     def _build_blocks_from_regions(
-        self, regions: List[Dict[str, Any]], raw_path: Path
+        self,
+        regions: List[Dict[str, Any]],
+        raw_path: Path,
+        model_name: Optional[str] = None,
     ) -> List[ContentBlock]:
         """Build ContentBlocks from structured layout regions."""
         blocks: List[ContentBlock] = []
@@ -257,6 +275,16 @@ class ImageOCRLayoutStandardizer:
             block_type = self._map_region_type(region.get("type", ""), text)
             bbox = self._extract_bbox(region)
 
+            metadata: Dict[str, Any] = {
+                "layout_available": True,
+                "region_role": region.get("role", ""),
+                "nested_source_type": region.get("nested_source_type", ""),
+            }
+            # Per-cell boxes within the region — kept for fine-grained traceability
+            # (point back to the exact line/cell, not just the region).
+            if region.get("line_boxes"):
+                metadata["line_boxes"] = region["line_boxes"]
+
             blocks.append(
                 self._build_block(
                     block_type=block_type,
@@ -264,11 +292,8 @@ class ImageOCRLayoutStandardizer:
                     raw_path=raw_path,
                     bbox=bbox,
                     source_hash=self._hash_text(text),
-                    metadata={
-                        "layout_available": True,
-                        "region_role": region.get("role", ""),
-                        "nested_source_type": region.get("nested_source_type", ""),
-                    },
+                    model_name=model_name,
+                    metadata=metadata,
                 )
             )
 
@@ -382,15 +407,40 @@ class ImageOCRLayoutStandardizer:
                 "只需返回Markdown本身，不要附加额外问候语。"
             )
 
-            result = self._llm.chat_with_images(
-                text=prompt,
-                image_base64=image_b64,
-                mime_type=mime_type,
-            )
+            # Retry on rate-limit (429): a single throttled call must NOT silently
+            # degrade to a non-OCR fallback block. Exponential backoff: 2,4,8,16s.
+            max_attempts = 5
+            for attempt in range(max_attempts):
+                result = self._llm.chat_with_images(
+                    text=prompt,
+                    image_base64=image_b64,
+                    mime_type=mime_type,
+                )
 
-            if result and len(result.strip()) > 10:
-                logger.info("Vision API extracted %d chars from %s", len(result), raw_path.name)
-                return result
+                if result and len(result.strip()) > 10:
+                    gated = gate_vision_output(result)
+                    if gated is not None:
+                        logger.info("Vision API extracted %d chars from %s", len(gated), raw_path.name)
+                        return gated
+                    # Refusal / placeholder-only — NOT real OCR. Don't retry; fall
+                    # through to a flagged fallback instead of a fake success.
+                    try:
+                        self._llm.last_error = "vision_gated"
+                    except Exception:
+                        pass
+                    logger.warning("Vision output gated as refusal/empty for %s", raw_path.name)
+                    return None
+
+                last_err = getattr(self._llm, "last_error", None)
+                if last_err == "rate_limited" and attempt < max_attempts - 1:
+                    backoff = 2.0 * (2 ** attempt)
+                    logger.warning(
+                        "Vision rate-limited for %s, retry %d/%d after %.0fs",
+                        raw_path.name, attempt + 1, max_attempts - 1, backoff,
+                    )
+                    time.sleep(backoff)
+                    continue
+                break
 
             logger.warning("Vision API returned insufficient text for %s", raw_path.name)
             return None
@@ -398,6 +448,39 @@ class ImageOCRLayoutStandardizer:
         except Exception:
             logger.warning("Vision API failed for %s", raw_path.name, exc_info=True)
             return None
+
+    # -------------------------------------------------------------------------
+    # Path 0: Layout-aware OCR (Qwen-VL-OCR) — primary, returns bbox
+    # -------------------------------------------------------------------------
+
+    def _extract_layout_regions(self, raw_path: Path) -> Optional[List[Dict[str, Any]]]:
+        """Layout-aware OCR → regions with pixel bbox, or None to fall back.
+
+        Coordinates are in the raw image's own pixel space — exactly what
+        ContentBlock.bbox should record for a standalone image. Returns None
+        (not an exception) on any failure so the caller cleanly falls back to the
+        MiMo chat-vision text path.
+        """
+        if not raw_path.exists():
+            return None
+        if self._layout_client is None:
+            self._layout_client = LayoutOCRClient()
+        if not self._layout_client.available:
+            return None
+        try:
+            image_bytes = raw_path.read_bytes()
+            mime_type = mimetypes.guess_type(str(raw_path))[0] or "image/png"
+            regions = self._layout_client.extract_layout_regions(image_bytes, mime_type)
+        except Exception:
+            logger.warning("Layout OCR failed for %s", raw_path.name, exc_info=True)
+            return None
+        if regions:
+            logger.info("Layout OCR extracted %d regions from %s", len(regions), raw_path.name)
+        return regions or None
+
+    def _resolve_layout_model_name(self) -> Optional[str]:
+        """Model id of the layout OCR engine, for BlockProvenance."""
+        return self._layout_client.model if self._layout_client else None
 
     # -------------------------------------------------------------------------
     # Fallback: no OCR, no layout, no vision API
@@ -666,7 +749,7 @@ class ImageOCRLayoutStandardizer:
             source_uri=f0_record.raw_path,
             source_title=raw_path.name,
             raw_path=str(raw_path),
-            creator_id=f0_record.metadata.get("creator_id") if f0_record.metadata else None,
+            creator_id=f0_record.creator_id,
             creator_name=f0_record.creator_name,
             published_at=published_at,
             ingested_at=datetime.now(),

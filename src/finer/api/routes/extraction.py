@@ -14,7 +14,10 @@ from datetime import datetime
 import json
 import logging
 import asyncio
+import os
 
+from finer.errors import ErrorCode
+from finer.errors.exceptions import FinerError
 from finer.paths import REPO_ROOT, DATA_ROOT
 
 router = APIRouter()
@@ -132,16 +135,31 @@ def _action_to_response(action) -> TradeActionResponse:
 
 @router.post("/extract", response_model=ExtractionResponse)
 async def extract_trade_actions(request: ExtractionRequest):
-    """从文本提取 Trade Actions (canonical F3→F4→F5).
+    """从原始文本提取 Trade Actions —— DEV/DEMO 便捷入口，非 canonical。
+
+    ⚠️ 该端点把一段裸文本塞进一个**伪造的最小 ContentEnvelope**（无 F2
+    entity/temporal anchor、无真实 evidence span），因此证据质量不足，
+    **不得作为 canonical 主链路数据使用**。
+
+    Canonical 语义只走 F2-anchored envelope：
+      - HTTP：POST /api/extraction/pipeline（从 data/F2_anchored 读取）
+      - 程序内：finer.pipeline.canonical_runner.run_canonical_from_envelope()
+
+    保留本端点仅用于开发联调与 demo。
 
     Args:
         request: 包含文本和可选上下文的请求
 
     Returns:
-        ExtractionResponse 包含提取的 Trade Actions
+        ExtractionResponse（model 标记为 ``dev-rawtext-*``，标识非 canonical 来源）
     """
     import time
     start_time = time.time()
+
+    logger.warning(
+        "POST /api/extraction/extract is a DEV/DEMO raw-text path (fabricated "
+        "envelope, non-canonical). Use /api/extraction/pipeline for canonical traces."
+    )
 
     # 构建上下文
     context = {
@@ -153,7 +171,7 @@ async def extract_trade_actions(request: ExtractionRequest):
         context["timestamp"] = request.timestamp
 
     try:
-        # Canonical 路径: F3→F4→F5
+        # DEV/DEMO 路径：deprecated raw-text 入口，伪造 envelope，非 canonical
         from finer.pipeline.canonical_runner import run_canonical_extraction
 
         trade_actions = await run_canonical_extraction(
@@ -172,7 +190,7 @@ async def extract_trade_actions(request: ExtractionRequest):
             actions=actions,
             total_actions=len(actions),
             avg_confidence=avg_conf,
-            model=f"canonical-{request.strategy}",
+            model=f"dev-rawtext-{request.strategy}",
             processing_time_ms=(time.time() - start_time) * 1000,
         )
 
@@ -184,58 +202,30 @@ async def extract_trade_actions(request: ExtractionRequest):
         raise HTTPException(status_code=500, detail=f"提取失败: {e}")
 
 
-@router.post("/batch", response_model=List[ExtractionResponse])
+@router.post("/batch")
 async def batch_extract(request: BatchExtractionRequest):
-    # DEPRECATED: Legacy extraction endpoint. New code should use canonical F3→F4→F5 pipeline.
-    """批量提取 Trade Actions.
+    """批量提取 Trade Actions — GONE (410).
 
-    Args:
-        request: 包含多个待提取项目的请求
-
-    Returns:
-        List[ExtractionResponse] 每个项目的提取结果
+    Retired: this was the last live consumer of the legacy direct
+    ``TradeActionExtractor`` path, which bypasses F3 Intent / F4 Policy and
+    produces non-canonical actions. Dashboard has zero callers (verified
+    2026-07-11). The request/response models are kept so existing clients
+    get a typed 410 with a fix_hint instead of a 404.
     """
-    try:
-        from finer.extraction.trade_action_extractor import TradeActionExtractor
-
-        extractor = TradeActionExtractor()
-
-        # 执行批量提取
-        results = await extractor.batch_extract(
-            items=request.items,
-            parallel=request.parallel,
-            max_concurrency=request.max_concurrency,
-        )
-
-        # 转换结果
-        responses = []
-        for result in results:
-            if result.success:
-                actions = [_action_to_response(a) for a in result.actions]
-                responses.append(ExtractionResponse(
-                    success=True,
-                    actions=actions,
-                    total_actions=len(actions),
-                    avg_confidence=result.avg_confidence,
-                    model=extractor.model_version,
-                    processing_time_ms=0,
-                ))
-            else:
-                responses.append(ExtractionResponse(
-                    success=False,
-                    actions=[],
-                    total_actions=0,
-                    avg_confidence=0.0,
-                    model=extractor.model_version,
-                    processing_time_ms=0,
-                    error=result.error,
-                ))
-
-        return responses
-
-    except Exception as e:
-        logger.error(f"Batch extraction failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"批量提取失败: {e}")
+    raise FinerError(
+        ErrorCode.API_NTF_001,
+        "POST /api/extraction/batch has been retired: the legacy direct "
+        "extraction path bypasses F3→F4 and produces non-canonical actions.",
+        status_code=410,
+        stage="F5",
+        operation="batch_extract",
+        retryable=False,
+        details={
+            "requested_items": len(request.items),
+            "fix_hint": "Use POST /api/extraction/pipeline (canonical "
+                        "F3→F4→F5 over F2-anchored envelopes) instead.",
+        },
+    )
 
 
 @router.post("/pipeline")
@@ -285,9 +275,17 @@ async def _run_extraction_pipeline_async(
     output_path: Path,
     limit: int,
 ):
-    """异步执行提取管线 (canonical F3→F4→F5)."""
+    """异步执行提取管线 (canonical F3→F4→F5).
+
+    Per-file work is delegated to pipeline/driver.execute_f5_for_envelope —
+    the single per-envelope F5 implementation shared with the incremental
+    driver (route stays orchestration-only).
+    """
+    from finer.pipeline.driver import execute_f5_for_envelope
+
     try:
-        # 查找输入文件
+        output_path.mkdir(parents=True, exist_ok=True)
+
         input_files = list(input_path.glob("**/*.json"))[:limit]
         logger.info(f"Found {len(input_files)} files to process in {input_path}")
 
@@ -296,39 +294,17 @@ async def _run_extraction_pipeline_async(
 
         for file_path in input_files:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                text = data.get("text") or data.get("content") or data.get("clean_text", "")
-                if not text:
-                    logger.warning(f"No text content in {file_path}")
-                    continue
-
-                context = {
-                    "source_id": str(file_path),
-                    "source_file": file_path.name,
-                }
-
-                from finer.pipeline.canonical_runner import run_canonical_extraction
-                actions = await run_canonical_extraction(text, context)
-                model = "canonical-programmatic"
-
-                if actions:
-                    output_file = output_path / f"{file_path.stem}_actions.json"
-                    output_data = {
-                        "source_file": str(file_path),
-                        "extracted_at": datetime.now().isoformat(),
-                        "model": model,
-                        "actions": [a.model_dump() for a in actions],
-                    }
-                    with open(output_file, "w", encoding="utf-8") as f:
-                        json.dump(output_data, f, ensure_ascii=False, indent=2)
+                count, _model = await execute_f5_for_envelope(
+                    file_path,
+                    output_path,
+                    persist_root=output_path.parent,
+                )
+                if count:
                     processed += 1
-                    logger.info(f"Extracted {len(actions)} actions from {file_path.name}")
+                    logger.info(f"Extracted {count} actions from {file_path.name}")
                 else:
                     failed += 1
                     logger.warning(f"No actions extracted from {file_path.name}")
-
             except Exception as e:
                 failed += 1
                 logger.error(f"Failed to process {file_path}: {e}")

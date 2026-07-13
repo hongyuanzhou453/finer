@@ -26,7 +26,9 @@ def build_execution_timing(
 
     Args:
         envelope: Content envelope with published_at.
-        temporal_anchors: Temporal anchors from F2 (effective_trade_at / mentioned_at).
+        temporal_anchors: Temporal anchors from F2. Only ``effective_trade_at``
+            populates ``intent_effective_at``; ``mentioned_at`` dates are
+            contextual references and are ignored for timing.
         market: Market code — CN, HK, or US.
         intent_id: Associated intent ID (for logging; unused in timing logic).
 
@@ -77,21 +79,22 @@ def build_execution_timing(
 def _resolve_intent_effective_at(
     temporal_anchors: Optional[List[Any]],
 ) -> Optional[datetime]:
-    """Extract intent_effective_at from temporal anchors.
+    """Resolve intent_effective_at from temporal anchors.
 
-    Prefers 'effective_trade_at', falls back to 'mentioned_at'.
+    Only an explicit ``effective_trade_at`` anchor — the time the KOL says the
+    trade should take effect — populates this clock. ``mentioned_at`` anchors are
+    historical/contextual dates merely *referenced* in the text; they are NOT the
+    effective time. Conflating the two (the previous fallback) set
+    ``intent_effective_at`` to a date *before* publication on every action —
+    look-ahead that corrupts F8 backtest entry timing. When no effective_trade_at
+    anchor exists, the effective time is left unresolved (None) rather than
+    guessed from a referenced date.
     """
     if not temporal_anchors:
         return None
 
     for anchor in temporal_anchors:
         if getattr(anchor, "anchor_type", None) == "effective_trade_at":
-            resolved = getattr(anchor, "resolved_time", None)
-            if resolved:
-                return resolved
-
-    for anchor in temporal_anchors:
-        if getattr(anchor, "anchor_type", None) == "mentioned_at":
             resolved = getattr(anchor, "resolved_time", None)
             if resolved:
                 return resolved

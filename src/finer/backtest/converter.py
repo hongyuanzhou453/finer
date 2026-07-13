@@ -31,6 +31,11 @@ _DIRECTION_MAP = {
 _ACTION_TYPE_MAP = {
     ActionType.LONG: "long",
     ActionType.SHORT: "short",
+    # The legacy portfolio engine has no position-delta concept; ADD/REDUCE
+    # degrade to open/close, matching how these hints mapped before the
+    # fine-grained ActionType split.
+    ActionType.ADD: "long",
+    ActionType.REDUCE: "close_long",
     ActionType.CLOSE_LONG: "close_long",
     ActionType.CLOSE_SHORT: "close_short",
     ActionType.BUY_CALL: "buy_call",

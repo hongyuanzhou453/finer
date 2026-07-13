@@ -645,6 +645,78 @@ export type KOLTimelineEvent = {
   nameLineage?: NameLineage;
 };
 
+// =============================================================================
+// KOL Trading Style Profile (mirrors schemas/kol_profile.py, snake_case)
+// =============================================================================
+
+export type EntryStyle = "left_side" | "right_side" | "mixed" | "unknown";
+
+/** Hand-annotated trading style from configs/creators/*.yaml.
+ *  Tri-state semantics: null = 未标注, false = 明确不用, true = 明确使用. */
+export type DeclaredTradingStyle = {
+  uses_margin: boolean | null;
+  uses_leverage: boolean | null;
+  does_short: boolean | null;
+  entry_style: EntryStyle;
+  evidence_notes: string[];
+};
+
+/** Aggregate statistics over the KOL's attributed F5 TradeActions. */
+export type ObservedTradingStyle = {
+  sample_size: number;
+  directional_sample_size: number;
+  short_side_count: number;
+  short_ratio: number | null;
+  margin_mention_count: number;
+  leverage_mention_count: number;
+  left_side_count: number;
+  right_side_count: number;
+  entry_style_observed: EntryStyle;
+  entry_style_sample_size: number;
+  low_sample: boolean;
+  computed_at: string;
+  window_label: string;
+};
+
+/** Two-layer trading-style profile from GET /api/kol/style/{creator_id}. */
+export type TradingStyleProfile = {
+  creator_id: string;
+  display_name?: string | null;
+  declared: DeclaredTradingStyle | null;
+  observed: ObservedTradingStyle | null;
+};
+
+/** Platform account identity (mirrors schemas/kol_profile.py:PlatformIdentity). */
+export type PlatformIdentity = {
+  platform: string;
+  account_id: string;
+  account_name?: string | null;
+  avatar_url?: string | null;
+  verified: boolean;
+  follower_count?: number | null;
+  metadata: Record<string, unknown>;
+};
+
+/** configs/creators/*.yaml 注册表档案（GET /api/kol/registry，mirrors
+ *  schemas/kol_profile.py:CreatorProfile）。文件即真相源，只读。 */
+export type CreatorProfile = {
+  creator_id: string;
+  display_name: string | null;
+  handle: string | null;
+  style_label: string | null;
+  specialties: string[];
+  aliases: string[];
+  platforms: string[];
+  platform_identities: PlatformIdentity[];
+  content_types: string[];
+  markets: string[];
+  focus: string[];
+  default_horizons: string[];
+  notes: string[];
+  trading_style: DeclaredTradingStyle | null;
+  enabled: boolean;
+};
+
 export type BacktestTask = {
   id: string;
   name: string;
@@ -1381,3 +1453,268 @@ export interface MarketWindowResult {
   anchor_pct_chg?: number | null;
   window?: MarketBar[];
 }
+
+// =============================================================================
+// F3 Intent Schema Types (mirrors src/finer/schemas/investment_intent.py)
+// =============================================================================
+
+export type IntentTargetType =
+  | "stock"
+  | "sector"
+  | "index"
+  | "macro"
+  | "commodity"
+  | "crypto"
+  | "unknown";
+
+export type IntentDirection = "bullish" | "bearish" | "neutral" | "mixed" | "unknown";
+
+export type IntentActionability =
+  | "opinion" //          纯观点，无行动意图
+  | "watch" //            观察名单，待机
+  | "explicit_action" //  明确的行动指令
+  | "review_required"; // 需人工审核
+
+export type PositionDeltaHint =
+  | "open"
+  | "add"
+  | "reduce"
+  | "hold"
+  | "exit"
+  | "none"
+  | "unknown";
+
+export type IntentRiskPreference =
+  | "aggressive"
+  | "balanced"
+  | "conservative"
+  | "unknown";
+
+export type IntentTimeHorizon =
+  | "intraday"
+  | "short_term"
+  | "medium_term"
+  | "long_term"
+  | "unknown";
+
+/** F3 normalized investment intent (mirrors NormalizedInvestmentIntent). */
+export type NormalizedInvestmentIntent = {
+  intent_id: string;
+  schema_version: string;
+  envelope_id: string;
+  block_ids: string[];
+  creator_id?: string;
+  target_type: IntentTargetType;
+  target_name: string;
+  target_symbol?: string;
+  market?: string;
+  direction: IntentDirection;
+  actionability: IntentActionability;
+  position_delta_hint: PositionDeltaHint;
+  conviction: number; //       0..1
+  sentiment_score?: number; // -1..1
+  risk_preference_hint: IntentRiskPreference;
+  time_horizon_hint: IntentTimeHorizon;
+  temporal_anchor_ids: string[];
+  evidence_span_ids: string[];
+  ambiguity_flags: string[];
+  confidence: number; //       0..1
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+// =============================================================================
+// F2 Evidence Schema Types (mirrors src/finer/schemas/evidence.py)
+// =============================================================================
+
+/** F2 evidence span anchoring a claim to source text. */
+export type EvidenceSpan = {
+  schema_version: string;
+  evidence_span_id: string;
+  block_id: string;
+  char_start: number;
+  char_end: number;
+  text: string;
+  confidence: number; // 0..1
+  span_type?: string;
+  metadata: Record<string, unknown>;
+};
+
+// =============================================================================
+// F5 TradeAction Schema Types (mirrors src/finer/schemas/trade_action.py)
+// Subset relevant to the audit view; the full Pydantic model also carries
+// enrichment / backtest_result / rlhf_feedback / lineage / version_info.
+// =============================================================================
+
+export type TradeDirection =
+  | "bullish"
+  | "bearish"
+  | "neutral"
+  | "watchlist"
+  | "risk_warning";
+
+export type ActionType =
+  | "long"
+  | "short"
+  | "add"
+  | "reduce"
+  | "close_long"
+  | "close_short"
+  | "buy_call"
+  | "sell_call"
+  | "buy_put"
+  | "sell_put"
+  | "hold"
+  | "watch"
+  | "buy_and_hold";
+
+export type TriggerType =
+  | "price_threshold"
+  | "breakout"
+  | "support_resistance"
+  | "indicator_signal"
+  | "time_based"
+  | "news_event"
+  | "manual";
+
+export type TradeValidationStatus = "pending" | "verified" | "failed" | "under_review";
+
+export type ExitReason =
+  | "target_reached"
+  | "stop_loss"
+  | "time_exit"
+  | "signal_reversal"
+  | "manual"
+  | "end_of_period"
+  | "unknown";
+
+export type MarketSession =
+  | "pre_market"
+  | "regular"
+  | "after_close"
+  | "non_trading_day"
+  | "unknown";
+
+export type InstrumentType =
+  | "stock"
+  | "option"
+  | "etf"
+  | "index_future"
+  | "crypto"
+  | "unspecified";
+
+export type SourceInfo = {
+  creator_id?: string;
+  content_id: string;
+  evidence_text: string;
+  evidence_start_idx?: number;
+  evidence_end_idx?: number;
+  content_url?: string;
+};
+
+export type TargetInfo = {
+  ticker: string;
+  ticker_normalized?: string;
+  market?: string;
+  instrument_type: InstrumentType;
+  company_name?: string;
+};
+
+export type ActionStep = {
+  sequence: number;
+  action_type: ActionType;
+  trigger_condition?: string;
+  trigger_type: TriggerType;
+  target_price_low?: number | null;
+  target_price_high?: number | null;
+  position_size_pct?: number | null;
+  /** Signed portfolio-fraction delta: + = increase exposure, - = decrease. */
+  position_delta_pct?: number | null;
+  notes?: string;
+};
+
+/** F5 four-clock execution timing (mirrors ExecutionTiming). */
+export type ExecutionTiming = {
+  intent_published_at: string;
+  intent_effective_at?: string;
+  action_decision_at: string;
+  action_executable_at: string;
+  market: string;
+  timezone: string;
+  market_session_at_publish: MarketSession;
+  execution_delay_reason?: string;
+  timing_policy_id: string;
+};
+
+/** F6 pipeline version anchor on a feedback record (mirrors
+ *  schemas/trade_action.py:PipelineSnapshot). Server-side filled from the
+ *  reviewed action — clients never supply it. */
+export type PipelineSnapshot = {
+  f5_model?: string | null;
+  extractor_version?: string | null;
+  prompt_version?: string | null;
+  schema_version?: string | null;
+  config_hash?: string | null;
+  trade_action_source_file?: string | null;
+  action_snapshot: Record<string, unknown>;
+};
+
+/** F5 trade action (audit subset of the full Pydantic TradeAction). */
+export type TradeAction = {
+  trade_action_id: string;
+  timestamp: string;
+  source: SourceInfo;
+  target: TargetInfo;
+  direction: TradeDirection;
+  action_chain: ActionStep[];
+  intent_id?: string;
+  policy_id?: string;
+  evidence_span_ids: string[];
+  effective_trade_at?: string;
+  canonical_trace_status: CanonicalTraceStatus;
+  execution_timing?: ExecutionTiming;
+  confidence: number; // 0..1
+  model_version: string;
+  extraction_method: string;
+  validation_status: TradeValidationStatus;
+  time_horizon?: string;
+  rationale?: string;
+  tags: string[];
+};
+
+// =============================================================================
+// Audit Trace Bundle — frontend aggregate for /audit
+// See docs/specs/2026-06-04-dashboard-audit-trace-frontend.md §6
+// =============================================================================
+
+/** Minimal F1/F0 source context needed for audit highlighting. */
+export type EnvelopeContext = {
+  envelope_id: string;
+  source_text: string;
+  source_published_at?: string;
+  creator_id?: string;
+  kol_id?: string;
+};
+
+/** Compact TradeAction row for the audit list (left rail). */
+export type TradeActionSummary = {
+  trade_action_id: string;
+  ticker: string;
+  company_name?: string;
+  direction: TradeDirection;
+  summary: string;
+  canonical_trace_status: CanonicalTraceStatus;
+  validation_status: TradeValidationStatus;
+  kol_id?: string;
+  created_at: string;
+  backtest_return_pct?: number;
+};
+
+/** Full F0→F5 chain for one TradeAction, returned by the audit trace API. */
+export type AuditTraceBundle = {
+  trade_action: TradeAction;
+  intent: NormalizedInvestmentIntent | null; //  null = chain broken at F3
+  policy: PolicyMappingResult | null; //         null = chain broken at F4
+  evidence_spans: EvidenceSpan[]; //             F2
+  envelope: EnvelopeContext; //                  F1/F0 source
+};

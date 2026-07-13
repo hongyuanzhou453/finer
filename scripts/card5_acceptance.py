@@ -178,7 +178,8 @@ def main() -> int:
         print(f"AS-5b PASS quality_gate_status={gate.status} score={gate.score:.3f}")
 
         with tempfile.TemporaryDirectory(prefix="card5-golden-path-") as data_root:
-            trade_action = run_golden_path(envelope, data_root=Path(data_root))
+            gp_result = run_golden_path(envelope, data_root=Path(data_root))
+            trade_action = gp_result.primary_action
 
         timing = trade_action.execution_timing
         assert timing is not None
@@ -203,6 +204,7 @@ def main() -> int:
         assert trade_action.canonical_trace_status == "canonical"
         print(
             "AS-5d PASS run_golden_path completed without monkey-patching "
+            f"action_count={gp_result.action_count} "
             f"trade_action_id={trade_action.trade_action_id}"
         )
     finally:

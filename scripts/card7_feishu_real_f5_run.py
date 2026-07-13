@@ -367,11 +367,16 @@ def _run_card7(args: argparse.Namespace) -> int:
         }
 
         try:
-            action = run_golden_path(envelope, data_root=item_trace_dir)
+            gp_result = run_golden_path(envelope, data_root=item_trace_dir)
+            action = gp_result.primary_action
             _write_json(item_trace_dir / "F5_trade_action.json", action.model_dump(mode="json"))
             timing = action.execution_timing
             trace_entry["f5_status"] = "ok"
+            trace_entry["f5_action_count"] = gp_result.action_count
             trace_entry["trade_action"] = action.model_dump(mode="json")
+            trace_entry["trade_actions"] = [
+                a.model_dump(mode="json") for a in gp_result.trade_actions
+            ]
             trace_entry["execution_timing"] = timing.model_dump(mode="json") if timing else None
 
             if (

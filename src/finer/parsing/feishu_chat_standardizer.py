@@ -460,7 +460,9 @@ class FeishuChatMarkdownStandardizer:
             source_record_id=f0_record.content_id,
             standardization_profile=STANDARDIZATION_PROFILE,
             raw_path=raw_path_str,
-            creator_id=f0_metadata.get("feishu_sender_id"),
+            # F0's creator_id is authoritative (per-message sender is often a
+            # forwarder, not the KOL); fall back to sender only when F0 has none.
+            creator_id=f0_record.creator_id or f0_metadata.get("feishu_sender_id"),
             creator_name=f0_record.creator_name,
             title=f0_record.title or raw_path.name,
             published_at=f0_record.published_at,

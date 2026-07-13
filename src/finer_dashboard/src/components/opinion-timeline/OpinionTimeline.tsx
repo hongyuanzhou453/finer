@@ -19,7 +19,14 @@ import { cn } from "@/lib/utils";
 // 类型定义
 // ============================================
 
-export type OpinionDirection = "bullish" | "bearish" | "neutral";
+// Full 5-way TradeDirection — backend no longer collapses
+// risk_warning/watchlist into bearish/neutral.
+export type OpinionDirection =
+  | "bullish"
+  | "bearish"
+  | "neutral"
+  | "watchlist"
+  | "risk_warning";
 export type VerificationStatus = "success" | "failed" | "pending";
 
 export interface TimelineOpinion {
@@ -29,16 +36,22 @@ export interface TimelineOpinion {
   tickerName?: string;
   direction: OpinionDirection;
   confidence: number;
+  conviction?: number; // KOL belief strength from F3 (ranking signal)
   verificationStatus: VerificationStatus;
 
   // 验证结果
   priceChange?: number;
   holdingDays?: number;
+  exitReason?: string; // backtest exit_reason (stop_loss/target_reached/…)
 
   // 来源信息
   sourceText: string;
   author?: string;
   platform?: string;
+  market?: string; // target market, e.g. "CN"
+  traceStatus?: string; // canonical_trace_status of the F5 action
+  instrumentType?: string; // stock/etf/index_future/…/unspecified (concept downgrade)
+  executableAt?: string; // canonical execution clock (real signal time)
 
   // Action Chain
   actionChain?: ActionStep[];
@@ -50,10 +63,19 @@ export interface TimelineOpinion {
 
 export interface ActionStep {
   id: string;
-  actionType: "watch" | "long" | "short" | "close_long" | "close_short";
+  actionType:
+    | "watch"
+    | "long"
+    | "short"
+    | "add"
+    | "reduce"
+    | "close_long"
+    | "close_short";
   triggerCondition?: string;
   targetPriceLow?: string;
   targetPriceHigh?: string;
+  /** Signed portfolio-fraction delta: + = increase exposure, - = decrease. */
+  positionDeltaPct?: number | null;
 }
 
 export interface TimelineData {

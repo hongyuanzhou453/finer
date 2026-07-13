@@ -208,6 +208,28 @@ class TestProBar:
         df = api.pro_bar(ts_code="000001.SZ", start_date="20260508", end_date="20260509")
         assert len(df) == 2
 
+    def test_adjusted_prices_fall_back_to_raw_when_adj_factor_missing(self, tmp_path: Path) -> None:
+        d = tmp_path / "parquet"
+        df = pd.DataFrame({
+            "ts_code": ["000001.SZ"],
+            "trade_date": ["20260508"],
+            "open": [12.4],
+            "high": [12.8],
+            "low": [12.3],
+            "close": [12.7],
+            "pre_close": [12.4],
+            "change": [0.3],
+            "pct_chg": [2.42],
+            "vol": [1000000.0],
+            "amount": [12500000.0],
+        })
+        write_daily_kline(d, date(2026, 5, 8), df)
+
+        result = LocalPro(d).pro_bar(ts_code="000001.SZ", adj="qfq")
+
+        assert len(result) == 1
+        assert result.iloc[0]["close"] == 12.7
+
 
 # ── helpers ─────────────────────────────────────────────────────────────
 
@@ -217,3 +239,11 @@ class TestHelpers:
         api = LocalPro(data_dir)
         with pytest.raises(ValueError, match="unknown fields"):
             api.daily(fields="ts_code,nonexistent_col")
+
+    def test_empty_partition_directory_raises_file_not_found(self, tmp_path: Path) -> None:
+        (tmp_path / "parquet" / "daily_kline" / "date=20260508").mkdir(parents=True)
+
+        api = LocalPro(tmp_path / "parquet")
+
+        with pytest.raises(FileNotFoundError, match="daily_kline data not found"):
+            api.daily(ts_code="000001.SZ")

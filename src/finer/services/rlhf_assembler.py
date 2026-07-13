@@ -14,7 +14,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from finer.schemas.trade_action import PipelineSnapshot, TradeAction
+
+logger = logging.getLogger(__name__)
 
 
 def _num(v: Any) -> Optional[float]:
@@ -94,6 +101,69 @@ def apply_corrections(
     if ac is not None:
         corrected["action_chain"] = [normalize_action_step(s) for s in ac if isinstance(s, dict)]
     return corrected
+
+
+def action_to_extraction_dict(action: "TradeAction") -> Dict[str, Any]:
+    """Bootstrap an original_extraction dict from the reviewed TradeAction.
+
+    Keeps evidence_text — DPOExporter refuses pairs without it, and the
+    corrections normalization path (extraction_to_dict) drops it, which is
+    why client-supplied original_extraction alone made every export empty.
+    """
+    return {
+        "ticker": action.target.ticker,
+        "direction": action.direction.value,
+        "action_chain": [
+            {
+                "action_type": step.action_type.value,
+                "trigger_condition": step.trigger_condition,
+                "target_price_low": step.target_price_low,
+                "target_price_high": step.target_price_high,
+                "sequence": step.sequence,
+            }
+            for step in action.action_chain
+        ],
+        "rationale": action.rationale,
+        "evidence_text": action.source.evidence_text if action.source else "",
+    }
+
+
+def build_pipeline_snapshot(
+    action: "TradeAction",
+    source_file: Optional[str] = None,
+) -> "PipelineSnapshot":
+    """Assemble the pipeline version anchor for one reviewed action.
+
+    Version truth order: the action's own version_info (stamped by the
+    canonical composer), then the wrapper's model label read from the F5
+    source file, then the current global constants as a last resort for
+    unstamped legacy actions.
+    """
+    from finer.schemas.trade_action import PipelineSnapshot
+    from finer.services.versioning import (
+        CURRENT_PROMPT_VERSION,
+        CURRENT_SCHEMA_VERSION,
+    )
+
+    f5_model: Optional[str] = None
+    if source_file:
+        try:
+            wrapper = json.loads(Path(source_file).read_text(encoding="utf-8"))
+            if isinstance(wrapper, dict):
+                f5_model = wrapper.get("model")
+        except Exception as exc:  # snapshot is best-effort, never blocks submit
+            logger.warning("Could not read F5 wrapper %s: %s", source_file, exc)
+
+    vi = action.version_info
+    return PipelineSnapshot(
+        f5_model=f5_model,
+        extractor_version=action.model_version,
+        prompt_version=vi.prompt_version if vi else CURRENT_PROMPT_VERSION,
+        schema_version=vi.schema_version if vi else CURRENT_SCHEMA_VERSION,
+        config_hash=vi.extraction_config_hash if vi else None,
+        trade_action_source_file=source_file,
+        action_snapshot=action_to_extraction_dict(action),
+    )
 
 
 def build_preference(

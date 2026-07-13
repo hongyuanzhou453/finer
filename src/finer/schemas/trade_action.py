@@ -38,9 +38,17 @@ class TradeDirection(str, Enum):
 
 
 class ActionType(str, Enum):
-    """Specific trading operation types."""
+    """Specific trading operation types.
+
+    ADD/REDUCE are side-agnostic position deltas: the side (long/short) is
+    determined by the owning TradeAction.direction. The short-side automatic
+    path is currently escalated to review by GlobalBasePolicy, so ADD/REDUCE
+    in practice modify long exposure.
+    """
     LONG = "long"
     SHORT = "short"
+    ADD = "add"
+    REDUCE = "reduce"
     CLOSE_LONG = "close_long"
     CLOSE_SHORT = "close_short"
     BUY_CALL = "buy_call"
@@ -63,6 +71,20 @@ class TriggerType(str, Enum):
     MANUAL = "manual"
 
 
+# Single source of truth for the canonical-trace status values. The field
+# below stays ``str`` (the validator auto-assigns), but this Literal pins the
+# allowed set so the frontend contract-drift check has one authoritative
+# source instead of scraping the validator body. Mirrors
+# ``validate_canonical_trace``.
+CANONICAL_TRACE_STATUS_LITERAL = Literal["canonical", "partial", "non_canonical"]
+
+# Single source of truth for TargetInfo.instrument_type (mirrored by the
+# frontend InstrumentType union; guarded by scripts/check_contract_drift.py).
+INSTRUMENT_TYPE_LITERAL = Literal[
+    "stock", "option", "etf", "index_future", "crypto", "unspecified"
+]
+
+
 class ValidationStatus(str, Enum):
     """Validation lifecycle status."""
     PENDING = "pending"
@@ -78,6 +100,7 @@ class ExitReason(str, Enum):
     TIME_EXIT = "time_exit"
     SIGNAL_REVERSAL = "signal_reversal"
     MANUAL = "manual"
+    END_OF_PERIOD = "end_of_period"
     UNKNOWN = "unknown"
 
 
@@ -144,7 +167,7 @@ class TargetInfo(BaseModel):
         None,
         description="Market identifier (e.g., 'US', 'HK', 'CN', 'CRYPTO')"
     )
-    instrument_type: Literal["stock", "option", "etf", "index_future", "crypto", "unspecified"] = Field(
+    instrument_type: INSTRUMENT_TYPE_LITERAL = Field(
         "unspecified",
         description="Asset class"
     )
@@ -200,7 +223,19 @@ class ActionStep(BaseModel):
         None,
         gt=0,
         le=1,
-        description="Suggested position size as fraction of portfolio (must be > 0)"
+        description="Suggested absolute target position size as fraction of portfolio (must be > 0)"
+    )
+    position_delta_pct: Optional[float] = Field(
+        None,
+        ge=-1.0,
+        le=1.0,
+        description=(
+            "Signed portfolio-fraction delta for this step: positive = increase "
+            "exposure, negative = decrease. Distinct from position_size_pct, "
+            "which is an absolute target size. Not auto-filled by the canonical "
+            "builder (F4 only provides qualitative sizing hints); reserved for "
+            "human review and future numeric sizing layers."
+        )
     )
     notes: Optional[str] = Field(
         None,
@@ -215,6 +250,24 @@ class ActionStep(BaseModel):
                 raise ValueError(
                     f"target_price_low ({self.target_price_low}) cannot exceed "
                     f"target_price_high ({self.target_price_high})"
+                )
+        return self
+
+    @model_validator(mode='after')
+    def validate_position_delta(self) -> ActionStep:
+        """Ensure delta sign is consistent with the action type."""
+        if self.position_delta_pct is not None:
+            if self.position_delta_pct == 0:
+                raise ValueError("position_delta_pct must be non-zero when provided")
+            if self.action_type == ActionType.ADD and self.position_delta_pct <= 0:
+                raise ValueError(
+                    f"position_delta_pct must be positive for ADD steps, "
+                    f"got {self.position_delta_pct}"
+                )
+            if self.action_type == ActionType.REDUCE and self.position_delta_pct >= 0:
+                raise ValueError(
+                    f"position_delta_pct must be negative for REDUCE steps, "
+                    f"got {self.position_delta_pct}"
                 )
         return self
 
@@ -292,6 +345,48 @@ class MarketEnrichment(BaseModel):
     missing_fields: List[str] = Field(
         default_factory=list,
         description="Fields that could not be fetched"
+    )
+
+
+class PipelineSnapshot(BaseModel):
+    """Pipeline version anchor captured when human feedback is recorded.
+
+    A feedback record without this block cannot answer "which pipeline
+    version produced the output being judged", which makes the resulting
+    DPO pairs unusable across prompt/model revisions. Server-side filled
+    from the reviewed TradeAction (never trusted from the client).
+    """
+    model_config = ConfigDict(strict=True)
+
+    f5_model: Optional[str] = Field(
+        None,
+        description="F5 wrapper model label (e.g. 'canonical-f2-envelope')"
+    )
+    extractor_version: Optional[str] = Field(
+        None,
+        description="F3 extractor version stamped on the action "
+                    "(e.g. 'llm_consensus_v1'; 'v1.0' = unstamped legacy)"
+    )
+    prompt_version: Optional[str] = Field(
+        None,
+        description="Prompt template version from the action's version_info"
+    )
+    schema_version: Optional[str] = Field(
+        None,
+        description="Schema version from the action's version_info"
+    )
+    config_hash: Optional[str] = Field(
+        None,
+        description="Extraction config hash from the action's version_info"
+    )
+    trade_action_source_file: Optional[str] = Field(
+        None,
+        description="F5 file the reviewed action was loaded from"
+    )
+    action_snapshot: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Frozen copy of the judged fields (evidence_text, ticker, "
+                    "direction, action_chain summary) — survives later regens"
     )
 
 
@@ -442,6 +537,36 @@ class ExecutionTiming(BaseModel):
                     "(e.g., 'market-calendar-v1', 'policy-timing-follow-next-open')"
     )
 
+    @model_validator(mode='after')
+    def validate_clock_monotonicity(self) -> 'ExecutionTiming':
+        """Enforce four-clock monotonicity to prevent look-ahead / future-function.
+
+        The timing chain must move forward: a view cannot become effective or be
+        decided before it was published, and cannot be executable before it was
+        decided. This guards against upstream builders mapping an in-text
+        *referenced* date (e.g. an F2 ``mentioned_at`` anchor pointing to the
+        past) onto ``intent_effective_at`` — which previously produced
+        effective < published on every canonical action and corrupts F8 backtest
+        entry timing.
+        """
+        pub = self.intent_published_at
+        if self.intent_effective_at is not None and self.intent_effective_at < pub:
+            raise ValueError(
+                f"intent_effective_at ({self.intent_effective_at.isoformat()}) must not "
+                f"precede intent_published_at ({pub.isoformat()})"
+            )
+        if self.action_decision_at < pub:
+            raise ValueError(
+                f"action_decision_at ({self.action_decision_at.isoformat()}) must not "
+                f"precede intent_published_at ({pub.isoformat()})"
+            )
+        if self.action_executable_at < self.action_decision_at:
+            raise ValueError(
+                f"action_executable_at ({self.action_executable_at.isoformat()}) must not "
+                f"precede action_decision_at ({self.action_decision_at.isoformat()})"
+            )
+        return self
+
 
 # =============================================================================
 # Main TradeAction Model
@@ -572,6 +697,16 @@ class TradeAction(BaseModel):
         ge=0.0,
         le=1.0,
         description="Model confidence in this extraction (0-1)"
+    )
+
+    conviction: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="KOL belief strength carried from the F3 intent (0-1). "
+                    "Distinct from confidence: conviction measures how strongly "
+                    "the KOL expressed the view; confidence measures pipeline "
+                    "extraction certainty."
     )
 
     model_version: str = Field(
@@ -759,13 +894,18 @@ class TradeAction(BaseModel):
         """
         Create TradeAction from dictionary.
 
+        Persisted JSON stores enums/datetimes as plain strings, which the
+        strict=True model config rejects; lax validation restores them here
+        (construction-time strictness is unchanged). Same intent as the manual
+        coercion in TemporalAnchor.from_dict / ContentEnvelope.from_dict.
+
         Args:
             data: Dictionary with trade action data.
 
         Returns:
             TradeAction instance.
         """
-        return cls.model_validate(data)
+        return cls.model_validate(data, strict=False)
 
     def normalize_ticker(self) -> str:
         """

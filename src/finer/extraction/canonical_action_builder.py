@@ -26,9 +26,20 @@ Usage::
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+from finer.extraction.action_composer import (
+    # Re-exported for backward compatibility: these moved to action_composer,
+    # the single canonical TradeAction construction site.
+    CanonicalBuildError,
+    EmptyEvidenceSpanIdsError,
+    MissingExecutionTimingError,
+    MissingIntentIdError,
+    MissingPolicyIdError,
+    build_action_metadata,
+    compose_trade_action,
+    validate_structured_inputs,
+)
 from finer.schemas.investment_intent import NormalizedInvestmentIntent
 from finer.schemas.policy import ACTION_HINT_LITERAL, PolicyMappedIntent
 from finer.schemas.trade_action import (
@@ -43,34 +54,15 @@ from finer.schemas.trade_action import (
     ValidationStatus,
 )
 
-
-# =============================================================================
-# Input Validation Errors
-# =============================================================================
-
-
-class CanonicalBuildError(ValueError):
-    """Raised when CanonicalActionBuilder receives invalid inputs.
-
-    Subclasses distinguish specific rejection reasons for callers that
-    need to handle different failure modes programmatically.
-    """
-
-
-class MissingIntentIdError(CanonicalBuildError):
-    """NormalizedInvestmentIntent.intent_id is missing or empty."""
-
-
-class MissingPolicyIdError(CanonicalBuildError):
-    """PolicyMappedIntent.policy_id is missing or empty."""
-
-
-class EmptyEvidenceSpanIdsError(CanonicalBuildError):
-    """evidence_span_ids is empty — at least one F2 span is required."""
-
-
-class MissingExecutionTimingError(CanonicalBuildError):
-    """execution_timing is None."""
+__all__ = [
+    "CanonicalActionBuilder",
+    "CanonicalBuildError",
+    "EmptyEvidenceSpanIdsError",
+    "MissingExecutionTimingError",
+    "MissingIntentIdError",
+    "MissingPolicyIdError",
+    "build_action_metadata",
+]
 
 
 # =============================================================================
@@ -84,12 +76,12 @@ _ACTION_HINT_MAP: Dict[str, Tuple[ActionType, str, Optional[str]]] = {
     "watch_only":          (ActionType.WATCH,         None,    None),
     "review_required":     (ActionType.WATCH,         "under_review", "Flagged for manual review"),
     "open_position":       (ActionType.LONG,          None,    None),
-    "add_position":        (ActionType.LONG,          None,    None),
+    "add_position":        (ActionType.ADD,           None,    None),
     "close_position":      (ActionType.CLOSE_LONG,    None,    None),
     # Extended mappings for action_hints not in the primary spec
     "watch_or_no_trade":   (ActionType.WATCH,         None,    None),
     "avoid_or_watch_risk": (ActionType.WATCH,         None,    "Risk avoidance signal"),
-    "reduce_position":     (ActionType.CLOSE_LONG,    None,    "Partial position reduction"),
+    "reduce_position":     (ActionType.REDUCE,        None,    "Partial position reduction"),
     "hold_position":       (ActionType.HOLD,          None,    None),
 }
 
@@ -147,11 +139,10 @@ class CanonicalActionBuilder:
             MissingExecutionTimingError: if execution_timing is None.
             TypeError: if any argument is the wrong type.
         """
-        # -- Type guards (reject raw text / wrong types) --
-        self._validate_types(intent, policy_mapped_intent, evidence_span_ids, execution_timing)
-
-        # -- Required-field validation --
-        self._validate_required_fields(intent, policy_mapped_intent, evidence_span_ids, execution_timing)
+        # -- Type guards first (canonical TypeError before touching attrs) --
+        validate_structured_inputs(
+            intent, policy_mapped_intent, evidence_span_ids, execution_timing
+        )
 
         # -- Map action_hint -> ActionType + status --
         action_type, status, notes = self._resolve_action_chain(
@@ -161,128 +152,33 @@ class CanonicalActionBuilder:
         # -- Map direction --
         direction = _DIRECTION_MAP.get(intent.direction, TradeDirection.NEUTRAL)
 
-        # -- Build SourceInfo --
-        source = self._build_source(intent)
-
-        # -- Build TargetInfo --
-        target = self._build_target(intent)
-
-        # -- Build ActionStep --
-        action_step = ActionStep(
-            sequence=1,
-            action_type=action_type,
-            trigger_type=TriggerType.NEWS_EVENT,
-        )
-
-        # -- Determine validation status --
-        validation_status = self._resolve_validation_status(
-            status, policy_mapped_intent
-        )
-
-        # -- Build TradeAction --
-        ta = TradeAction(
-            # Canonical trace fields (F3 -> F4 -> F5 chain)
-            intent_id=intent.intent_id,
-            policy_id=policy_mapped_intent.policy_id,
+        # -- Delegate assembly to the single canonical constructor --
+        return compose_trade_action(
+            intent=intent,
+            policy_mapped_intent=policy_mapped_intent,
             evidence_span_ids=list(evidence_span_ids),
-            # Timing
-            effective_trade_at=execution_timing.intent_effective_at,
             execution_timing=execution_timing,
-            # Core fields
-            source=source,
-            target=target,
+            source=self._build_source(intent),
+            target=self._build_target(intent),
             direction=direction,
-            action_chain=[action_step],
-            # Confidence: use the lower of intent and policy confidence
-            confidence=min(intent.confidence, policy_mapped_intent.mapping_confidence),
-            # Validation
-            validation_status=validation_status,
-            requires_manual_review=(
-                policy_mapped_intent.requires_human_review
-                or status == "under_review"
-            ),
-            # Rationale
+            action_chain=[
+                ActionStep(
+                    sequence=1,
+                    action_type=action_type,
+                    trigger_type=TriggerType.NEWS_EVENT,
+                )
+            ],
             rationale=self._build_rationale(intent, policy_mapped_intent, action_type),
-            # Store policy hints in metadata for downstream consumers
-            metadata={
-                "action_hint_original": policy_mapped_intent.action_hint,
-                "position_sizing_hint": policy_mapped_intent.position_sizing_hint,
-                "holding_period_hint": policy_mapped_intent.holding_period_hint,
-            },
+            effective_trade_at=execution_timing.intent_effective_at,
+            validation_status=self._resolve_validation_status(
+                status, policy_mapped_intent
+            ),
+            requires_manual_review=(
+                policy_mapped_intent.requires_human_review or status == "under_review"
+            ),
             tags=["canonical", "f3-f4-f5"],
+            f5_strategy="builder",
         )
-
-        # The validator in TradeAction auto-sets canonical_trace_status,
-        # but let's assert for safety.
-        assert ta.canonical_trace_status == "canonical", (
-            f"Internal error: canonical_trade_action should have status 'canonical', "
-            f"got '{ta.canonical_trace_status}'"
-        )
-
-        return ta
-
-    # ------------------------------------------------------------------
-    # Validation helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _validate_types(
-        intent: object,
-        policy_mapped_intent: object,
-        evidence_span_ids: object,
-        execution_timing: object,
-    ) -> None:
-        """Reject non-structured inputs (raw strings, dicts, etc.)."""
-        if not isinstance(intent, NormalizedInvestmentIntent):
-            raise TypeError(
-                f"intent must be NormalizedInvestmentIntent, got {type(intent).__name__}. "
-                f"CanonicalActionBuilder does NOT accept raw text."
-            )
-        if not isinstance(policy_mapped_intent, PolicyMappedIntent):
-            raise TypeError(
-                f"policy_mapped_intent must be PolicyMappedIntent, got {type(policy_mapped_intent).__name__}. "
-                f"CanonicalActionBuilder does NOT accept raw text."
-            )
-        if not isinstance(execution_timing, ExecutionTiming):
-            raise TypeError(
-                f"execution_timing must be ExecutionTiming, got {type(execution_timing).__name__}. "
-                f"CanonicalActionBuilder does NOT accept raw text."
-            )
-        if not isinstance(evidence_span_ids, list):
-            raise TypeError(
-                f"evidence_span_ids must be a list of strings, got {type(evidence_span_ids).__name__}."
-            )
-
-    @staticmethod
-    def _validate_required_fields(
-        intent: NormalizedInvestmentIntent,
-        policy_mapped_intent: PolicyMappedIntent,
-        evidence_span_ids: List[str],
-        execution_timing: ExecutionTiming,
-    ) -> None:
-        """Reject when required upstream IDs are missing."""
-        if not intent.intent_id:
-            raise MissingIntentIdError(
-                "NormalizedInvestmentIntent.intent_id is required for canonical trace. "
-                "Cannot build canonical TradeAction without F3 intent_id."
-            )
-        if not policy_mapped_intent.policy_id:
-            raise MissingPolicyIdError(
-                "PolicyMappedIntent.policy_id is required for canonical trace. "
-                "Cannot build canonical TradeAction without F4 policy_id."
-            )
-        if not evidence_span_ids:
-            raise EmptyEvidenceSpanIdsError(
-                "evidence_span_ids must contain at least one F2 EvidenceSpan ID. "
-                "Cannot build canonical TradeAction without evidence."
-            )
-        # execution_timing being None is caught by the type check, but
-        # guard against it explicitly for clarity.
-        if execution_timing is None:
-            raise MissingExecutionTimingError(
-                "execution_timing is required. Cannot build canonical TradeAction "
-                "without timing information."
-            )
 
     # ------------------------------------------------------------------
     # Mapping helpers

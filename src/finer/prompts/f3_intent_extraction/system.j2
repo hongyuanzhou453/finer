@@ -23,7 +23,11 @@ Return a JSON object with these fields:
       "time_horizon": "intraday|short_term|medium_term|long_term|unknown",
       "confidence": 0.0-1.0,
 
-      "evidence_text": "short quote from the original text supporting this intent",
+      "margin_flag": true|false|null,
+      "leverage_flag": true|false|null,
+      "entry_timing_style": "left_side|right_side|unknown",
+
+      "evidence_text": "short quote (≤40 chars) copied VERBATIM, character-for-character, from the content — a deterministic validator REJECTS any intent whose quote does not appear exactly in the source text; do not paraphrase, translate, or fix typos",
       "ambiguity_notes": ["list of strings — see rules below"],
       "processing_notes": ["list of strings — extraction reasoning"]
     }
@@ -63,6 +67,20 @@ Every intent must have these four axes independently determined:
   - 0.3–0.6: moderate ("我认为", "我觉得")
   - 0.6–0.8: strong ("坚定", "明确", "强烈")
   - 0.8–1.0: extreme conviction ("毫无疑问", "必定")
+  - Calibrate each intent independently across the FULL range; do NOT cluster
+    on one default value — identical convictions for every intent means you
+    are not reading the text.
+
+### 1b. Direction Stability — ONE stance per target
+Judge direction ONCE per target across the ENTIRE document, not per paragraph.
+Spoken transcripts revisit the same name many times with varying tone; that is
+one viewpoint, not several.
+- If the author voices both sides on the same target, output ONE intent:
+  pick the dominant/final stance, or direction="mixed" when genuinely
+  balanced, and add ambiguity flag "conflicting_direction".
+- Emit two opposite intents for the same target ONLY when the text explicitly
+  narrates a stance change ("我之前看多，现在转空") — then flag the newer one
+  with "stance_change".
 
 ### 2. Opinion vs Explicit Action — CRITICAL DISTINCTION
 - "我看好宁德时代" → actionability = "opinion", position_delta_hint = "none"
@@ -110,7 +128,32 @@ Always include ambiguity notes when:
 - sentiment_score reflects the raw emotional tone (-1.0 negative to 1.0 positive)
 - The four axes (direction, actionability, position_delta_hint, conviction) are the PRIMARY output
 
-### 8. What NOT to Output
+### 8. Trading Style Signals (auxiliary)
+These three fields feed the KOL trading-style profile. They are AUXILIARY:
+they never change the four-axis decision, and when in doubt you MUST output
+null / "unknown" — never guess.
+
+- **margin_flag**: true ONLY if the text explicitly mentions margin financing
+  for this intent (融资, 两融, 融资买入, 融券). Not mentioned → null.
+  false ONLY if the KOL explicitly denies using margin (从不融资, 不上两融).
+- **leverage_flag**: true ONLY if the text explicitly mentions leverage
+  (上杠杆, 加杠杆, X倍杠杆, 合约, 期货保证金, 期权买方博弈倍数). Not
+  mentioned → null. false ONLY if explicitly denied (从不加杠杆).
+- **entry_timing_style**: entry timing semantics for THIS intent.
+  - "left_side": contrarian entries — 抄底, 越跌越买, 逢低布局, 回调加仓,
+    逆势建仓, 别人恐惧我贪婪
+  - "right_side": trend-following entries — 突破追入, 放量确认后进,
+    右侧交易, 趋势确立再上车, 站稳XX位再买
+  - "unknown": no explicit entry-timing semantics (most opinions land here)
+
+Examples:
+- "我融资加仓了宁德时代" → margin_flag = true
+- "这波我上了3倍杠杆" → leverage_flag = true
+- "跌到这个位置我反而会越跌越买" → entry_timing_style = "left_side"
+- "等突破年线放量确认了我再进" → entry_timing_style = "right_side"
+- "我看好腾讯" → margin_flag = null, leverage_flag = null, entry_timing_style = "unknown"
+
+### 9. What NOT to Output
 - ❌ position_size_pct (no position sizing — that is F4's job)
 - ❌ stop_loss / take_profit (no risk management — that is F4's job)
 - ❌ target_price (no price targets — that is F4's job)

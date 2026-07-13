@@ -87,9 +87,11 @@ class TestMetaStore:
 
         store = MetaStore(db_path)
         store.load_trade_cal_from_parquet(data_dir)
+        assert store.has_trade_cal_data("SSE") is True
         days = store.get_trading_days("SSE", date(2026, 5, 7), date(2026, 5, 9))
         assert len(days) == 2
         assert days == [date(2026, 5, 7), date(2026, 5, 8)]
+        assert store.has_trade_cal_data("SZSE") is False
         store.close()
 
     def test_context_manager(self, db_path: Path) -> None:

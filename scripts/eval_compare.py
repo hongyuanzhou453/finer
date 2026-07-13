@@ -15,10 +15,10 @@
     python scripts/eval_compare.py --demo
 
     # 真实对比（百炼实跑回填 after.jsonl 后）
+    # --eval-set 默认 data/dpo/hq_v1/eval/eval_set.jsonl（eval_set 唯一真身）
     python scripts/eval_compare.py \
-        --eval-set data/dpo/eval/eval_set.jsonl \
-        --before   data/dpo/eval/before.jsonl \
-        --after    data/dpo/eval/after.jsonl \
+        --before data/dpo/hq_v1/eval/before.jsonl \
+        --after  data/dpo/hq_v1/eval/after.jsonl \
         --judge ref --out report.json
 
 数据契约见 spec 第 6 节。
@@ -502,7 +502,9 @@ def main() -> int:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     ap.add_argument("--demo", action="store_true", help="用内置玩具数据自检（零外部文件）")
-    ap.add_argument("--eval-set", type=str, help="eval_set.jsonl 路径")
+    ap.add_argument("--eval-set", type=str,
+                    default="data/dpo/hq_v1/eval/eval_set.jsonl",
+                    help="eval_set.jsonl 路径")
     ap.add_argument("--before", type=str, help="before.jsonl（基座模型输出）")
     ap.add_argument("--after", type=str, help="after.jsonl（微调后输出）")
     ap.add_argument("--judge", choices=["none", "ref", "llm"], default="ref",
@@ -513,8 +515,8 @@ def main() -> int:
     if args.demo:
         eval_rows, before_rows, after_rows = demo_data()
     else:
-        if not (args.eval_set and args.before and args.after):
-            ap.error("非 --demo 模式必须提供 --eval-set / --before / --after")
+        if not (args.before and args.after):
+            ap.error("非 --demo 模式必须提供 --before / --after（--eval-set 有默认值）")
         eval_rows = load_jsonl(Path(args.eval_set))
         before_rows = load_jsonl(Path(args.before))
         after_rows = load_jsonl(Path(args.after))

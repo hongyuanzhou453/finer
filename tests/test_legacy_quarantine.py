@@ -38,11 +38,13 @@ ALLOWED_IMPORTERS: set[str] = set()
 for _rel_path in DEPRECATED_MODULE_PATHS.values():
     ALLOWED_IMPORTERS.add(str(SRC_DIR / _rel_path))
 
-# Known legacy consumers that haven't been migrated yet
+# Known legacy consumers that haven't been migrated yet.
+# 2026-07-11 tightening: services.lineage and api.routes.extraction no longer
+# import any deprecated module — do not re-add them without a migration
+# reason. action_interpreter (schemas.segment) and services.perception
+# (parsing.slang) still consume non-extractor deprecated modules.
 ALLOWED_IMPORTERS.add(str(SRC_DIR / "extraction" / "action_interpreter.py"))
-ALLOWED_IMPORTERS.add(str(SRC_DIR / "services" / "lineage.py"))
 ALLOWED_IMPORTERS.add(str(SRC_DIR / "services" / "perception.py"))
-ALLOWED_IMPORTERS.add(str(SRC_DIR / "api" / "routes" / "extraction.py"))
 ALLOWED_IMPORTERS.add(str(SRC_DIR / "pipeline" / "orchestrator.py"))
 ALLOWED_IMPORTERS.add(str(SRC_DIR / "parsing" / "__init__.py"))
 

@@ -20,12 +20,12 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from eval_compare import (  # noqa: E402
+from finer.ml.rewards import (  # noqa: E402
     extract_cited_numbers,
     is_committal,
     number_in_text,
     parse_output,
-    ticker_in_text,
+    ticker_grounded,
     validate_structure,
 )
 from finer.services.annotation_store import evidence_from_prompt  # noqa: E402
@@ -76,30 +76,6 @@ def eval_ids(rows: Iterable[Dict[str, Any]]) -> Set[str]:
         if isinstance(row_id, str) and row_id:
             ids.add(row_id)
     return ids
-
-
-def loose_ticker(ticker: str) -> str:
-    ticker = (ticker or "").strip().upper().lstrip("$")
-    if "." not in ticker:
-        return ticker
-    head, _, tail = ticker.partition(".")
-    return f"{head.lstrip('0')}.{tail}"
-
-
-def ticker_grounded(ticker: str, evidence: str) -> bool:
-    if not ticker or ticker.upper() == "NONE":
-        return True
-    if ticker_in_text(ticker, evidence):
-        return True
-    try:
-        from finer.entity_registry import ENTITY_REGISTRY
-    except Exception:
-        ENTITY_REGISTRY = {}
-    target = loose_ticker(ticker)
-    for alias, entry in ENTITY_REGISTRY.items():
-        if alias and alias in evidence and loose_ticker(str(entry[0])) == target:
-            return True
-    return False
 
 
 def target_prices(obj: Dict[str, Any]) -> List[float]:

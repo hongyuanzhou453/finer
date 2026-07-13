@@ -43,7 +43,12 @@ class LLMClient:
         self._base_url = base_url.rstrip("/") if base_url else None
         self._model = model
         self.max_tokens = max_tokens
-        self.timeout = timeout
+        # Runtime override (no .env edit needed): long-transcript F3 extraction
+        # at 16k output tokens can exceed the 60s default on slower models.
+        try:
+            self.timeout = float(os.getenv("FINER_LLM_TIMEOUT", "") or timeout)
+        except ValueError:
+            self.timeout = timeout
         self._registry = registry
         self._api_key_header = api_key_header
         self._api_key_scheme = api_key_scheme

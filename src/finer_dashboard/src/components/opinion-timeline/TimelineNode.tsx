@@ -48,6 +48,26 @@ const DIRECTION_STYLES: Record<OpinionDirection, { bg: string; border: string; t
     text: "text-stone-500",
     icon: <Minus className="w-4 h-4" strokeWidth={2} />,
   },
+  watchlist: {
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    text: "text-amber-600",
+    icon: <Minus className="w-4 h-4" strokeWidth={2} />,
+  },
+  risk_warning: {
+    bg: "bg-teal-50",
+    border: "border-teal-200",
+    text: "text-teal-700",
+    icon: <TrendingDown className="w-4 h-4" strokeWidth={2} />,
+  },
+};
+
+const DIRECTION_LABELS: Record<OpinionDirection, string> = {
+  bullish: "看多",
+  bearish: "看空",
+  neutral: "中性",
+  watchlist: "观察",
+  risk_warning: "风险",
 };
 
 const VERIFICATION_ICONS: Record<VerificationStatus, React.ReactNode> = {
@@ -154,7 +174,7 @@ export function TimelineNode({
           )}>
             {dirStyle.icon}
             <span className="text-[11px] font-bold uppercase tracking-wide">
-              {opinion.direction === "bullish" ? "看多" : opinion.direction === "bearish" ? "看空" : "中性"}
+              {DIRECTION_LABELS[opinion.direction]}
             </span>
           </div>
         </div>

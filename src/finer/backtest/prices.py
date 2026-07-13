@@ -541,13 +541,13 @@ def _build_cn_provider() -> PriceProvider:
     """Build CN price provider — try TusharePriceProvider, fallback to MockPriceProvider."""
     try:
         from finer.market_data.providers import TusharePriceProvider
+        from finer.market_data.status import has_synced_partitions
         from finer.paths import MARKET_PARQUET_DIR
 
         # 仅当 daily_kline 下已有 synced 分区时才启用真实 provider；
         # 空 parquet 目录（建了目录但从未跑 market-data sync）必须回落 mock，
         # 否则 get_price 对任何 ticker 都返回 None。
-        daily_kline_dir = MARKET_PARQUET_DIR / "daily_kline"
-        if daily_kline_dir.is_dir() and any(daily_kline_dir.iterdir()):
+        if has_synced_partitions(MARKET_PARQUET_DIR, "daily_kline"):
             return TusharePriceProvider(MARKET_PARQUET_DIR)
     except Exception as e:
         logger.debug("TusharePriceProvider unavailable, using MockPriceProvider: %s", e)

@@ -13,19 +13,29 @@ Key Design Principles:
 from __future__ import annotations
 
 import json
+import logging
+import os
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, Iterator, List, Optional, Set
 
 from finer.paths import DATA_ROOT
 from finer.schemas.trade_action import (
+    BacktestResult,
     TradeAction,
     TradeDirection,
     ValidationStatus,
 )
 from finer.services.storage import DateRange, TradeActionDB
 from finer.services.performance import track_performance
+
+logger = logging.getLogger(__name__)
+
+# Serializes read-modify-write cycles on action files (batch wrappers hold
+# many sibling actions, so a lost update or torn write hurts more than one).
+_WRITE_LOCK = threading.Lock()
 
 
 @dataclass
@@ -57,9 +67,12 @@ class TradeActionRepository:
     def __init__(
         self,
         db_path: Path = DATA_ROOT / "cache" / "trade_actions.db",
-        action_dir: Path = DATA_ROOT / "L5_candidate",
+        action_dir: Path = DATA_ROOT / "F5_executed",
     ):
         """Initialize repository.
+
+        Default action_dir is the canonical F5 tier (data/F5_executed); the
+        previous default data/L5_candidate is deprecated L-naming and empty.
 
         Args:
             db_path: Path to SQLite index database.
@@ -130,24 +143,103 @@ class TradeActionRepository:
         if record and record.get("file_path"):
             file_path = Path(record["file_path"])
             if file_path.exists():
-                return self._load_from_file(file_path)
+                try:
+                    return self._load_from_file(file_path, trade_action_id)
+                except (KeyError, ValueError) as e:
+                    # KeyError = stale index (id moved); ValueError incl.
+                    # JSONDecodeError = corrupt/invalid file — keep the signal
+                    # visible before degrading to a directory scan.
+                    logger.warning(
+                        "Index points %s at %s but load failed (%s: %s); "
+                        "falling back to directory scan",
+                        trade_action_id,
+                        file_path,
+                        type(e).__name__,
+                        e,
+                    )
 
-        # Fall back to scanning directory
-        for file_path in self.action_dir.glob("*.action.json"):
+        # Fall back to scanning directory (both layouts)
+        for file_path in self._iter_action_files():
             try:
-                action = self._load_from_file(file_path)
-                if action.trade_action_id == trade_action_id:
-                    return action
+                for action in self.load_actions_from_file(file_path):
+                    if action.trade_action_id == trade_action_id:
+                        return action
             except Exception:
                 continue
 
         return None
 
-    def _load_from_file(self, file_path: Path) -> TradeAction:
-        """Load TradeAction from a JSON file."""
+    def load_actions_from_file(self, file_path: Path) -> List[TradeAction]:
+        """Load every TradeAction stored in a JSON file.
+
+        Supports both persisted layouts:
+        - single-action ``*.action.json`` (documented convention, CLAUDE.md §5)
+        - batch wrapper ``*_actions.json`` with an ``actions`` list (current
+          F5 extractor output)
+
+        Invalid entries are skipped with a warning instead of failing the file.
+        """
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return TradeAction.from_dict(data)
+
+        if isinstance(data, dict) and isinstance(data.get("actions"), list):
+            raw_items = data["actions"]
+        else:
+            raw_items = [data]
+
+        actions: List[TradeAction] = []
+        for item in raw_items:
+            try:
+                actions.append(TradeAction.from_dict(item))
+            except Exception as e:
+                logger.warning("Skipping invalid action in %s: %s", file_path, e)
+        return actions
+
+    def _iter_action_files(self) -> Iterator[Path]:
+        """Yield every action JSON file under action_dir (both layouts)."""
+        seen: Set[Path] = set()
+        for pattern in ("**/*.action.json", "**/*_actions.json"):
+            for file_path in self.action_dir.glob(pattern):
+                if file_path not in seen:
+                    seen.add(file_path)
+                    yield file_path
+
+    def load_all_actions(self) -> List[TradeAction]:
+        """Load every TradeAction by scanning action_dir directly.
+
+        Bypasses the SQLite index on purpose — the index is a hot cache and
+        may lag behind the files, while aggregate consumers (stats, style
+        profiles) need file truth.
+        """
+        actions: List[TradeAction] = []
+        for file_path in self._iter_action_files():
+            try:
+                actions.extend(self.load_actions_from_file(file_path))
+            except Exception as e:
+                logger.warning("Skipping unreadable action file %s: %s", file_path, e)
+        return actions
+
+    def _load_from_file(
+        self, file_path: Path, trade_action_id: Optional[str] = None
+    ) -> TradeAction:
+        """Load a single TradeAction from a JSON file.
+
+        Batch wrapper files hold many actions, so callers resolving a DB
+        record must pass the record's trade_action_id to pick the right one.
+        """
+        actions = self.load_actions_from_file(file_path)
+        if trade_action_id is not None:
+            for action in actions:
+                if action.trade_action_id == trade_action_id:
+                    return action
+            raise KeyError(
+                f"trade_action_id {trade_action_id} not found in {file_path}"
+            )
+        if len(actions) == 1:
+            return actions[0]
+        raise ValueError(
+            f"{file_path} holds {len(actions)} actions; trade_action_id required"
+        )
 
     def query_by_kol(
         self,
@@ -178,7 +270,9 @@ class TradeActionRepository:
         for record in records:
             if record.get("file_path"):
                 try:
-                    action = self._load_from_file(Path(record["file_path"]))
+                    action = self._load_from_file(
+                        Path(record["file_path"]), record["trade_action_id"]
+                    )
                     actions.append(action)
                 except Exception:
                     continue
@@ -209,7 +303,9 @@ class TradeActionRepository:
             for record in records:
                 if record.get("file_path"):
                     try:
-                        action = self._load_from_file(Path(record["file_path"]))
+                        action = self._load_from_file(
+                        Path(record["file_path"]), record["trade_action_id"]
+                    )
                         actions.append(action)
                     except Exception:
                         continue
@@ -246,7 +342,9 @@ class TradeActionRepository:
         for record in records:
             if record.get("file_path"):
                 try:
-                    action = self._load_from_file(Path(record["file_path"]))
+                    action = self._load_from_file(
+                        Path(record["file_path"]), record["trade_action_id"]
+                    )
                     actions.append(action)
                 except Exception:
                     continue
@@ -273,7 +371,9 @@ class TradeActionRepository:
             if record.get("requires_manual_review"):
                 if record.get("file_path"):
                     try:
-                        action = self._load_from_file(Path(record["file_path"]))
+                        action = self._load_from_file(
+                        Path(record["file_path"]), record["trade_action_id"]
+                    )
                         actions.append(action)
                     except Exception:
                         continue
@@ -330,19 +430,18 @@ class TradeActionRepository:
         indexed = 0
         failed = 0
 
-        # Scan for all .action.json files
-        action_files = list(self.action_dir.glob("**/*.action.json"))
+        # Scan both persisted layouts (single .action.json + batch _actions.json)
+        action_files = list(self._iter_action_files())
         total = len(action_files)
 
-        for i, file_path in enumerate(action_files):
+        for file_path in action_files:
             try:
-                action = self._load_from_file(file_path)
-                self.index_trade_action(action, str(file_path))
-                indexed += 1
+                for action in self.load_actions_from_file(file_path):
+                    self.index_trade_action(action, str(file_path))
+                    indexed += 1
             except Exception as e:
                 failed += 1
-                # Log error but continue
-                print(f"Failed to index {file_path}: {e}")
+                logger.warning("Failed to index %s: %s", file_path, e)
 
         # Update metadata
         self.db.set_metadata("last_rebuild", datetime.now().isoformat())
@@ -421,15 +520,115 @@ class TradeActionRepository:
             return False
 
         try:
-            action = self._load_from_file(Path(record["file_path"]))
-            action.validation_status = status
-            if issues:
-                action.validation_issues = issues
+            file_path = Path(record["file_path"])
+            with _WRITE_LOCK:
+                # Single read; edit only the two keys on the raw item so
+                # unknown fields survive (no full to_dict round-trip).
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
 
-            # Save back to file and reindex
-            self.save(action, Path(record["file_path"]))
+                if isinstance(data, dict) and isinstance(data.get("actions"), list):
+                    target = next(
+                        (
+                            item
+                            for item in data["actions"]
+                            if item.get("trade_action_id") == trade_action_id
+                        ),
+                        None,
+                    )
+                elif data.get("trade_action_id") == trade_action_id:
+                    target = data
+                else:
+                    target = None
+                if target is None:
+                    return False
+
+                target["validation_status"] = (
+                    status.value if hasattr(status, "value") else status
+                )
+                if issues:
+                    target["validation_issues"] = issues
+
+                # Atomic replace: a crash mid-write must not corrupt the
+                # authoritative file (batch wrappers hold sibling actions).
+                tmp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, file_path)
+
+                self.index_trade_action(
+                    TradeAction.from_dict(target), str(file_path)
+                )
             return True
         except Exception:
+            logger.warning(
+                "update_validation_status failed for %s",
+                trade_action_id,
+                exc_info=True,
+            )
+            return False
+
+    def update_backtest_result(
+        self,
+        trade_action_id: str,
+        result: BacktestResult,
+    ) -> bool:
+        """Write a per-action F8 BacktestResult into the authoritative F5 file.
+
+        Same atomic pattern as update_validation_status: single read, patch only
+        the target key on the raw item (unknown fields survive), tmp+fsync+
+        os.replace, then reindex. Batch wrappers keep their sibling actions.
+
+        Returns:
+            True if updated successfully.
+        """
+        record = self.db.get_by_id(trade_action_id)
+        if not record or not record.get("file_path"):
+            return False
+
+        try:
+            file_path = Path(record["file_path"])
+            with _WRITE_LOCK:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                if isinstance(data, dict) and isinstance(data.get("actions"), list):
+                    target = next(
+                        (
+                            item
+                            for item in data["actions"]
+                            if item.get("trade_action_id") == trade_action_id
+                        ),
+                        None,
+                    )
+                elif data.get("trade_action_id") == trade_action_id:
+                    target = data
+                else:
+                    target = None
+                if target is None:
+                    return False
+
+                target["backtest_result"] = result.model_dump(mode="json")
+
+                tmp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, file_path)
+
+                self.index_trade_action(
+                    TradeAction.from_dict(target), str(file_path)
+                )
+            return True
+        except Exception:
+            logger.warning(
+                "update_backtest_result failed for %s",
+                trade_action_id,
+                exc_info=True,
+            )
             return False
 
     def delete(self, trade_action_id: str, delete_file: bool = False) -> bool:

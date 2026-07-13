@@ -16,8 +16,13 @@ import uuid
 import re
 
 from finer.schemas.event import TradingAction
+from finer.schemas.trade_action import PipelineSnapshot
 from finer.paths import REPO_ROOT, DATA_ROOT
-from finer.services.rlhf_assembler import build_preference
+from finer.services.rlhf_assembler import (
+    action_to_extraction_dict,
+    build_pipeline_snapshot,
+    build_preference,
+)
 
 router = APIRouter()
 RLHF_DIR = DATA_ROOT / "rlhf"
@@ -112,6 +117,13 @@ class RLHFFeedback(BaseModel):
     original_extraction: Optional[Dict[str, Any]] = Field(
         None,
         description="Original extraction result being reviewed"
+    )
+
+    # Pipeline version anchor — filled SERVER-SIDE from the reviewed action
+    # (see rlhf_assembler.build_pipeline_snapshot); never trusted from client.
+    pipeline_snapshot: Optional[PipelineSnapshot] = Field(
+        None,
+        description="Which pipeline version produced the judged output"
     )
 
 
@@ -247,7 +259,10 @@ def load_feedback(feedback_id: str) -> Optional[RLHFFeedback]:
     path = get_feedback_path(feedback_id)
     if path.exists():
         data = json.loads(path.read_text(encoding="utf-8"))
-        return RLHFFeedback(**data)
+        # Lax validation: JSON round-trips serialize datetimes as strings,
+        # which the model's strict config would reject (latent since day one
+        # — data/rlhf was empty until the first real feedback landed).
+        return RLHFFeedback.model_validate(data, strict=False)
     return None
 
 
@@ -318,11 +333,37 @@ async def submit_feedback(body: RLHFFeedbackCreate):
     """
     ensure_directories()
 
+    # 版本锚定：服务端从被评 action 的文件真值回填（不信 client）。
+    # action 找不到时 snapshot 置 None，不阻塞提交。
+    pipeline_snapshot = None
+    reviewed_action = None
+    try:
+        from finer.services.repository import TradeActionRepository
+
+        repo = TradeActionRepository()
+        reviewed_action = repo.load(body.trade_action_id)
+        if reviewed_action is not None:
+            record = repo.db.get_by_id(body.trade_action_id)
+            source_file = record.get("file_path") if record else None
+            pipeline_snapshot = build_pipeline_snapshot(reviewed_action, source_file)
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "pipeline snapshot unavailable for %s: %s", body.trade_action_id, exc
+        )
+
+    # original_extraction 兜底：client 没给时由 action 组装（含 evidence_text，
+    # 否则 DPO export 会因缺 evidence_text 全量跳过）。
+    original_extraction = body.original_extraction
+    if not original_extraction and reviewed_action is not None:
+        original_extraction = action_to_extraction_dict(reviewed_action)
+
     # 组装 DPO preference：优先用直接提供的 preference；否则用 corrections + original 组装（环 B 桥）
     preference = body.preference
-    if preference is None and (body.corrections is not None or body.original_extraction):
+    if preference is None and (body.corrections is not None or original_extraction):
         pref_dict = build_preference(
-            body.original_extraction,
+            original_extraction,
             body.corrections.model_dump() if body.corrections else None,
             body.flagged_as_error,
         )
@@ -342,7 +383,8 @@ async def submit_feedback(body: RLHFFeedbackCreate):
         notes=body.notes,
         reviewer_id=body.reviewer_id,
         preference=preference,
-        original_extraction=body.original_extraction,
+        original_extraction=original_extraction,
+        pipeline_snapshot=pipeline_snapshot,
         reviewed_at=datetime.now(),
     )
 

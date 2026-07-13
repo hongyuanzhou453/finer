@@ -39,10 +39,16 @@ class MarketDataSyncService:
         service.sync_all()
     """
 
-    def __init__(self, config: MarketDataConfig) -> None:
+    def __init__(
+        self,
+        config: MarketDataConfig,
+        *,
+        fetcher: TushareFetcher | None = None,
+        meta: MetaStore | None = None,
+    ) -> None:
         self._cfg = config
-        self._fetcher = TushareFetcher(config.tushare_token)
-        self._meta = MetaStore(config.db_path)
+        self._fetcher = fetcher or TushareFetcher(config.tushare_token)
+        self._meta = meta or MetaStore(config.db_path)
 
     def sync_trade_cal(self) -> None:
         """Sync trade calendars for all exchanges."""
@@ -91,8 +97,9 @@ class MarketDataSyncService:
         if start > end:
             raise ValueError("start_date must be on or before end_date")
 
+        self._ensure_trade_cal_loaded()
         trading_days = self._meta.get_trading_days("SSE", start, end)
-        if not trading_days and self._meta.get_last_date("trade_cal") is None:
+        if not trading_days and not self._meta.has_trade_cal_data("SSE"):
             raise RuntimeError(
                 "No trade_cal data in DuckDB. Run sync_trade_cal() first."
             )
@@ -108,6 +115,9 @@ class MarketDataSyncService:
         for trade_date in trading_days:
             if daily_kline_partition_exists(self._cfg.data_dir, trade_date):
                 skipped += 1
+                if frontier is None or trade_date > frontier:
+                    self._meta.update_last_date("daily_kline", trade_date)
+                    frontier = trade_date
                 continue
             try:
                 df = self._fetcher.fetch_daily_kline(trade_date)
@@ -148,8 +158,9 @@ class MarketDataSyncService:
         if start > end:
             raise ValueError("start_date must be on or before end_date")
 
+        self._ensure_trade_cal_loaded()
         trading_days = self._meta.get_trading_days("SSE", start, end)
-        if not trading_days and self._meta.get_last_date("trade_cal") is None:
+        if not trading_days and not self._meta.has_trade_cal_data("SSE"):
             raise RuntimeError(
                 "No trade_cal data in DuckDB. Run sync_trade_cal() first."
             )
@@ -165,6 +176,9 @@ class MarketDataSyncService:
         for trade_date in trading_days:
             if adj_factor_partition_exists(self._cfg.data_dir, trade_date):
                 skipped += 1
+                if frontier is None or trade_date > frontier:
+                    self._meta.update_last_date("adj_factor", trade_date)
+                    frontier = trade_date
                 continue
             try:
                 df = self._fetcher.fetch_adj_factor(trade_date)
@@ -210,6 +224,12 @@ class MarketDataSyncService:
             "daily_kline": self._meta.get_last_date("daily_kline"),
             "adj_factor": self._meta.get_last_date("adj_factor"),
         }
+
+    def _ensure_trade_cal_loaded(self) -> None:
+        """Hydrate DuckDB calendar metadata from existing Parquet if needed."""
+        if self._meta.get_last_date("trade_cal") is not None:
+            return
+        self._meta.load_trade_cal_from_parquet(self._cfg.data_dir)
 
     def close(self) -> None:
         self._meta.close()
