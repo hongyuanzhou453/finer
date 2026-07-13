@@ -122,6 +122,8 @@ ContentRecord (F0)
 2. 相关 API route 的请求/响应模型
 3. 前端组件中使用该类型的代码
 
+**枚举漂移自动防护**：pydantic Literal/Enum ↔ contracts.ts 字符串枚举的值集一致性由 `scripts/check_contract_drift.py` 守护（`pytest tests/test_contract_drift.py` 自动跑）。新增/改动镜像枚举时，若脚本报「unmapped TS enum」或值集 drift，在 `REGISTRY` 登记映射或修正值集；纯前端枚举登记进 `UI_ONLY_TS_ENUMS`。无 clean Literal 的取值集（如 canonical_trace_status/instrument_type）先在 schema 提模块级 `*_LITERAL` 常量再引用，保证单一真相源。
+
 ---
 
 ## 3. API 路由规范

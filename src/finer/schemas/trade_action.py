@@ -71,6 +71,20 @@ class TriggerType(str, Enum):
     MANUAL = "manual"
 
 
+# Single source of truth for the canonical-trace status values. The field
+# below stays ``str`` (the validator auto-assigns), but this Literal pins the
+# allowed set so the frontend contract-drift check has one authoritative
+# source instead of scraping the validator body. Mirrors
+# ``validate_canonical_trace``.
+CANONICAL_TRACE_STATUS_LITERAL = Literal["canonical", "partial", "non_canonical"]
+
+# Single source of truth for TargetInfo.instrument_type (mirrored by the
+# frontend InstrumentType union; guarded by scripts/check_contract_drift.py).
+INSTRUMENT_TYPE_LITERAL = Literal[
+    "stock", "option", "etf", "index_future", "crypto", "unspecified"
+]
+
+
 class ValidationStatus(str, Enum):
     """Validation lifecycle status."""
     PENDING = "pending"
@@ -153,7 +167,7 @@ class TargetInfo(BaseModel):
         None,
         description="Market identifier (e.g., 'US', 'HK', 'CN', 'CRYPTO')"
     )
-    instrument_type: Literal["stock", "option", "etf", "index_future", "crypto", "unspecified"] = Field(
+    instrument_type: INSTRUMENT_TYPE_LITERAL = Field(
         "unspecified",
         description="Asset class"
     )
