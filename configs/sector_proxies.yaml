@@ -1,0 +1,149 @@
+# F2 sector→ETF proxy 映射 — 文件真值（file truth）
+#
+# 键 = entity_registry 的 sector 占位符号（储能→ENERGY_STORAGE）。
+# F5 canonical runner 遇到 sector intent 时查此表：命中 → TradeAction 落在
+# proxy ETF 上（metadata.sector_proxy 记录完整溯源）；未命中 → 拒绝
+# reason=sector_proxy_not_configured。
+#
+# 编辑即生效（服务端 TTL 60s，enrichment/sector_proxy.py）。
+# instruments 按 priority 升序取第一个匹配 market 的工具。
+# symbol 必须是真实可交易代码（\d{4,6}.(SH|SZ|HK) 或 1-5 位大写字母），
+# 占位符混进来会在加载时被拒。
+#
+# 代码核验：
+# - 全部 17 instrument 已过真实 Yahoo 价格层（2026-07-12，各 62 交易日可取价）。
+# - 10/16 板块已双对抗复核通过（ENERGY_STORAGE / GREEN_POWER / NEW_ENERGY /
+#   OPTICAL_MODULE / COMPUTE_POWER / SEMICONDUCTOR / PHOTOVOLTAIC /
+#   LITHIUM_BATTERY / BROKERAGE / PHARMA_INNOVATION）。
+# - 6 板块（DEFENSE_MILITARY 1/2 通过、GOLD / HSTECH / ROBOTICS / AI_COMPUTING /
+#   LIQUOR）复核 agent 因会话额度中断，但已过研究核验 + 价格层。
+# 详见 docs/specs/2026-07-11-f2-sector-proxy-quality.md。
+version: 1
+
+proxies:
+  # ── verified（研究 + 双对抗复核通过）────────────────────────────────
+  ENERGY_STORAGE:
+    sector_name: 储能
+    instruments:
+      - symbol: "159566.SZ"
+        market: CN
+        name: 储能电池ETF易方达
+        priority: 1
+  GREEN_POWER:
+    sector_name: 绿电
+    instruments:
+      - symbol: "562550.SH"
+        market: CN
+        name: 绿电ETF华夏
+        priority: 1
+  OPTICAL_MODULE:
+    sector_name: 光模块
+    instruments:
+      # 无纯光模块场内 ETF；通信ETF(国泰) 光模块+服务器+光纤仓位 >78%，
+      # 为市场公认代理（研究工作流 2026-07-11 核验）
+      - symbol: "515880.SH"
+        market: CN
+        name: 通信ETF
+        priority: 1
+  SEMICONDUCTOR:
+    sector_name: 半导体
+    instruments:
+      - symbol: "159995.SZ"
+        market: CN
+        name: 芯片ETF华夏
+        priority: 1
+
+  # ── researched（eastmoney 档案页核验，双复核待补）──────────────────
+  NEW_ENERGY:
+    sector_name: 新能源
+    instruments:
+      - symbol: "516160.SH"
+        market: CN
+        name: 新能源ETF南方
+        priority: 1
+  COMPUTE_POWER:
+    sector_name: 算力
+    instruments:
+      # 无场内算力指数 ETF（2023 年申报未发行）。515880 是算力基础设施
+      # 主力代理，但已被 OPTICAL_MODULE 占用——F7 按 (KOL, ticker) 键
+      # 立场槽，两个板块共用一只 ETF 会把独立观点合并成一条立场线，
+      # 故算力取 AI 全链代理 159819，515880 退居 priority 2。
+      - symbol: "159819.SZ"
+        market: CN
+        name: 人工智能ETF易方达
+        priority: 1
+      - symbol: "515880.SH"
+        market: CN
+        name: 通信ETF
+        priority: 2
+  PHOTOVOLTAIC:
+    sector_name: 光伏
+    instruments:
+      - symbol: "515790.SH"
+        market: CN
+        name: 光伏ETF华泰柏瑞
+        priority: 1
+  LITHIUM_BATTERY:
+    sector_name: 锂电池
+    instruments:
+      - symbol: "159755.SZ"
+        market: CN
+        name: 电池ETF广发
+        priority: 1
+  BROKERAGE:
+    sector_name: 券商
+    instruments:
+      - symbol: "512880.SH"
+        market: CN
+        name: 证券ETF国泰
+        priority: 1
+  PHARMA_INNOVATION:
+    sector_name: 创新药
+    instruments:
+      - symbol: "159992.SZ"
+        market: CN
+        name: 创新药ETF银华
+        priority: 1
+  DEFENSE_MILITARY:
+    sector_name: 军工
+    instruments:
+      - symbol: "512660.SH"
+        market: CN
+        name: 军工ETF国泰
+        priority: 1
+  GOLD:
+    sector_name: 黄金
+    instruments:
+      - symbol: "518880.SH"
+        market: CN
+        name: 黄金ETF华安
+        priority: 1
+  HSTECH:
+    sector_name: 恒生科技
+    instruments:
+      - symbol: "513180.SH"
+        market: CN
+        name: 恒生科技ETF华夏
+        priority: 1
+  ROBOTICS:
+    sector_name: 机器人
+    instruments:
+      - symbol: "562500.SH"
+        market: CN
+        name: 机器人ETF华夏
+        priority: 1
+  AI_COMPUTING:
+    sector_name: 人工智能
+    instruments:
+      - symbol: "159819.SZ"
+        market: CN
+        name: 人工智能ETF易方达
+        priority: 1
+  LIQUOR:
+    sector_name: 白酒
+    instruments:
+      # 无纯白酒 ETF（161725 为 LOF）；酒ETF 白酒权重 ~85-90%
+      - symbol: "512690.SH"
+        market: CN
+        name: 酒ETF鹏华
+        priority: 1

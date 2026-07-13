@@ -53,6 +53,8 @@ from finer.schemas.policy import (
     PolicyMappingBatch,
     PolicyMappingResult,
 )
+from finer.entity_registry import is_plausible_tradable_symbol
+from finer.enrichment.sector_proxy import SectorProxyResolution, resolve_sector_proxy
 from finer.extraction.action_composer import compose_trade_action
 from finer.extraction.timing_builder import build_execution_timing
 from finer.schemas.trade_action import (
@@ -315,6 +317,150 @@ def _resolve_intent_extractor(intent_extractor: Optional[Any] = None):
     return RuleBasedIntentExtractor(), None
 
 
+def _extract_topic_with_fallback(extractor: Any, envelope: ContentEnvelope):
+    """Per-topic F3 with **failure-only** rule fallback.
+
+    与整文路径的 ``_extract_with_fallback`` 不同：per-topic 的空结果是常态
+    （事实复述、噪声、「未分组」组本就该无立场），把「空=配额/密钥故障」的
+    启发式搬到 topic 粒度会让规则提取器重跑每个安静 topic，把 LLM/validator
+    刻意压掉的假阳性观点复活成 TradeAction（2026-07-12 审查 high finding，
+    已实机复现）。回退仅在三种真实故障时触发：抛异常、结果为 None、空结果
+    且 processing_notes 带显式 LLM 失败标记（consensus 基座塌陷本身会
+    raise，走异常路径）。
+    """
+    from finer.extraction.intent_extractor import (
+        _LLM_FAILURE_MARKERS,
+        RuleBasedIntentExtractor,
+    )
+
+    result = None
+    try:
+        result = extractor.extract(envelope)
+    except Exception as e:
+        logger.warning(
+            "F3 extractor %s failed on topic sub-envelope of %s (%s); "
+            "falling back to rule-based",
+            type(extractor).__name__,
+            envelope.envelope_id,
+            e,
+        )
+
+    if result is not None and isinstance(extractor, RuleBasedIntentExtractor):
+        return result
+
+    call_failed = result is None or (
+        not result.intents
+        and any(
+            marker in note
+            for note in (getattr(result, "processing_notes", None) or [])
+            for marker in _LLM_FAILURE_MARKERS
+        )
+    )
+    if call_failed:
+        fallback_result = RuleBasedIntentExtractor().extract(envelope)
+        fallback_result.processing_notes.append(
+            f"fell back from {type(extractor).__name__}"
+        )
+        return fallback_result
+    return result
+
+
+def _extract_intents_per_topic(
+    extractor: Any,
+    envelope: ContentEnvelope,
+    assembly: Any,
+):
+    """F1.5 → F3: extract intents per TopicBlock sub-envelope, then merge.
+
+    每个 topic（含「未分组」兜底组）单独过 F3，intent 拿到聚焦的上下文和
+    按 topic 收窄的 ``block_ids``（改善 F5 的 block 级 grounding 精度），
+    metadata 打上 F1.5 溯源（含该 topic 实际使用的 extractor 版本——单个
+    topic 回退规则版时混合来源必须可审计）。跨 topic 用与整文路径同一个
+    ``_dedupe_intents`` 合并同 (target, direction, position hint) 的重复观点；
+    合并后 block_ids 跨组的幸存 intent 追加 ``f15_merged_topics`` 标注。
+    """
+    from finer.extraction.intent_extractor import (
+        IntentExtractionResult,
+        _dedupe_intents,
+    )
+    from finer.parsing.topic_routing import topic_subenvelopes
+
+    subenvelopes = topic_subenvelopes(envelope, assembly)
+    merged_intents: List[Any] = []
+    merged_spans: Dict[str, EvidenceSpan] = {}
+    notes: List[str] = [
+        f"f1.5 engaged: {len(assembly.topic_blocks)} topics → "
+        f"{len(subenvelopes)} identity groups "
+        f"(+{len(assembly.unassigned_block_ids)} unassigned blocks) "
+        f"via {assembly.assembly_strategy}"
+    ]
+    versions: List[str] = []
+    block_to_label: Dict[str, str] = {}
+
+    for topic_index, (topic_label, sub_envelope) in enumerate(subenvelopes):
+        for block in sub_envelope.blocks:
+            block_to_label[getattr(block, "block_id", "")] = topic_label
+        result = _extract_topic_with_fallback(extractor, sub_envelope)
+        if result is None:
+            continue
+        topic_version = getattr(result, "extractor_version", None)
+        if isinstance(topic_version, str) and topic_version not in versions:
+            versions.append(topic_version)
+        for intent in result.intents:
+            merged_intents.append(
+                intent.model_copy(
+                    update={
+                        "metadata": {
+                            **(intent.metadata or {}),
+                            "f15_assembly_id": assembly.assembly_id,
+                            "f15_topic_title": topic_label,
+                            "f15_topic_index": topic_index,
+                            "f15_extractor_version": topic_version,
+                        }
+                    }
+                )
+            )
+        for span in result.evidence_spans:
+            merged_spans.setdefault(span.evidence_span_id, span)
+        for note in getattr(result, "processing_notes", None) or []:
+            notes.append(f"[{topic_label}] {note}")
+
+    merged_intents = _dedupe_intents(merged_intents, notes)
+
+    # Cross-topic dedupe unions block_ids into the first-seen intent; when the
+    # union spans multiple groups the single f15_topic_title no longer covers
+    # all evidence — annotate honestly instead of leaving a wrong pointer.
+    annotated: List[Any] = []
+    for intent in merged_intents:
+        labels = sorted(
+            {block_to_label[bid] for bid in intent.block_ids if bid in block_to_label}
+        )
+        if len(labels) > 1:
+            intent = intent.model_copy(
+                update={
+                    "metadata": {**(intent.metadata or {}), "f15_merged_topics": labels}
+                }
+            )
+        annotated.append(intent)
+
+    # 单一来源 → 如实标注；混合来源（某 topic 回退规则版）→ 显式 mixed 章，
+    # 决不让 rule 提取的 intent 顶着 llm_consensus 版本进 RLHF/审计。
+    if len(versions) == 1:
+        merged_version = versions[0]
+    elif versions:
+        merged_version = "mixed(" + "+".join(sorted(versions)) + ")"
+    else:
+        merged_version = "minimal_v1"
+
+    return IntentExtractionResult(
+        envelope_id=envelope.envelope_id,
+        intents=annotated,
+        evidence_spans=list(merged_spans.values()),
+        extractor_version=merged_version,
+        processing_notes=notes,
+    )
+
+
 def _extract_with_fallback(extractor: Any, envelope: ContentEnvelope):
     """Run F3 with the resolved extractor; degrade to rule-based on failure.
 
@@ -402,7 +548,34 @@ async def run_canonical_from_envelope(
     extractor, resolve_note = _resolve_intent_extractor(intent_extractor)
     if resolve_note:
         logger.warning("%s (envelope %s)", resolve_note, envelope.envelope_id)
-    intent_result = _extract_with_fallback(extractor, envelope)
+
+    # F1.5: long multi-topic content is assembled into TopicBlocks and F3
+    # extracts per topic (focused context, per-topic block_ids); short or
+    # single-topic content keeps today's whole-envelope path. Routing and
+    # thresholds live in parsing.topic_routing (FINER_F15_* envs).
+    from finer.parsing.topic_routing import assemble_topics_for_extraction
+
+    topic_assembly = assemble_topics_for_extraction(envelope)
+    if topic_assembly is not None:
+        # F1.5 audit sidecar is an F1.5-stage artifact: persist as soon as
+        # assembly engages, NOT gated on F5 emitting actions — a run whose
+        # intents all get rejected downstream still needs its topic record.
+        if persist_dir is not None:
+            topics_dir = persist_dir / "F1_5_topics"
+            topics_dir.mkdir(parents=True, exist_ok=True)
+            (topics_dir / f"{topic_assembly.assembly_id}.json").write_text(
+                topic_assembly.model_dump_json(indent=2), encoding="utf-8"
+            )
+        intent_result = _extract_intents_per_topic(extractor, envelope, topic_assembly)
+        logger.info(
+            "F1.5 engaged for %s: %d topics (+%d unassigned blocks) → %d intents",
+            envelope.envelope_id,
+            len(topic_assembly.topic_blocks),
+            len(topic_assembly.unassigned_block_ids),
+            len(intent_result.intents),
+        )
+    else:
+        intent_result = _extract_with_fallback(extractor, envelope)
     intents = intent_result.intents if intent_result else []
 
     if not intents:
@@ -656,18 +829,24 @@ def _build_actions_programmatic(
             ))
             continue
 
-        # Sector/concept targets are real KOL viewpoints but not tradable
-        # instruments — their registry "symbol" is a placeholder (e.g.
-        # 光模块 -> OPTICAL_MODULE). Reject with an audit trail instead of
+        # Sector/concept targets are real KOL viewpoints whose registry
+        # "symbol" is a placeholder (e.g. 光模块 -> OPTICAL_MODULE). They
+        # trade through a configured ETF proxy (configs/sector_proxies.yaml);
+        # a sector with no proxy is rejected with an audit trail instead of
         # letting the placeholder masquerade as a ticker.
+        sector_proxy: Optional[SectorProxyResolution] = None
         if intent.target_type == "sector":
-            rejected.append(RejectedIntent(
-                intent_id=mapped.intent_id,
-                policy_id=mapped.policy_id,
-                action_hint=mapped.action_hint,
-                reason="sector_target_not_tradable",
-            ))
-            continue
+            sector_proxy = resolve_sector_proxy(
+                intent.target_symbol, market=intent.market
+            )
+            if sector_proxy is None:
+                rejected.append(RejectedIntent(
+                    intent_id=mapped.intent_id,
+                    policy_id=mapped.policy_id,
+                    action_hint=mapped.action_hint,
+                    reason="sector_proxy_not_configured",
+                ))
+                continue
 
         # A bare target_name must not masquerade as a ticker either
         # (TargetInfo.ticker would otherwise carry a Chinese company name).
@@ -677,6 +856,19 @@ def _build_actions_programmatic(
                 policy_id=mapped.policy_id,
                 action_hint=mapped.action_hint,
                 reason="unresolved_target_symbol",
+            ))
+            continue
+
+        # Pseudo-ticker gate: a non-sector symbol that is neither a known
+        # registry instrument nor shaped like a real ticker (LLM inventions,
+        # Chinese names normalized into target_symbol) must not reach
+        # TargetInfo.ticker.
+        if sector_proxy is None and not is_plausible_tradable_symbol(intent.target_symbol):
+            rejected.append(RejectedIntent(
+                intent_id=mapped.intent_id,
+                policy_id=mapped.policy_id,
+                action_hint=mapped.action_hint,
+                reason="pseudo_ticker_symbol",
             ))
             continue
 
@@ -697,9 +889,11 @@ def _build_actions_programmatic(
         direction = _resolve_direction(intent, mapped)
         position_pct = POSITION_SIZING_TO_PCT.get(mapped.position_sizing_hint)
 
+        # The executed instrument decides the trading calendar: a proxied
+        # sector view trades on the proxy ETF's market.
         timing = build_execution_timing(
             envelope=envelope,
-            market=intent.market or "CN",
+            market=sector_proxy.proxy_market if sector_proxy else (intent.market or "CN"),
             temporal_anchors=temporal_anchors,
             intent_id=intent.intent_id,
         )
@@ -726,12 +920,22 @@ def _build_actions_programmatic(
                 content_id=envelope.envelope_id,
                 evidence_text=evidence_text[:500],
             ),
-            target=TargetInfo(
-                ticker=intent.target_symbol,
-                market=intent.market or "CN",
-                ticker_normalized=intent.target_symbol,
-                instrument_type=_target_type_to_instrument(intent.target_type),
-                company_name=intent.target_name if intent.target_symbol else None,
+            target=(
+                TargetInfo(
+                    ticker=sector_proxy.proxy_symbol,
+                    market=sector_proxy.proxy_market,
+                    ticker_normalized=sector_proxy.proxy_symbol,
+                    instrument_type="etf",
+                    company_name=sector_proxy.proxy_name,
+                )
+                if sector_proxy
+                else TargetInfo(
+                    ticker=intent.target_symbol,
+                    market=intent.market or "CN",
+                    ticker_normalized=intent.target_symbol,
+                    instrument_type=_target_type_to_instrument(intent.target_type),
+                    company_name=intent.target_name if intent.target_symbol else None,
+                )
             ),
             direction=direction,
             action_chain=[
@@ -747,6 +951,11 @@ def _build_actions_programmatic(
             requires_manual_review=mapped.requires_human_review,
             extra_metadata={
                 "tier": "opinion" if mapped.action_hint in OPINION_TIER_HINTS else "trade",
+                **(
+                    {"sector_proxy": sector_proxy.audit_metadata()}
+                    if sector_proxy
+                    else {}
+                ),
             },
             allow_empty_evidence=True,
             extractor_version=extractor_version,
@@ -884,20 +1093,45 @@ Only include actions for the executable policy mappings listed above. Return [] 
             continue
 
         # Same non-tradable gates as the programmatic path
+        sector_proxy: Optional[SectorProxyResolution] = None
         if matched_intent.target_type == "sector":
-            rejected.append(RejectedIntent(
-                intent_id=matched_mapped.intent_id,
-                policy_id=matched_mapped.policy_id,
-                action_hint=matched_mapped.action_hint,
-                reason="sector_target_not_tradable",
-            ))
-            continue
+            sector_proxy = resolve_sector_proxy(
+                matched_intent.target_symbol, market=matched_intent.market
+            )
+            if sector_proxy is None:
+                rejected.append(RejectedIntent(
+                    intent_id=matched_mapped.intent_id,
+                    policy_id=matched_mapped.policy_id,
+                    action_hint=matched_mapped.action_hint,
+                    reason="sector_proxy_not_configured",
+                ))
+                continue
         if not matched_intent.target_symbol:
             rejected.append(RejectedIntent(
                 intent_id=matched_mapped.intent_id,
                 policy_id=matched_mapped.policy_id,
                 action_hint=matched_mapped.action_hint,
                 reason="unresolved_target_symbol",
+            ))
+            continue
+
+        # Pseudo-ticker gate (mirrors the programmatic path). The composed
+        # ticker AND market come from the intent, never the LLM's echo — the
+        # match above already proved they refer to the same intent, the ticker
+        # echo may be a company name, and a hallucinated market echo would
+        # contradict both the composed ticker and the execution-timing calendar.
+        final_ticker = sector_proxy.proxy_symbol if sector_proxy else matched_intent.target_symbol
+        final_market = (
+            sector_proxy.proxy_market
+            if sector_proxy
+            else (matched_intent.market or "CN")
+        )
+        if sector_proxy is None and not is_plausible_tradable_symbol(final_ticker):
+            rejected.append(RejectedIntent(
+                intent_id=matched_mapped.intent_id,
+                policy_id=matched_mapped.policy_id,
+                action_hint=matched_mapped.action_hint,
+                reason="pseudo_ticker_symbol",
             ))
             continue
 
@@ -908,7 +1142,7 @@ Only include actions for the executable policy mappings listed above. Return [] 
 
         timing = build_execution_timing(
             envelope=envelope,
-            market=matched_intent.market or "CN",
+            market=sector_proxy.proxy_market if sector_proxy else (matched_intent.market or "CN"),
             temporal_anchors=temporal_anchors,
             intent_id=matched_intent.intent_id,
         )
@@ -936,9 +1170,15 @@ Only include actions for the executable policy mappings listed above. Return [] 
                 evidence_text=evidence_text[:500],
             ),
             target=TargetInfo(
-                ticker=ticker,
-                market=raw.get("market", matched_intent.market or "CN"),
-                ticker_normalized=ticker,
+                ticker=final_ticker,
+                market=final_market,
+                ticker_normalized=final_ticker,
+                instrument_type=(
+                    "etf"
+                    if sector_proxy
+                    else _target_type_to_instrument(matched_intent.target_type)
+                ),
+                company_name=sector_proxy.proxy_name if sector_proxy else None,
             ),
             direction=direction,
             action_chain=[
@@ -953,7 +1193,14 @@ Only include actions for the executable policy mappings listed above. Return [] 
             # LLM path trusts the model's own calibration when provided.
             confidence=raw.get("confidence", matched_intent.confidence),
             time_horizon=matched_mapped.holding_period_hint,
-            extra_metadata={"tier": "trade"},
+            extra_metadata={
+                "tier": "trade",
+                **(
+                    {"sector_proxy": sector_proxy.audit_metadata()}
+                    if sector_proxy
+                    else {}
+                ),
+            },
             allow_empty_evidence=True,
             extractor_version=extractor_version,
             f5_strategy="llm_guided",

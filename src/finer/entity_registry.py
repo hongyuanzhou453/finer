@@ -8,6 +8,7 @@ Consolidates:
 
 from __future__ import annotations
 
+import re
 from typing import Dict, Tuple, Optional
 
 # (normalized_ticker, market, entity_type)
@@ -256,11 +257,38 @@ ENTITY_REGISTRY: Dict[str, EntityEntry] = {
     "CSIQ":    ("CSIQ",   "US", "ticker"),
 
     # ── Sectors / Themes ────────────────────────────────────────────────────
+    # sector 占位符号不可交易；F5 经 configs/sector_proxies.yaml 映射到
+    # ETF 代理（enrichment/sector_proxy.py）。新增 sector 别名时同步补
+    # proxies 条目，否则该板块观点会以 sector_proxy_not_configured 被拒。
     "绿电":     ("GREEN_POWER", "CN", "sector"),
     "储能":     ("ENERGY_STORAGE", "CN", "sector"),
     "算电协同": ("COMPUTE_POWER", "CN", "sector"),
+    "算力":     ("COMPUTE_POWER", "CN", "sector"),
     "新能源":   ("NEW_ENERGY", "CN", "sector"),
     "光模块":   ("OPTICAL_MODULE", "CN", "sector"),
+
+    # ── Sector proxy expansion (2026-07-11, curated with sector_proxies.yaml) ──
+    "半导体":   ("SEMICONDUCTOR", "CN", "sector"),
+    "芯片":     ("SEMICONDUCTOR", "CN", "sector"),
+    "光伏":     ("PHOTOVOLTAIC", "CN", "sector"),
+    "锂电池":   ("LITHIUM_BATTERY", "CN", "sector"),
+    "锂电":     ("LITHIUM_BATTERY", "CN", "sector"),
+    "券商":     ("BROKERAGE", "CN", "sector"),
+    "创新药":   ("PHARMA_INNOVATION", "CN", "sector"),
+    "军工":     ("DEFENSE_MILITARY", "CN", "sector"),
+    # 「黄金」「机器人」裸词在聊天语料噪声高（黄金坑/黄金周、"1 个机器人"
+    # bot 语义），「金价」是矿业股/宏观讨论的高频上下文词——且 F5 现在会
+    # 把 sector 锚定放行成真 ETF action，只收 KOL 指称板块时的实际用语
+    # （2026-07-11 审查 high finding；金价 撞 test_select_candidates 实证）。
+    "黄金板块": ("GOLD", "CN", "sector"),
+    "黄金股":   ("GOLD", "CN", "sector"),
+    "现货黄金": ("GOLD", "CN", "sector"),
+    "恒生科技": ("HSTECH", "HK", "sector"),
+    "人形机器人": ("ROBOTICS", "CN", "sector"),
+    "机器人板块": ("ROBOTICS", "CN", "sector"),
+    "机器人概念": ("ROBOTICS", "CN", "sector"),
+    "人工智能": ("AI_COMPUTING", "CN", "sector"),
+    "白酒":     ("LIQUOR", "CN", "sector"),
 
     # ── F2 gap-review additions (2026-06-26, human-triaged from all-local gap scan) ──
     "中金公司":  ("3908.HK", "HK", "ticker"),
@@ -299,3 +327,41 @@ def get_market(name: str) -> Optional[str]:
     """Get the market for an entity name."""
     entry = ENTITY_REGISTRY.get(name)
     return entry[1] if entry else None
+
+
+# ── Tradable-symbol validation (F5 pseudo-ticker gate) ──────────────────────
+
+# Strict ticker shapes: CN/HK numeric-with-suffix, or 1-5 uppercase letters
+# (US tickers, index codes like SOX, crypto codes like BTC). Kept in sync with
+# enrichment.llm_entity_proposal's validator regexes.
+_TRADABLE_SYMBOL_RE = re.compile(r"^\d{4,6}\.(HK|SH|SZ)$|^[A-Z]{1,5}$")
+
+# Registry symbols that denote real instruments. Sector placeholders
+# (储能→ENERGY_STORAGE) are registry values but NOT tradable — they must go
+# through the sector-proxy mapping, never through this set.
+_TRADABLE_KNOWN_SYMBOLS: frozenset = frozenset(
+    ticker for (ticker, _market, etype) in ENTITY_REGISTRY.values() if etype != "sector"
+)
+
+
+def matches_tradable_format(symbol: Optional[str]) -> bool:
+    """Strict ticker-shape check only (no registry membership).
+
+    Single truth for the tradable-symbol shape — also used by
+    ``enrichment.sector_proxy`` to validate configured proxy instruments.
+    """
+    return bool(symbol) and bool(_TRADABLE_SYMBOL_RE.match(symbol))
+
+
+def is_plausible_tradable_symbol(symbol: Optional[str]) -> bool:
+    """True if ``symbol`` can honestly sit in ``TargetInfo.ticker``.
+
+    Either a known non-sector registry symbol, or a string matching the strict
+    ticker format. Everything else (Chinese names, sector placeholders,
+    free-form LLM inventions) is a pseudo-ticker and must be rejected upstream.
+    """
+    if not symbol:
+        return False
+    if symbol in _TRADABLE_KNOWN_SYMBOLS:
+        return True
+    return matches_tradable_format(symbol)

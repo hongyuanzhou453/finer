@@ -81,13 +81,19 @@ class TestOpinionTier:
         assert trade, [(a.metadata, a.action_chain[0].action_type) for a in actions]
         assert trade[0].action_chain[0].action_type != ActionType.WATCH
 
-    def test_sector_opinion_still_rejected(self):
-        """opinion tier 不放宽 sector gate——板块观点仍不产 action。"""
+    def test_sector_opinion_trades_through_proxy(self):
+        """sector gate 2026-07-11 起走 ETF 代理：板块观点产出代理 action，
+        占位符号（OPTICAL_MODULE）永远不能作为 ticker 出现。"""
         env = make_envelope("我看好光模块这个板块的长期逻辑。")
         actions = asyncio.run(run_canonical_from_envelope(env, {}))
         assert all(
             (a.target.ticker or "") != "OPTICAL_MODULE" for a in actions
         ), [a.target.ticker for a in actions]
+        proxied = [a for a in actions if a.metadata.get("sector_proxy")]
+        assert proxied, [a.target.ticker for a in actions]
+        assert proxied[0].target.ticker == "515880.SH"
+        assert proxied[0].target.instrument_type == "etf"
+        assert proxied[0].metadata["sector_proxy"]["sector_symbol"] == "OPTICAL_MODULE"
 
     def test_bearish_opinion_materializes_as_watch(self):
         """看空但无交易动作 → F4 avoid_or_watch_risk → WATCH action，方向保真。

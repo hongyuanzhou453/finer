@@ -393,21 +393,23 @@ def test_gap_candidates_filter_generic_terms_and_keep_entity_phrase(tmp_path: Pa
         tmp_path,
         "local_noise",
         "data/raw/trader/noise.pdf",
+        # NOTE (2026-07-11): sector 泛称（半导体/芯片/机器人/创新药/算力…）已
+        # 进入 entity_registry 并直接锚定，含这些词的 block 不再是 gap block —
+        # 它们从本种子中移除，新行为由
+        # test_registered_sector_terms_anchor_instead_of_gap 钉住。
         text=(
             "图片 收入 百万元 占比 提升到了。F2 A3。"
             "NOA CAGR CAGR35 PS RSI DRAM GAAP PPI。"
             "PROHIBITED REASONABLE SKULLPANDA CRYBABY。"
-            "本人未取得证券投，半导体，半导体设备，半导体破下沿，"
-            "半导体指数，日本其他半导体方，冲科技，激光雷达出货量，反弹买保险。"
-            "366 名群成员 | 1 个机器人。科技 电子。"
-            "芯片产业的投资机，日本半导体相关股，机器人创新药也都，能源充裕到拥有。"
-            "盘面看能源补跌可，机器人商店过去，中概等科技权重拖。"
+            "本人未取得证券投，冲科技，激光雷达出货量，反弹买保险。"
+            "366 名群成员。科技 电子。能源充裕到拥有。"
+            "盘面看能源补跌可，中概等科技权重拖。"
             "美国银行对非存款，银行抵押品缩水，银行收紧信贷。"
-            "石油银行煤炭是少，上海报业集团主管，连续个机器人反弹。"
+            "石油银行煤炭是少，上海报业集团主管。"
             "车载主激光雷达，据盖世汽车研究院，汽车交付量。"
             "促进股份更活跃交，一如既往的银行和，本集团于，本集团的激光雷达。"
-            "应用的激光雷达产，品及用于机器人及，乃根据本集团的初，金融科技及企业服。"
-            "港股科技继续回调，算力的资产证券化开始讨论，集团整体仍需观察。"
+            "应用的激光雷达产，乃根据本集团的初，金融科技及企业服。"
+            "港股科技继续回调，集团整体仍需观察。"
             "星河出行科技激光雷达品牌在智能驾驶产业链反复被提及。"
             "云图出行，收入增长，公司业务被提及，需要人工核验。"
         ),
@@ -437,26 +439,14 @@ def test_gap_candidates_filter_generic_terms_and_keep_entity_phrase(tmp_path: Pa
     assert "SKULLPANDA" not in aliases
     assert "CRYBABY" not in aliases
     assert "本人未取得证券投" not in aliases
-    assert "半导体" not in aliases
-    assert "半导体设备" not in aliases
-    assert "半导体破下沿" not in aliases
-    assert "半导体指数" not in aliases
-    assert "日本其他半导体方" not in aliases
     assert "冲科技" not in aliases
     assert "激光雷达出货量" not in aliases
     assert "反弹买保险" not in aliases
-    assert "机器人" not in aliases
-    assert "个机器人" not in aliases
     assert "科技" not in aliases
     assert "电子" not in aliases
     assert "汽车" not in aliases
-    assert "芯片产业的投资机" not in aliases
-    assert "日本半导体相关股" not in aliases
-    assert "机器人创新药也都" not in aliases
     assert "能源充裕到拥有" not in aliases
     assert "盘面看能源补跌可" not in aliases
-    assert "机器人商店" not in aliases
-    assert "机器人商店过去" not in aliases
     assert "中概等科技权重拖" not in aliases
     assert "美国银行对非存款" not in aliases
     assert "美国银行" not in aliases
@@ -464,7 +454,6 @@ def test_gap_candidates_filter_generic_terms_and_keep_entity_phrase(tmp_path: Pa
     assert "银行收紧信贷" not in aliases
     assert "石油银行煤炭是少" not in aliases
     assert "上海报业集团主管" not in aliases
-    assert "连续个机器人反弹" not in aliases
     assert "车载主激光雷达" not in aliases
     assert "据盖世汽车研究院" not in aliases
     assert "汽车交付量" not in aliases
@@ -473,12 +462,10 @@ def test_gap_candidates_filter_generic_terms_and_keep_entity_phrase(tmp_path: Pa
     assert "本集团" not in aliases
     assert "本集团于" not in aliases
     assert "应用的激光雷达产" not in aliases
-    assert "品及用于机器人及" not in aliases
     assert "乃根据本集团的初" not in aliases
     assert "金融科技" not in aliases
     assert "金融科技及企业服" not in aliases
     assert "港股科技" not in aliases
-    assert "算力的资产证券" not in aliases
     assert "集团" not in aliases
     assert "集团整体" not in aliases
     assert "星河出行科技" in aliases
@@ -492,6 +479,25 @@ def test_gap_candidates_filter_generic_terms_and_keep_entity_phrase(tmp_path: Pa
     assert 0.0 <= candidate["score"] <= 1.0
     assert "ticker" not in candidate
     assert "market" not in candidate
+
+
+def test_registered_sector_terms_anchor_instead_of_gap(tmp_path: Path):
+    """Sector 泛称（半导体/机器人/创新药…）已入 entity_registry：含这些词的
+    block 直接产出 sector EntityAnchor（F5 经 sector proxy 变成 ETF 代理
+    action），不再流入 gap 候选。2026-07-11 sector proxy 批次的行为钉子。"""
+    _seed_pair(
+        tmp_path,
+        "local_sector_terms",
+        "data/raw/trader/sector_terms.pdf",
+        text="半导体板块继续走强，人形机器人和创新药也都在轮动，建议关注。",
+    )
+
+    plan = plan_backfill(tmp_path, scope="curated-pdf")
+    assert plan.anchor_count >= 3  # SEMICONDUCTOR + ROBOTICS + PHARMA_INNOVATION
+    assert plan.hit_block_count == plan.block_count
+
+    report = build_gap_report(plan)
+    assert report["gap_candidates"] == []
 
 
 def test_gap_candidates_filter_metric_time_and_currency_tokens(tmp_path: Path):
