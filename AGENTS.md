@@ -28,7 +28,7 @@ F0 INTAKE → F1 STANDARDIZE → F1.5 TOPIC ASSEMBLY → F2 ANCHOR → F3 INTENT
 |-------|------|------------|------|
 | F0 | Intake | ContentRecord | implemented |
 | F1 | Standardize | ContentEnvelope, ContentBlock, BlockQuality, BlockProvenance | alpha contract reset |
-| F1.5 | Topic Assembly | TopicBlock, TopicAssemblyResult | alpha |
+| F1.5 | Topic Assembly | TopicBlock, TopicAssemblyResult | wired (rule fast-path; LLM opt-in) |
 | F2 | Anchor | QualityCard, TemporalAnchor, EntityAnchor, EvidenceSpan | partial |
 | F3 | Intent | NormalizedInvestmentIntent | partial |
 | F4 | Policy | PolicyMappingResult, PolicyMappedIntent | partial |
@@ -40,11 +40,11 @@ F0 INTAKE → F1 STANDARDIZE → F1.5 TOPIC ASSEMBLY → F2 ANCHOR → F3 INTENT
 
 ## 最严重架构断点
 
-**F3 → F4 → F5 未闭环。** 当前 `trade_action_extractor.py` 仍从原始文本直接生成 TradeAction，绕过 F3 Intent 和 F4 Policy。F5 TradeAction schema 已补齐 `intent_id` / `policy_id` / `evidence_span_ids` 字段及 `canonical_trace_status` 校验器，但 canonical F3→F4→F5 pipeline constructor 尚未完成，legacy extractor 仍输出 `non_canonical` TradeAction。
+**F3 → F4 → F5 已闭环（2026-07-12 收口）。** canonical 链是唯一现役路径：F5 TradeAction 由单一构造点 `extraction/action_composer.py:compose_trade_action` 产出（`intent_id` / `policy_id` / `evidence_span_ids` / `execution_timing` 齐全，`canonical_trace_status` 校验）。legacy 直提 `trade_action_extractor.extract_from_text` 与 deprecated L0-L8 `pipeline/orchestrator.py` 已隔离：入口/导入在无 `FINER_ALLOW_LEGACY_PIPELINE=1` 逃生门时硬报错，只读迁移工具显式开门。`grep "TradeAction("` 在 schemas/tests 之外剩两处——composer（canonical 唯一点）与 gate 之后不可达的 legacy 构造（死代码）。详见 `docs/specs/2026-07-12-f5-single-source-collar.md`。
 
 **F1 Standardize 契约正在重置。** 旧 V0 block type、legacy `SegmentRecord`、L3 perception 路径与 canonical F1 混杂，导致 F1.5 被迫承担 markdown 解析、HTML 清理、OCR/ASR 后处理等非语义分段职责。最新规范要求 F1 只输出 canonical `ContentEnvelope + ContentBlock[]`，并为每个 block 提供 standardization quality 与 provenance。详见 `docs/specs/f1-standardization-contract.md`。
 
-**F1.5 已不再是 contract-only，但未接入 canonical pipeline。** `schemas/topic_block.py`、`parsing/topic_assembler.py`、Cat Lord golden fixture、LLM constrained adapter 已存在。规则版只作为 fast path / fallback / regression baseline；主方向是 constrained LLM topic proposal + deterministic validator。F1.5 不再解析 F1 原始格式细节，只做语义 topic assembly。
+**F1.5 已接入 canonical pipeline（2026-07-12）。** `run_canonical_from_envelope` 在质量门与 F3 之间经 `parsing/topic_routing.py` 路由：长内容（默认 ≥8 块或 ≥2400 字，`FINER_F15_MODE` 可控）装配 TopicBlock 后按 topic 身份逐组提取，短内容/单话题保持整文路径。规则 fast-path 的主力是 F2 锚点驱动的动态 TopicRule（golden fixture 词表仅作回归 baseline）；主方向仍是 constrained LLM topic proposal（`FINER_F15_ASSEMBLER=llm`，失败自动回退规则版）。F1.5 不解析 F1 原始格式细节，只做语义 topic assembly，不产 direction/actionability/TradeAction，不丢块。详见 `docs/specs/2026-07-12-f15-canonical-wiring.md`。
 
 ## Agent 执行规则
 

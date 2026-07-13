@@ -32,6 +32,41 @@ from finer.services.finance_skills_client import FinanceSkillsClient
 
 
 # =============================================================================
+# Quarantine gate (P0 #1 单一真相源收口)
+# =============================================================================
+
+@pytest.fixture(autouse=True)
+def _allow_legacy_pipeline(monkeypatch):
+    """These tests pin the QUARANTINED legacy extractor for migration
+    reference — they opt in through the escape hatch, exactly like read-only
+    migration tooling must. The gate itself is pinned by
+    test_extract_from_text_raises_without_escape_hatch below."""
+    monkeypatch.setenv("FINER_ALLOW_LEGACY_PIPELINE", "1")
+
+
+@pytest.mark.asyncio
+async def test_extract_from_text_raises_without_escape_hatch(monkeypatch):
+    """Without FINER_ALLOW_LEGACY_PIPELINE=1 the legacy entry hard-errors —
+    no new chain can reach the non-canonical ``TradeAction(`` construction."""
+    monkeypatch.delenv("FINER_ALLOW_LEGACY_PIPELINE", raising=False)
+    extractor = TradeActionExtractor()
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(RuntimeError, match="quarantined legacy"):
+            await extractor.extract_from_text("AAPL at 180 is a good entry")
+
+
+def test_orchestrator_import_raises_without_escape_hatch(monkeypatch):
+    """Importing the deprecated L0-L8 orchestrator is an error for new code."""
+    import sys
+
+    monkeypatch.delenv("FINER_ALLOW_LEGACY_PIPELINE", raising=False)
+    sys.modules.pop("finer.pipeline.orchestrator", None)
+    with pytest.raises(ImportError, match="quarantined"):
+        import finer.pipeline.orchestrator  # noqa: F401
+    sys.modules.pop("finer.pipeline.orchestrator", None)
+
+
+# =============================================================================
 # Mock Fixtures
 # =============================================================================
 
