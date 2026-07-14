@@ -25,5 +25,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.7,
     },
+    {
+      url: `${SITE_URL}/kol-check`,
+      lastModified: "2026-07-14",
+      changeFrequency: "monthly",
+      priority: 0.8,
+    },
   ];
 }
