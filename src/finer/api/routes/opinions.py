@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Query
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from finer.paths import DATA_ROOT
@@ -759,6 +760,42 @@ async def get_stats_summary(
         )
 
 
+def _compute_changes(limit: int) -> dict:
+    """Synchronous body of GET /changes (run in a threadpool, see handler)."""
+    actions = _attributed_actions()
+    credibility = _kol_credibility_map(actions)
+
+    today = date.today()
+    current = build_snapshot(actions, credibility, snapshot_date=today)
+    previous = load_latest_snapshot_before(today)
+    snapshot_events = diff_snapshots(previous[1], current) if previous else []
+    persist_snapshot(current)
+
+    # merge, dedupe by id (a same-day flip can appear in both sources)
+    merged: Dict[str, dict] = {}
+    for ev in _history_change_events(actions) + snapshot_events:
+        merged.setdefault(ev["id"], ev)
+    events = sorted(
+        merged.values(), key=lambda e: e.get("timestamp") or "", reverse=True
+    )[:limit]
+
+    # Presentation decoration at the API boundary: both event sources carry raw
+    # creator_ids; the registry supplies display names in one place (kolId stays
+    # the raw join key).
+    from finer.services.kol_registry import get_registry
+
+    registry = get_registry()
+    for ev in events:
+        if ev.get("kolId"):
+            ev["kolName"] = registry.display_name(ev["kolId"])
+
+    return {
+        "events": events,
+        "snapshotDate": current["snapshot_date"],
+        "prevSnapshotDate": previous[0].isoformat() if previous else None,
+    }
+
+
 @router.get("/changes")
 async def get_changes(limit: int = Query(20, ge=1, le=100, description="事件数量上限")):
     """近期异动：历史派生（翻向/止损）+ 每日立场快照对比（新增覆盖/隔日翻向/信誉变动）。
@@ -768,41 +805,11 @@ async def get_changes(limit: int = Query(20, ge=1, le=100, description="事件�
     历史派生事件，快照 diff 随历史积累自然出现。
     """
     try:
-        actions = _attributed_actions()
-        credibility = _kol_credibility_map(actions)
-
-        today = date.today()
-        current = build_snapshot(actions, credibility, snapshot_date=today)
-        previous = load_latest_snapshot_before(today)
-        snapshot_events = diff_snapshots(previous[1], current) if previous else []
-        persist_snapshot(current)
-
-        # merge, dedupe by id (a same-day flip can appear in both sources)
-        merged: Dict[str, dict] = {}
-        for ev in _history_change_events(actions) + snapshot_events:
-            merged.setdefault(ev["id"], ev)
-        events = sorted(
-            merged.values(), key=lambda e: e.get("timestamp") or "", reverse=True
-        )[:limit]
-
-        # Presentation decoration at the API boundary: both event sources
-        # carry raw creator_ids; the registry supplies display names in one
-        # place (kolId stays the raw join key).
-        from finer.services.kol_registry import get_registry
-
-        registry = get_registry()
-        for ev in events:
-            if ev.get("kolId"):
-                ev["kolName"] = registry.display_name(ev["kolId"])
-
-        return {
-            "ok": True,
-            "data": {
-                "events": events,
-                "snapshotDate": current["snapshot_date"],
-                "prevSnapshotDate": previous[0].isoformat() if previous else None,
-            },
-        }
+        # The body scans F5, builds + persists an F7 snapshot, and diffs — all
+        # synchronous and heavy. Offload to the threadpool so /changes never
+        # blocks the event loop (which stalls every other request, e.g. /radar).
+        data = await run_in_threadpool(_compute_changes, limit)
+        return {"ok": True, "data": data}
     except Exception as e:
         logger.error("Failed to compute changes: %s", e, exc_info=True)
         raise FinerError(
