@@ -72,8 +72,10 @@ class DriveReport:
     f2_ran: int = 0
     f5_ran: int = 0
     failures: List[Dict[str, Any]] = field(default_factory=list)
+    reconciled: List[Dict[str, Any]] = field(default_factory=list)
     settle: Optional[Dict[str, Any]] = None
     dry_run: bool = False
+    skipped_locked: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -86,8 +88,10 @@ class DriveReport:
             "f2_ran": self.f2_ran,
             "f5_ran": self.f5_ran,
             "failures": self.failures,
+            "reconciled": self.reconciled,
             "settle": self.settle,
             "dry_run": self.dry_run,
+            "skipped_locked": self.skipped_locked,
         }
 
 
@@ -330,6 +334,43 @@ def _record_failure(
         _upsert_stage_status(conn, content_id, stage, "failed", error_code, error_message)
 
 
+def _reconcile_orphan(
+    conn: sqlite3.Connection,
+    report: DriveReport,
+    content_id: str,
+    dry_run: bool,
+) -> None:
+    """Handle a stage_status F0='ready' row whose ContentRecord is not on disk.
+
+    The SQLite ledger is only a hot index; the ContentRecord file is the F0
+    truth (F0 Project Memory contract). A 'ready' row with no record on disk is
+    an inconsistent index entry — e.g. an old smoke-test import, or a record
+    deleted/moved after registration (this is the write-atomicity gap: the PM
+    row outlived its durable record). Rather than surfacing it as a fresh
+    failure on *every* drive, flip the F0 row to 'failed' so it leaves the ready
+    set. Self-healing: a genuine re-import rewrites the record and F0IndexWriter
+    flips the row back to 'ready'.
+    """
+    report.reconciled.append(
+        {
+            "content_id": content_id,
+            "stage": "F0",
+            "reason": "ContentRecordMissing",
+            "action": "would_mark_failed" if dry_run else "marked_failed",
+        }
+    )
+    if not dry_run:
+        _upsert_stage_status(
+            conn,
+            content_id,
+            "F0",
+            "failed",
+            "ContentRecordMissing",
+            "stage_status F0=ready but no ContentRecord on disk; reconciled by "
+            "driver (a genuine re-import restores 'ready')",
+        )
+
+
 # =============================================================================
 # Driver
 # =============================================================================
@@ -378,7 +419,91 @@ def _stage_ready(conn: sqlite3.Connection, content_id: str, stage: str) -> bool:
     return bool(row and row["status"] == "ready")
 
 
+_LOCK_UNAVAILABLE = object()
+
+
+def _acquire_drive_lock(lock_dir: Path):
+    """Best-effort non-blocking exclusive lock for a drive pass.
+
+    Returns an open locked file handle on success, ``None`` if another drive
+    already holds it, or ``_LOCK_UNAVAILABLE`` when locking can't be used
+    (non-POSIX / unwritable dir) — in which case the caller proceeds unguarded.
+    """
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover — POSIX only
+        return _LOCK_UNAVAILABLE
+    try:
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        handle = open(lock_dir / ".pipeline_drive.lock", "w")
+    except OSError:
+        return _LOCK_UNAVAILABLE
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def _release_drive_lock(handle) -> None:
+    if handle is None or handle is _LOCK_UNAVAILABLE:
+        return
+    try:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except Exception:  # noqa: BLE001 — release is best-effort
+        pass
+    finally:
+        try:
+            handle.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def drive_once(
+    *,
+    data_root: Path = DATA_ROOT,
+    db_path: Optional[Path] = None,
+    limit: Optional[int] = None,
+    run_settle: bool = True,
+    dry_run: bool = False,
+    f1_executor: Optional[Callable[[ContentRecord, Path], Path]] = None,
+    f2_executor: Optional[Callable[[Path, ContentRecord, Path], Path]] = None,
+    f5_executor: Optional[Callable[[Path, Path], int]] = None,
+) -> DriveReport:
+    """One incremental pass, guarded by a single-flight lock.
+
+    A non-blocking file lock (keyed on the DB / data dir) ensures a server-hosted
+    auto-driver and a CLI ``pipeline-drive --watch`` loop can't drive
+    concurrently — two overlapping passes would race on the same envelope (F1
+    uuid churn). If another drive holds the lock, this pass is skipped
+    (``skipped_locked=True``) and retried next cycle. See ``_drive_once_unlocked``
+    for the actual work.
+    """
+    lock_dir = Path(db_path).parent if db_path is not None else data_root
+    handle = _acquire_drive_lock(lock_dir)
+    if handle is None:
+        run_id = f"drive_{datetime.now().strftime('%Y%m%d-%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        logger.info("pipeline drive %s: skipped — another drive holds the lock", run_id)
+        return DriveReport(run_id=run_id, dry_run=dry_run, skipped_locked=True)
+    try:
+        return _drive_once_unlocked(
+            data_root=data_root,
+            db_path=db_path,
+            limit=limit,
+            run_settle=run_settle,
+            dry_run=dry_run,
+            f1_executor=f1_executor,
+            f2_executor=f2_executor,
+            f5_executor=f5_executor,
+        )
+    finally:
+        _release_drive_lock(handle)
+
+
+def _drive_once_unlocked(
     *,
     data_root: Path = DATA_ROOT,
     db_path: Optional[Path] = None,
@@ -432,15 +557,7 @@ def drive_once(
 
         rec = _find_content_record(data_root, content_id)
         if rec is None:
-            report.failures.append(
-                {
-                    "content_id": content_id,
-                    "stage": "F0",
-                    "error_code": "ContentRecordMissing",
-                    "error_message": "stage_status says F0 ready but no parsable "
-                                     "ContentRecord found under F0_intake",
-                }
-            )
+            _reconcile_orphan(conn, report, content_id, dry_run)
             continue
         if _is_excluded(rec):
             report.skipped_excluded += 1
@@ -529,7 +646,8 @@ def drive_once(
             pass
 
     logger.info(
-        "pipeline drive %s: scanned=%d f1=%d f2=%d f5=%d skipped=%d excluded=%d failures=%d",
+        "pipeline drive %s: scanned=%d f1=%d f2=%d f5=%d skipped=%d excluded=%d "
+        "reconciled=%d failures=%d",
         run_id,
         report.scanned,
         report.f1_ran,
@@ -537,6 +655,7 @@ def drive_once(
         report.f5_ran,
         report.skipped_complete,
         report.skipped_excluded,
+        len(report.reconciled),
         len(report.failures),
     )
     return report

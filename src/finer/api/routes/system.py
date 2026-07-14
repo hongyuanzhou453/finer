@@ -1,6 +1,6 @@
 """System API — cache management, diagnostics, and error code catalog."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 import json as json_mod
 import logging
 
@@ -22,6 +22,24 @@ from finer.errors.codes import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/autodrive")
+async def get_autodrive_status(request: Request):
+    """Status of the incremental pipeline auto-driver (roadmap ①).
+
+    Reports whether the background driver is enabled/running and the summary of
+    its last pass. ``enabled: false`` is the default — set
+    ``FINER_PIPELINE_AUTODRIVE=1`` to turn the refresh cycle on.
+    """
+    driver = getattr(request.app.state, "autodriver", None)
+    if driver is None:
+        return {
+            "enabled": False,
+            "running": False,
+            "detail": "auto-driver not initialized (no lifespan)",
+        }
+    return driver.status()
 
 
 @router.post("/cache/invalidate")

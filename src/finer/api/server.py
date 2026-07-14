@@ -1,9 +1,28 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from finer.api.routes import files, review, stats, integrations, streams, sources, enrichment, bilibili, wechat, rlhf, extraction, aggregation, system, opinions, metrics, lineage, sentiment, backtest, bbdown, text_analysis, kol, kol_style, kol_registry, f0_index, annotation, audit
 from finer.api.middleware import setup_auth_middleware
 from finer.errors import register_error_handlers
+from finer.pipeline.autodrive import PipelineAutoDriver
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start/stop the incremental pipeline auto-driver (opt-in, roadmap ①).
+
+    Disabled unless FINER_PIPELINE_AUTODRIVE=1, so plain server starts (and
+    tests) stay inert. When enabled, a new F0 import flows F1→F8 on a timer
+    without anyone running a script.
+    """
+    driver = PipelineAutoDriver()
+    app.state.autodriver = driver
+    await driver.start()
+    try:
+        yield
+    finally:
+        await driver.stop()
 
 
 def create_app() -> FastAPI:
@@ -11,6 +30,7 @@ def create_app() -> FastAPI:
         title="Finer OS Canonical API",
         description="Lightweight routing for frontend communication.",
         version="0.1.0",
+        lifespan=lifespan,
     )
     register_error_handlers(app)
 

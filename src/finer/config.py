@@ -161,3 +161,45 @@ def load_wechat_service_config(root: Path) -> WeChatServiceConfig:
         exporter_url=os.getenv("WECHAT_EXPORTER_URL", WeChatServiceConfig.exporter_url),
         source_type=os.getenv("WECHAT_SOURCE_TYPE", "hybrid"),
     )
+
+
+@dataclass
+class PipelineAutoDriveConfig:
+    """Config for the in-server incremental pipeline auto-driver (roadmap ①).
+
+    Default OFF: enabling it makes the API server perform real LLM-backed
+    F1/F2/F3/F5 work and settle (apply) on a timer, so it must be an explicit
+    opt-in rather than a side effect of starting the server.
+    """
+
+    enabled: bool = False
+    interval_seconds: int = 300
+    limit: Optional[int] = None
+    run_settle: bool = True
+    initial_delay_seconds: float = 5.0
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def load_pipeline_autodrive_config() -> PipelineAutoDriveConfig:
+    """Build auto-driver config from environment variables.
+
+    FINER_PIPELINE_AUTODRIVE          enable the background driver (default off)
+    FINER_PIPELINE_DRIVE_INTERVAL     seconds between passes (default 300)
+    FINER_PIPELINE_DRIVE_LIMIT        max content_ids per pass (default: all)
+    FINER_PIPELINE_DRIVE_SETTLE       run F8 settle each pass (default on)
+    FINER_PIPELINE_DRIVE_INITIAL_DELAY  delay before the first pass (default 5s)
+    """
+    limit_raw = os.getenv("FINER_PIPELINE_DRIVE_LIMIT")
+    return PipelineAutoDriveConfig(
+        enabled=_env_flag("FINER_PIPELINE_AUTODRIVE", False),
+        interval_seconds=int(os.getenv("FINER_PIPELINE_DRIVE_INTERVAL", "300")),
+        limit=int(limit_raw) if limit_raw not in (None, "") else None,
+        run_settle=_env_flag("FINER_PIPELINE_DRIVE_SETTLE", True),
+        initial_delay_seconds=float(os.getenv("FINER_PIPELINE_DRIVE_INITIAL_DELAY", "5")),
+    )
