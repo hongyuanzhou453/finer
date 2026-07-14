@@ -632,7 +632,7 @@ async def get_feedback_stats():
 async def export_dpo_data(
     min_rating: int = Query(1, ge=1, le=5, description="Minimum rating to include"),
     only_with_preference: bool = Query(True, description="Only include items with preference data"),
-    format: str = Query("jsonl", regex="^(json|jsonl)$"),
+    format: str = Query("jsonl", pattern="^(json|jsonl)$"),
 ):
     """Export feedback data for DPO training.
 

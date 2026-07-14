@@ -252,23 +252,27 @@ class CachedPriceProvider:
         if cached:
             return cached
 
-        # Try async fetch (for sync compatibility, we run in thread)
+        # Try async fetch (for sync compatibility). asyncio.get_event_loop() is
+        # deprecated when no loop is running; detect a running loop explicitly and
+        # spin a fresh one via asyncio.run() only when we're outside any loop.
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Already in async context, need to schedule
-                if self._fallback_to_mock:
-                    return self._get_mock_price(ticker, date)
-                self._raise_price_unavailable(ticker, date)
-            else:
-                # Can run async
-                price = loop.run_until_complete(self._fetch_from_api(ticker, date))
-                if price:
-                    self._cache.set(ticker, price, date)
-                    return price
+            running_loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No event loop
-            pass
+            running_loop = None
+
+        if running_loop is not None:
+            # Already inside an event loop — cannot block on it from a sync call.
+            if self._fallback_to_mock:
+                return self._get_mock_price(ticker, date)
+            self._raise_price_unavailable(ticker, date)
+        else:
+            try:
+                price = asyncio.run(self._fetch_from_api(ticker, date))
+            except RuntimeError:
+                price = None
+            if price:
+                self._cache.set(ticker, price, date)
+                return price
 
         # Fallback to mock
         if self._fallback_to_mock:
