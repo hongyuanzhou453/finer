@@ -117,7 +117,51 @@ class AuditAssembler:
             "envelope": self._envelope_context(
                 action, intent, envelope, source_file=indexed.source_file
             ),
+            "provenance": self._provenance(action, intent),
         }
+
+    def _provenance(
+        self,
+        action: TradeAction,
+        intent: NormalizedInvestmentIntent | None,
+    ) -> dict[str, Any]:
+        """Typed F1.5 topic + F2 sector-proxy provenance for the audit UI.
+
+        The raw values already live in ``intent.metadata`` (f15_*) and
+        ``action.metadata.sector_proxy``; this projects them into a stable,
+        explicitly-typed block so the frontend renders the two otherwise-hidden
+        pipeline layers without digging into loosely-typed metadata dicts. Keys
+        are omitted when absent, so a direct-ticker action with no F1.5 routing
+        yields an empty object.
+        """
+        provenance: dict[str, Any] = {}
+
+        intent_meta = (intent.metadata if intent else None) or {}
+        topic_title = intent_meta.get("f15_topic_title")
+        if topic_title:
+            provenance["f15_topic"] = self._drop_none(
+                {
+                    "topic_title": topic_title,
+                    "topic_index": intent_meta.get("f15_topic_index"),
+                    "assembly_id": intent_meta.get("f15_assembly_id"),
+                    "merged_topics": intent_meta.get("f15_merged_topics") or None,
+                }
+            )
+
+        action_meta = getattr(action, "metadata", None) or {}
+        sector_proxy = action_meta.get("sector_proxy")
+        if isinstance(sector_proxy, dict) and sector_proxy.get("sector_symbol"):
+            provenance["sector_proxy"] = self._drop_none(
+                {
+                    "sector_symbol": sector_proxy.get("sector_symbol"),
+                    "sector_name": sector_proxy.get("sector_name"),
+                    "proxy_symbol": sector_proxy.get("proxy_symbol"),
+                    "proxy_name": sector_proxy.get("proxy_name"),
+                    "rule": sector_proxy.get("rule"),
+                }
+            )
+
+        return provenance
 
     def _get_indexed_actions(self) -> list[IndexedTradeAction]:
         now = time.time()

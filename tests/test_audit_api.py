@@ -322,6 +322,7 @@ def test_trace_bundle_canonical(client: TestClient) -> None:
         "policy",
         "evidence_spans",
         "envelope",
+        "provenance",
     }
     assert data["trade_action"]["canonical_trace_status"] == "canonical"
     assert data["intent"]["intent_id"] == "intent-canonical"
@@ -657,6 +658,7 @@ def test_real_f5_executed_wrappers_are_served() -> None:
         "policy",
         "evidence_spans",
         "envelope",
+        "provenance",
     }
 
 
@@ -712,3 +714,70 @@ def test_evidence_spans_missing_sidecar_is_skipped(tmp_path: Path) -> None:
     bundle = AuditAssembler(data_root=tmp_path, ttl_seconds=0).get_trace_bundle("ev-miss")
     assert bundle is not None
     assert bundle["evidence_spans"] == []
+
+
+def test_trace_bundle_surfaces_f15_and_sector_proxy_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bundle exposes typed F1.5 topic + F2 sector-proxy provenance so the
+    audit UI can render those otherwise-hidden pipeline layers."""
+    action = _action(
+        trade_action_id="ta-prov",
+        ticker="159566",
+        content_id="env-prov",
+        creator_id="kol-prov",
+        intent_id="intent-prov",
+        policy_id="policy-prov",
+        evidence_span_ids=["span-prov"],
+    )
+    # F2 sector-proxy provenance rides on the action metadata (as the canonical
+    # runner writes it via SectorProxyResolution.audit_metadata()).
+    action.metadata = {
+        "tier": "trade",
+        "sector_proxy": {
+            "sector_symbol": "ENERGY_STORAGE",
+            "sector_name": "储能",
+            "proxy_symbol": "159566",
+            "proxy_name": "储能ETF",
+            "rule": "sector_proxy_v1",
+            "config_version": 1,
+        },
+    }
+    intent = _intent(
+        intent_id="intent-prov",
+        envelope_id="env-prov",
+        creator_id="kol-prov",
+        target_symbol="ENERGY_STORAGE",
+        evidence_span_ids=["span-prov"],
+    )
+    # F1.5 topic provenance rides on the intent metadata.
+    intent.metadata = {
+        "f15_topic_title": "储能板块",
+        "f15_topic_index": 2,
+        "f15_assembly_id": "asm-123",
+    }
+    policy = _policy("policy-prov", "intent-prov", "kol-prov")
+    envelope = _envelope("env-prov", "kol-prov", "储能板块的机会值得关注。")
+
+    _write_model(tmp_path / "F5_executed" / "ta-prov.json", action)
+    _write_model(tmp_path / "F3_intents" / "intent-prov.json", intent)
+    _write_model(tmp_path / "F4_policy_mapped" / "policy-prov.json", policy)
+    _write_model(tmp_path / "F2_anchored" / "env-prov.json", envelope)
+
+    assembler = AuditAssembler(data_root=tmp_path, ttl_seconds=0)
+    bundle = assembler.get_trace_bundle("ta-prov")
+    assert bundle is not None
+
+    prov = bundle["provenance"]
+    assert prov["f15_topic"]["topic_title"] == "储能板块"
+    assert prov["f15_topic"]["topic_index"] == 2
+    assert prov["sector_proxy"]["sector_symbol"] == "ENERGY_STORAGE"
+    assert prov["sector_proxy"]["proxy_symbol"] == "159566"
+
+
+def test_trace_bundle_provenance_empty_for_direct_ticker(client: TestClient) -> None:
+    """A plain direct-ticker canonical action carries no F1.5/sector provenance."""
+    resp = client.get("/api/audit/actions/ta-canonical/trace")
+    assert resp.status_code == 200
+    bundle = resp.json()["data"]
+    assert bundle["provenance"] == {}

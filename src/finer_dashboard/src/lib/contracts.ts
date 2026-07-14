@@ -1711,10 +1711,32 @@ export type TradeActionSummary = {
 };
 
 /** Full F0→F5 chain for one TradeAction, returned by the audit trace API. */
+/**
+ * Typed projection of otherwise-hidden pipeline layers for the audit UI
+ * (assembled from intent.metadata f15_* and trade_action.metadata.sector_proxy).
+ * Keys are omitted when absent, so a direct-ticker action yields `{}`.
+ */
+export type AuditProvenance = {
+  f15_topic?: {
+    topic_title: string;
+    topic_index?: number;
+    assembly_id?: string;
+    merged_topics?: string[];
+  };
+  sector_proxy?: {
+    sector_symbol: string;
+    sector_name?: string;
+    proxy_symbol?: string;
+    proxy_name?: string;
+    rule?: string;
+  };
+};
+
 export type AuditTraceBundle = {
   trade_action: TradeAction;
   intent: NormalizedInvestmentIntent | null; //  null = chain broken at F3
   policy: PolicyMappingResult | null; //         null = chain broken at F4
   evidence_spans: EvidenceSpan[]; //             F2
   envelope: EnvelopeContext; //                  F1/F0 source
+  provenance?: AuditProvenance; //               F1.5 topic + F2 sector proxy
 };
