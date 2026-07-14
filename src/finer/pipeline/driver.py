@@ -222,7 +222,12 @@ def _default_f1_executor(rec: ContentRecord, data_root: Path) -> Path:
             logger.warning("Vision LLM unavailable for F1 (%s); text-only routing", exc)
         _ROUTER = StandardizationRouter(llm_client=vision_llm)
 
+    # rec.raw_path is stored relative to data_root (files.py persists
+    # raw_path.relative_to(DATA_ROOT)); resolve it against data_root, not the
+    # process CWD, or every real F0 record fails F1 with "raw file missing".
     raw_path = Path(rec.raw_path)
+    if not raw_path.is_absolute():
+        raw_path = data_root / raw_path
     if not raw_path.exists():
         raise FinerStateError(
             ErrorCode.API_NTF_001,
