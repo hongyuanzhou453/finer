@@ -18,9 +18,12 @@ yet implemented and will be added in subsequent iterations.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from finer.schemas.investment_intent import NormalizedInvestmentIntent, IntentBatch
 from finer.schemas.policy import (
@@ -60,6 +63,7 @@ class PolicyMapper:
         self,
         policy: Optional[GlobalBasePolicy] = None,
         context: Optional[PolicyContext] = None,
+        style_resolver: Optional[Callable[[str], Optional[str]]] = None,
     ):
         """Initialize the mapper.
 
@@ -68,9 +72,67 @@ class PolicyMapper:
             context: Optional PolicyContext with KOL/style/risk info.
                      Currently ignored (only GlobalBase is active).
                      Reserved for future StyleArchetype/KOLPersona layers.
+            style_resolver: Optional ``creator_id -> declared entry_style``
+                     resolver used to apply per-style exit-rule overrides
+                     (``tuning.by_style``). If None, a best-effort KOL-registry
+                     lookup is used. Only consulted when the active policy's
+                     ``tuning.by_style`` is non-empty, so the default (empty)
+                     surface never touches the registry.
         """
         self._policy = policy or GlobalBasePolicy()
         self._context = context
+        self._style_resolver = style_resolver
+
+    def _resolve_entry_style(self, creator_id: Optional[str]) -> Optional[str]:
+        """Best-effort ``creator_id -> declared entry_style`` (never raises)."""
+        if not creator_id:
+            return None
+        if self._style_resolver is not None:
+            try:
+                return self._style_resolver(creator_id)
+            except Exception:  # noqa: BLE001 — style resolution is best-effort
+                return None
+        try:
+            from finer.services.kol_registry import get_registry
+
+            declared = get_registry().declared_style(creator_id)
+            return declared.entry_style if declared else None
+        except Exception:  # noqa: BLE001 — registry unavailable → base rules
+            return None
+
+    def _apply_style_exit_overlay(
+        self,
+        risk_constraints: PolicyRiskConstraints,
+        intent: NormalizedInvestmentIntent,
+    ) -> tuple[PolicyRiskConstraints, Optional[str]]:
+        """Overlay per-style exit-rule hints (StyleArchetype-lite).
+
+        Inert unless the active tuning declares ``by_style`` overrides AND the
+        intent is position-taking (has exit hints). Returns the (possibly
+        overridden) constraints plus the applied style label (or None).
+        """
+        tuning = getattr(self._policy, "tuning", None)
+        if not tuning or not tuning.by_style:
+            return risk_constraints, None
+        # Non-trade intents carry no exit hints — nothing to tune.
+        if risk_constraints.stop_loss_pct_hint is None:
+            return risk_constraints, None
+
+        style_label = self._resolve_entry_style(intent.creator_id)
+        if not style_label or style_label not in tuning.by_style:
+            return risk_constraints, None
+
+        hints = tuning.by_style[style_label]
+        overridden = risk_constraints.model_copy(
+            update={
+                "stop_loss_pct_hint": hints.stop_loss_pct,
+                "take_profit_pct_hint": hints.take_profit_pct,
+                "max_holding_days_hint": hints.max_holding_days,
+                "risk_notes": risk_constraints.risk_notes
+                + [f"Exit rules tuned for declared style '{style_label}'"],
+            }
+        )
+        return overridden, style_label
 
     # ------------------------------------------------------------------
     # Public API
@@ -189,11 +251,16 @@ class PolicyMapper:
             action_hint=action_hint,
         )
 
-        # --- Step 4: Risk constraints ---
+        # --- Step 4: Risk constraints (GlobalBase = style-independent base) ---
         risk_constraints = policy.compute_risk_constraints(
             action_hint=action_hint,
             conviction=intent.conviction,
             ambiguity_flags=intent.ambiguity_flags if intent.ambiguity_flags else None,
+        )
+
+        # --- Step 4b: Per-style exit-rule overlay (inert unless tuned) ---
+        risk_constraints, applied_style = self._apply_style_exit_overlay(
+            risk_constraints, intent
         )
 
         # --- Step 5: Mapping rationale ---
@@ -214,6 +281,23 @@ class PolicyMapper:
             position_sizing_hint=position_sizing_hint,
             holding_period_hint=holding_period_hint,
         )
+        policy_layers_applied = [policy.policy_layer_name]
+        if applied_style:
+            policy_layers_applied.append("StyleExitOverlay")
+            layer_traces.append(
+                PolicyLayerTrace(
+                    layer_name="StyleExitOverlay",
+                    layer_version=policy.policy_version,
+                    applied=True,
+                    reason=f"Declared entry_style='{applied_style}' has a by_style exit override",
+                    modifications=[
+                        f"stop_loss_pct_hint: → {risk_constraints.stop_loss_pct_hint}",
+                        f"take_profit_pct_hint: → {risk_constraints.take_profit_pct_hint}",
+                        f"max_holding_days_hint: → {risk_constraints.max_holding_days_hint}",
+                    ],
+                    order_index=1,
+                )
+            )
 
         # --- Step 9: Build decisions ---
         decisions = self._build_decisions(
@@ -229,7 +313,7 @@ class PolicyMapper:
             creator_id=intent.creator_id,
             kol_id=intent.creator_id,
             policy_version=policy.policy_version,
-            policy_layers_applied=[policy.policy_layer_name],
+            policy_layers_applied=policy_layers_applied,
             action_hint=action_hint,
             position_sizing_hint=position_sizing_hint,
             holding_period_hint=holding_period_hint,
