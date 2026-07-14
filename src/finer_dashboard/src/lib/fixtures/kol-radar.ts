@@ -982,17 +982,22 @@ const EARNINGS_LOW_SAMPLE_N = 3;
  * 4. `sampleCount === 0` 的 KOL 不上榜；`< 3` 标 lowSample 但仍上榜。
  * 5. `bestCall` = 窗口内 returnPct 最高的一笔。
  */
+/** Earnings-board window: rolling 7d / 30d, or "all" (every settled viewpoint,
+ * no time bound — the live surface uses this so historical settles still show). */
+export type EarningsWindow = 7 | 30 | "all";
+
 export function deriveEarningsBoard(
   data: KOLRadarData,
-  windowDays: 7 | 30,
+  windowDays: EarningsWindow,
 ): EarningsRow[] {
   const end = new Date(data.generatedAt).getTime();
-  const start = end - windowDays * 86_400_000;
+  const start = windowDays === "all" ? -Infinity : end - windowDays * 86_400_000;
 
   const rows: EarningsRow[] = [];
   for (const k of data.kols) {
     const settledInWindow = k.viewpoints.filter((v) => {
       if (!isSettled(v)) return false;
+      if (windowDays === "all") return true;
       const settleTs =
         new Date(v.timestamp).getTime() + (v.holdingDays ?? 0) * 86_400_000;
       return settleTs >= start && settleTs <= end;

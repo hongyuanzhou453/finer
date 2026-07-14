@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
+  Radar,
   Users,
   GitCompare,
   LineChart,
@@ -16,6 +17,7 @@ import {
 
 const navItems = [
   { href: "/", label: "工作台", icon: LayoutDashboard },
+  { href: "/radar", label: "雷达", icon: Radar },
   { href: "/kol", label: "KOL", icon: Users },
   { href: "/kol/compare", label: "对比", icon: GitCompare },
   { href: "/backtest", label: "回测", icon: LineChart },

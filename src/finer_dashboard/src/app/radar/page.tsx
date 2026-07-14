@@ -74,7 +74,7 @@ export default function LiveRadarPage() {
               对照设计标杆 →
             </Link>
           </div>
-          <KOLRadar data={result.data} links={LIVE_RADAR_LINKS} />
+          <KOLRadar data={result.data} links={LIVE_RADAR_LINKS} earningsWindow="all" />
         </>
       )}
     </main>

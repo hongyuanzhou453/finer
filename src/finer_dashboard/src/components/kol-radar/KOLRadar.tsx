@@ -12,6 +12,7 @@ import {
   deriveCredibilityBoard,
   deriveMarketSentiment,
   deriveTickerConsensus,
+  type EarningsWindow,
   type KOLRadarData,
 } from "@/lib/fixtures/kol-radar";
 import { SectionHeader } from "@/components/kol-snapshot/primitives";
@@ -26,9 +27,13 @@ import { DEMO_RADAR_LINKS, type RadarLinks } from "./links";
 export function KOLRadar({
   data = KOL_RADAR_FIXTURE,
   links = DEMO_RADAR_LINKS,
+  earningsWindow,
 }: {
   data?: KOLRadarData;
   links?: RadarLinks;
+  /** Default earnings-board window. Live surface passes "all" so historical
+   * settles show; /demo leaves it unset (EarningsRace defaults to 7d). */
+  earningsWindow?: EarningsWindow;
 }) {
   const sentiment = deriveMarketSentiment(data);
   const changes = deriveChangeFeed(data);
@@ -73,7 +78,7 @@ export function KOLRadar({
           note="按窗口内已结算跟单收益 · 等权累计"
         />
         <div className="editorial-panel mt-3 rounded-sm p-4">
-          <EarningsRace data={data} links={links} />
+          <EarningsRace data={data} links={links} defaultWindow={earningsWindow} />
         </div>
       </section>
 
