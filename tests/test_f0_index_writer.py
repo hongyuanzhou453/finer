@@ -35,6 +35,22 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
     return connection
 
 
+@pytest.fixture(autouse=True)
+def _durable_record_file(tmp_path: Path, monkeypatch):
+    """Make the ContentRecord durable at the receipt's default record_path.
+
+    F0IndexWriter now refuses to register a record as F0-ready unless its
+    ContentRecord file exists (write-atomicity guard). These unit tests call the
+    writer directly with a synthetic receipt, so materialize the file under a
+    tmp cwd (all default receipts point at the same relative record_path).
+    """
+    monkeypatch.chdir(tmp_path)
+    rec_path = tmp_path / "data" / "F0_intake" / "wechat" / "cnt_w001.json"
+    rec_path.parent.mkdir(parents=True, exist_ok=True)
+    rec_path.write_text("{}", encoding="utf-8")  # content not validated by the writer
+    yield
+
+
 def _record(content_id: str = "cnt_w001", **overrides) -> ContentRecord:
     defaults = dict(
         content_id=content_id,
@@ -186,3 +202,27 @@ class TestArtifactRegistration:
 
         assert _count(conn, "storage_objects") == 2
         assert _count(conn, "artifacts", "content_id = ?", ("cnt_w001",)) == 2
+
+
+class TestWriteAtomicityGuard:
+    """F0 write-atomicity: never register a non-durable record as F0-ready."""
+
+    def test_missing_record_file_raises(self, conn: sqlite3.Connection) -> None:
+        receipt = _receipt(record_path="data/F0_intake/wechat/does_not_exist.json")
+        with pytest.raises(FileNotFoundError, match="not durable"):
+            F0IndexWriter(conn).record_imported(_record(), receipt)
+
+    def test_missing_record_file_writes_no_rows(self, conn: sqlite3.Connection) -> None:
+        # The guard runs before any insert → no partial/orphan rows leak.
+        receipt = _receipt(record_path="data/F0_intake/wechat/does_not_exist.json")
+        with pytest.raises(FileNotFoundError):
+            F0IndexWriter(conn).record_imported(_record(), receipt)
+        assert _count(conn, "contents", "content_id = ?", ("cnt_w001",)) == 0
+        assert _count(conn, "stage_status", "content_id = ?", ("cnt_w001",)) == 0
+
+    def test_no_record_path_is_permitted(self, conn: sqlite3.Connection) -> None:
+        # record_path is Optional — when absent the guard can't verify, so it
+        # proceeds (unchanged legacy behavior).
+        receipt = _receipt(record_path=None)
+        F0IndexWriter(conn).record_imported(_record(), receipt)
+        assert _count(conn, "stage_status", "content_id = ? AND stage = 'F0'", ("cnt_w001",)) == 1

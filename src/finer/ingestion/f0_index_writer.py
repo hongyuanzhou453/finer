@@ -75,6 +75,23 @@ class F0IndexWriter:
         ``receipt.raw_sha256`` entry (deterministic ids, idempotent).
         """
         conn = self._conn
+
+        # --- Write-atomicity guard (roadmap ②) ---------------------------
+        # The ContentRecord file is the F0 truth; these PM rows are a hot index.
+        # Registering the index (esp. stage_status F0='ready') before the record
+        # is durable on disk is exactly the gap that produces orphans — a 'ready'
+        # row with no ContentRecord, which the driver then surfaces every run.
+        # Verify durability FIRST (before any insert) so we never index a
+        # non-durable record. Callers (orchestrator._register_f0_index) treat a
+        # raise as best-effort: the raw file + record remain the recoverable
+        # truth, and a genuine re-import registers cleanly once the file lands.
+        if receipt.record_path and not Path(receipt.record_path).exists():
+            raise FileNotFoundError(
+                f"F0IndexWriter: refusing to register content_id={record.content_id} "
+                f"as F0-ready — ContentRecord not durable at {receipt.record_path}. "
+                "Write the record file before registering (F0 write-atomicity)."
+            )
+
         now = now_utc().isoformat()
         content_id = record.content_id
 
