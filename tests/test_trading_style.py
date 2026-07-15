@@ -1,6 +1,7 @@
 """Tests for the KOL trading-style profile service (services/trading_style.py)."""
 from __future__ import annotations
 
+import itertools
 from datetime import datetime
 from pathlib import Path
 
@@ -27,17 +28,25 @@ from finer.services.trading_style import (
 # Helpers
 # =============================================================================
 
+_TICKER_SEQ = itertools.count()
+
+
 def _action(
     action_type: ActionType = ActionType.LONG,
     creator_id: str = "kol-style-test",
     metadata: dict | None = None,
+    ticker: str | None = None,
 ) -> TradeAction:
+    """One observed action. Defaults to a UNIQUE ticker so each call is a
+    distinct stance slot — i.e. one independent voter. Style votes are cast per
+    stance episode, so passing the SAME ticker models a restated standing view
+    (which deliberately collapses to a single vote)."""
     return TradeAction(
         timestamp=datetime(2026, 6, 1, 10, 0),
         source=SourceInfo(
             content_id="c-1", evidence_text="test", creator_id=creator_id
         ),
-        target=TargetInfo(ticker="TEST", market="CN"),
+        target=TargetInfo(ticker=ticker or f"T{next(_TICKER_SEQ)}", market="CN"),
         direction=TradeDirection.BULLISH,
         action_chain=[
             ActionStep(
@@ -178,6 +187,32 @@ class TestComputeObservedStyle:
         assert observed is not None
         assert observed.entry_style_sample_size == 6
         assert observed.entry_style_observed == "left_side"
+
+    def test_restated_standing_view_votes_once_and_cannot_stuff_the_ballot(self):
+        """A weekly template restating ONE view must not outvote real calls.
+
+        Regression for the 2026-07-14 finding: trader_ji's template restated a
+        single AAPL view ~19x, and per-action voting let it dominate a ~24-vote
+        denominator — manufacturing a 自述右侧 vs 实测左侧 contradiction that was
+        an artifact of his template, not his trading. Per-episode voting makes the
+        restated view worth exactly one vote, so the real calls decide the verdict.
+        """
+        restated_one_view = [
+            _action(metadata={"entry_timing_style": "left_side"}, ticker="AAPL")
+            for _ in range(19)
+        ]
+        genuine_calls = [
+            _action(metadata={"entry_timing_style": "right_side"}, ticker=t)
+            for t in ("NVDA", "0700.HK", "600519.SH", "9992.HK", "GOOGL")
+        ]
+        observed = compute_observed_style(restated_one_view + genuine_calls)
+        assert observed is not None
+        # 19 restatements collapse to 1 vote; 5 distinct calls keep 5
+        assert observed.left_side_count == 1
+        assert observed.right_side_count == 5
+        assert observed.entry_style_sample_size == 6
+        # verdict follows the real calls, not the template
+        assert observed.entry_style_observed == "right_side"
 
     def test_entry_style_mixed_when_no_majority(self):
         # 3 left, 3 right -> 50%/50%, both below 60% -> mixed

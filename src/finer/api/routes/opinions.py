@@ -440,19 +440,41 @@ def _attributed_actions() -> List[TradeAction]:
     ]
 
 
-def _kol_credibility_map(actions: List[TradeAction]) -> Dict[str, int]:
-    settled: Dict[str, int] = {}
-    wins: Dict[str, int] = {}
-    kols: set[str] = set()
-    for a in actions:
-        k = a.source.creator_id or ""
-        kols.add(k)
-        bt = a.backtest_result
+def _kol_settled_record(actions: List[TradeAction]) -> Dict[str, tuple[int, int]]:
+    """(settled, wins) per KOL over stance EPISODES, not raw actions.
+
+    Single source of truth for every KOL record on this route — both the
+    credibility map and the /stats/summary topKols tally read it, so the two
+    cannot drift apart.
+
+    A standing view restated week after week is ONE call, scored from its first
+    statement (a follower's real entry point); a flip opens a new call. Counting
+    each restatement as an independent bet inflated records badly — 8 of
+    trader_ji's 12 settled "calls" were a single AAPL view repeated by his
+    weekly-strategy template. See timeline/stance_episodes.py.
+    """
+    from finer.timeline.stance_episodes import build_stance_episodes
+
+    record: Dict[str, list[int]] = {}
+    for a in actions:  # every attributed KOL appears, even with nothing settled
+        k = (a.source.creator_id or "").strip()
+        if k and k.lower() not in ("unknown", "none"):
+            record.setdefault(k, [0, 0])
+    for ep in build_stance_episodes(actions):
+        bt = ep.backtest_result  # the FIRST statement's outcome
         if bt and bt.return_pct is not None and (bt.holding_days or 0) > 0:
-            settled[k] = settled.get(k, 0) + 1
+            rec = record.setdefault(ep.creator_id, [0, 0])
+            rec[0] += 1
             if bt.return_pct > 0:
-                wins[k] = wins.get(k, 0) + 1
-    return {k: _credibility_score(settled.get(k, 0), wins.get(k, 0)) for k in kols}
+                rec[1] += 1
+    return {k: (v[0], v[1]) for k, v in record.items()}
+
+
+def _kol_credibility_map(actions: List[TradeAction]) -> Dict[str, int]:
+    return {
+        k: _credibility_score(settled, wins)
+        for k, (settled, wins) in _kol_settled_record(actions).items()
+    }
 
 
 def _history_change_events(actions: List[TradeAction]) -> List[dict]:
@@ -569,8 +591,6 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
     ticker_counts: Dict[str, int] = {}
     ticker_success: Dict[str, List[bool]] = {}
     kol_counts: Dict[str, int] = {}
-    kol_settled: Dict[str, int] = {}
-    kol_wins: Dict[str, int] = {}
 
     for action in filtered:
         # Direction (5-way buckets cover every TradeDirection value)
@@ -598,15 +618,12 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
         elif action.validation_status == ValidationStatus.FAILED:
             ticker_success.setdefault(t, []).append(False)
 
-        # KOL counts + settled follow-P&L record (feeds server-side credibility)
+        # KOL volume count (the topKols ranking metric — how often they spoke).
+        # The settled follow-P&L RECORD is computed once below over stance
+        # episodes, so restatements of one standing view count as one call.
         kol = action.source.creator_id or ""
         if kol:
             kol_counts[kol] = kol_counts.get(kol, 0) + 1
-            bt = action.backtest_result
-            if bt and bt.return_pct is not None and (bt.holding_days or 0) > 0:
-                kol_settled[kol] = kol_settled.get(kol, 0) + 1
-                if bt.return_pct > 0:
-                    kol_wins[kol] = kol_wins.get(kol, 0) + 1
 
     avg_confidence = round(sum(confidences) / len(confidences), 2) if confidences else 0.0
     avg_price_change = round(sum(price_changes) / len(price_changes), 2) if price_changes else 0.0
@@ -629,11 +646,13 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
     from finer.services.kol_registry import get_registry
 
     registry = get_registry()
+    # One shared, episode-based record — same function the credibility map uses,
+    # so topKols and /changes can never drift apart.
+    kol_record = _kol_settled_record(filtered)
     top_kols = sorted(kol_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     top_kol_list = []
     for k, cnt in top_kols:
-        settled = kol_settled.get(k, 0)
-        wins = kol_wins.get(k, 0)
+        settled, wins = kol_record.get(k, (0, 0))
         # `author` stays the raw creator_id — it is the join key the frontend
         # uses (credibilityOverrides); registry adds display fields only.
         profile = registry.get(k)

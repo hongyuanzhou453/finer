@@ -76,9 +76,24 @@ def compute_observed_style(
     """Aggregate observed style statistics from a KOL's TradeActions.
 
     Returns None for an empty action list (no data ≠ zero counts).
+
+    Votes are cast once per **stance episode** (a standing view held over time),
+    not once per TradeAction. A KOL whose weekly template restates the same view
+    would otherwise stuff the ballot — 19 identical votes in a ~24 denominator can
+    single-handedly flip ``entry_style_observed`` and manufacture a 自述-vs-实测
+    contradiction that says more about their template than their trading. Each
+    episode votes with its first statement; a flip opens a new episode, so real
+    changes of stance still get their own vote. See timeline/stance_episodes.py.
     """
     if not actions:
         return None
+
+    from finer.timeline.stance_episodes import build_stance_episodes
+
+    episodes = build_stance_episodes(actions)
+    # Fall back to raw actions only when nothing can be attributed to a stance
+    # slot (keeps "no data ≠ zero counts" rather than reporting a degenerate 0).
+    voters = [ep.anchor for ep in episodes] or list(actions)
 
     directional = 0
     short_side = 0
@@ -87,7 +102,7 @@ def compute_observed_style(
     left_side = 0
     right_side = 0
 
-    for action in actions:
+    for action in voters:
         primary = action.action_chain[0] if action.action_chain else None
         if primary is not None and primary.action_type not in _NON_DIRECTIONAL_TYPES:
             directional += 1
@@ -118,7 +133,7 @@ def compute_observed_style(
             entry_style_observed = "mixed"
 
     return ObservedTradingStyle(
-        sample_size=len(actions),
+        sample_size=len(voters),  # distinct stance episodes, not restatements
         directional_sample_size=directional,
         short_side_count=short_side,
         short_ratio=(short_side / directional) if directional > 0 else None,
