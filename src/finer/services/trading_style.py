@@ -44,6 +44,34 @@ _SHORT_SIDE_TYPES = {
 # Non-directional primary steps excluded from the directional sample.
 _NON_DIRECTIONAL_TYPES = {ActionType.HOLD, ActionType.WATCH}
 
+# Primary steps that actually OPEN or INCREASE exposure. Entry timing is only
+# observable when the KOL actually entered: a watch/opinion mention has no entry
+# to time, and a reduce/close is an exit. Counting their entry_timing_style is a
+# category error — it manufactured a "left_side" verdict for trader_ji out of 6
+# watch-tier mentions (2026-07-15), producing a red 言行不一 conflict badge
+# against his declared right_side on zero real entry evidence.
+_ENTRY_TYPES = {
+    ActionType.LONG,
+    ActionType.SHORT,
+    ActionType.ADD,
+    ActionType.BUY_CALL,
+    ActionType.BUY_PUT,
+    ActionType.BUY_AND_HOLD,
+}
+
+
+def _is_entry(action: TradeAction) -> bool:
+    """True when the action opens/increases exposure — i.e. has an entry to time.
+
+    Opinion-tier actions are excluded even if their primary step looks like an
+    entry: F4 marks "would buy, but not now" as opinion, and an entry that never
+    happened has no timing.
+    """
+    if (action.metadata or {}).get("tier") == "opinion":
+        return False
+    primary = action.action_chain[0] if action.action_chain else None
+    return primary is not None and primary.action_type in _ENTRY_TYPES
+
 # Majority-vote thresholds for the observed entry style.
 _ENTRY_STYLE_MIN_SAMPLE = 5
 _ENTRY_STYLE_MAJORITY = 0.6
@@ -114,11 +142,13 @@ def compute_observed_style(
             margin_mentions += 1
         if meta.get("leverage_flag") is True:
             leverage_mentions += 1
-        entry_style = meta.get("entry_timing_style")
-        if entry_style == "left_side":
-            left_side += 1
-        elif entry_style == "right_side":
-            right_side += 1
+        # Entry timing is only evidence when he actually entered (see _is_entry).
+        if _is_entry(action):
+            entry_style = meta.get("entry_timing_style")
+            if entry_style == "left_side":
+                left_side += 1
+            elif entry_style == "right_side":
+                right_side += 1
 
     entry_sample = left_side + right_side
     entry_style_observed = "unknown"

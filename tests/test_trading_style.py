@@ -214,6 +214,60 @@ class TestComputeObservedStyle:
         # verdict follows the real calls, not the template
         assert observed.entry_style_observed == "right_side"
 
+    def test_watch_tier_mentions_are_not_entry_evidence(self):
+        """A view he never entered has no entry to time."""
+        actions = [
+            _action(
+                ActionType.WATCH,
+                metadata={"entry_timing_style": "left_side", "tier": "opinion"},
+            )
+            for _ in range(6)
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.left_side_count == 0
+        assert observed.entry_style_sample_size == 0
+        assert observed.entry_style_observed == "unknown"
+
+    def test_reduce_is_an_exit_not_an_entry(self):
+        observed = compute_observed_style(
+            [_action(ActionType.REDUCE, metadata={"entry_timing_style": "right_side"})]
+        )
+        assert observed is not None
+        assert observed.right_side_count == 0
+
+    def test_real_entries_still_count(self):
+        actions = [
+            _action(ActionType.LONG, metadata={"entry_timing_style": "right_side"}),
+            _action(ActionType.ADD, metadata={"entry_timing_style": "right_side"}),
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.right_side_count == 2
+
+    def test_trader_ji_shape_refuses_to_judge_instead_of_faking_a_conflict(self):
+        """Regression for the 2026-07-15 false 言行不一 verdict.
+
+        trader_ji's live evidence was 6 watch-tier "left_side" mentions plus one
+        reduce tagged "right_side" — zero real entries. The old per-action count
+        read that as entry_style_observed="left_side" and the UI rendered a red
+        ⚠冲突 against his declared right_side. With no entry evidence the honest
+        answer is "unknown", which the card renders as 数据不足.
+        """
+        actions = [
+            _action(
+                ActionType.WATCH,
+                metadata={"entry_timing_style": "left_side", "tier": "opinion"},
+            )
+            for _ in range(6)
+        ] + [
+            _action(ActionType.REDUCE, metadata={"entry_timing_style": "right_side"})
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.entry_style_observed == "unknown"
+        assert (observed.left_side_count, observed.right_side_count) == (0, 0)
+
     def test_entry_style_mixed_when_no_majority(self):
         # 3 left, 3 right -> 50%/50%, both below 60% -> mixed
         actions = (
