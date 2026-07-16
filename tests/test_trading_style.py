@@ -342,3 +342,52 @@ class TestBuildStyleProfile:
         assert payload["creator_id"] == "ghost"
         assert payload["declared"] is None
         assert payload["observed"] is None
+
+
+class TestReviewHardening:
+    """2026-07-16 adversarial-review fixes: mention stats are per-action
+    (existence evidence must not be masked by anchor-only counting), entry
+    votes are per-episode via the episode's first REAL entry."""
+
+    def test_margin_flag_on_a_restatement_still_counts(self):
+        # same ticker = one episode; the flag rides on the 3rd restatement.
+        actions = [
+            _action(ticker="AAPL"),
+            _action(ticker="AAPL"),
+            _action(ticker="AAPL", metadata={"margin_flag": True}),
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.margin_mention_count == 1  # anchor-only counting gave 0
+
+    def test_short_on_a_later_action_in_episode_still_counts(self):
+        actions = [
+            _action(ActionType.WATCH, ticker="AAPL"),
+            _action(ActionType.SHORT, ticker="AAPL"),
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.short_side_count == 1
+
+    def test_episode_entered_later_still_casts_its_entry_vote(self):
+        # anchor is a watch (no entry to time); the REAL entry comes later in
+        # the same episode and must cast the episode's one vote.
+        actions = [
+            _action(
+                ActionType.WATCH, ticker="AAPL",
+                metadata={"tier": "opinion", "entry_timing_style": "left_side"},
+            ),
+            _action(
+                ActionType.LONG, ticker="AAPL",
+                metadata={"entry_timing_style": "right_side"},
+            ),
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert (observed.left_side_count, observed.right_side_count) == (0, 1)
+
+    def test_sample_size_is_attributed_action_count_per_schema(self):
+        actions = [_action(ticker="AAPL") for _ in range(3)]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.sample_size == 3  # schema: 参与统计的 action 总数
