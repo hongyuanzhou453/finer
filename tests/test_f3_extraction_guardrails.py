@@ -100,3 +100,28 @@ class TestExtractorEndToEnd:
         res = RuleBasedIntentExtractor().extract(_env("半导体 " + REDUCE_CALL))
         dirs = {i.direction for i in res.intents}
         assert "bearish" in dirs, dirs
+
+
+class TestReviewHardening:
+    """2026-07-16 adversarial-review fixes for the guardrails themselves."""
+
+    def test_dividend_pitch_is_not_misread_as_allocation(self):
+        # 现金 matches 现金流, 分配 matches 利润分配, 防守 matches 防守板块 —
+        # bare-substring counting neutralized ordinary fundamental pitches.
+        pitch = "公司现金流充沛，利润分配率高，防守板块属性，看好长期价值。"
+        assert _classify_nondirectional_section(pitch) is None
+        assert _detect_direction(pitch) == "bullish"
+
+    def test_reduce_instruction_overrides_monitoring_framing(self):
+        # the narrower STRONG list silently neutralized 减仓/减持/买入 etc.
+        assert _classify_nondirectional_section(SEMI_MONITOR + " 半导体减仓。") is None
+
+    def test_stance_word_overrides_monitoring_framing(self):
+        assert _classify_nondirectional_section(SEMI_MONITOR + " 我看好半导体。") is None
+
+    def test_hedged_opportunity_with_caution_is_mixed_not_clean_bullish(self):
+        assert _detect_direction("宁德时代有机会，但注意风险。") == "mixed"
+
+    def test_allocation_signature_still_detected(self):
+        # the number+bucket signature (60进攻+20防守+20现金) remains recognized
+        assert _classify_nondirectional_section(ALLOC_FRAMEWORK) == "allocation"

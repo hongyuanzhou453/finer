@@ -143,10 +143,18 @@ RISK_CAUTION_KEYWORDS = ["风险", "谨慎", "高估", "透支"]
 MONITORING_MARKERS = [
     "观察", "左侧", "右侧", "破位", "周线", "溢价", "转折价", "盯", "跟踪",
 ]
-ALLOCATION_MARKERS = ["进攻", "防守", "现金", "仓位配置", "账户配置", "分配"]
-# A concrete tradeable instruction overrides the monitoring/allocation framing
-# (e.g. "半导体加仓" inside a tracking table is still a real add).
-STRONG_ACTION_KEYWORDS = ["加仓", "抄底", "清仓", "卖出", "建仓"]
+# Allocation frameworks are recognized by their SIGNATURE — "60进攻+20防守+20现金"
+# style number+bucket pairs or an explicit 配置 phrase — not by bare substrings:
+# 现金 also matches 现金流, 分配 matches 利润分配, 防守 matches 防守板块, so bare
+# markers neutralized ordinary dividend/cash-flow stock pitches.
+_ALLOCATION_SPLIT_RE = re.compile(r"\d+\s*(?:成|%|％)?\s*(?:进攻|防守|现金)")
+ALLOCATION_PHRASES = ["仓位配置", "账户配置", "资产配置"]
+# A concrete tradeable instruction, or an explicit stance word, overrides the
+# monitoring/allocation framing (e.g. "半导体减仓" inside a tracking table is a
+# real trim, and "看好" inside one is a real view). The full explicit-action
+# vocabulary applies — a narrower list silently neutralized 买入/减持/退出 etc.
+STRONG_ACTION_KEYWORDS = list(EXPLICIT_ACTION_KEYWORDS)
+STANCE_OVERRIDE_KEYWORDS = ["看好", "看空"]
 
 SKIP_PATTERNS = [
     re.compile(r'^\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}:\d{2}$'),
@@ -222,13 +230,19 @@ def _classify_nondirectional_section(text: str) -> Optional[str]:
 
     Such sections carry caution/technical vocabulary ("左侧", "破位", "SP风险")
     or structure ("60进攻+20防守+20现金") that the keyword bag would otherwise
-    misread as a bearish call. A concrete tradeable instruction overrides the
-    framing (returns None) so a real "加仓" inside a tracking table still trades.
+    misread as a bearish call. Any explicit trade instruction (full
+    EXPLICIT_ACTION_KEYWORDS vocabulary) or stance word ("看好"/"看空")
+    overrides the framing so a real "减仓"/"看好" inside a tracking table still
+    extracts; allocation is recognized by its number+bucket signature, not bare
+    substrings (现金 also matches 现金流, 分配 matches 利润分配).
     """
     if any(kw in text for kw in STRONG_ACTION_KEYWORDS):
         return None
-    alloc = sum(1 for kw in ALLOCATION_MARKERS if kw in text)
-    if alloc >= 2:
+    if any(kw in text for kw in STANCE_OVERRIDE_KEYWORDS):
+        return None
+    if len(_ALLOCATION_SPLIT_RE.findall(text)) >= 2 or any(
+        kw in text for kw in ALLOCATION_PHRASES
+    ):
         return "allocation"
     mon = sum(1 for kw in MONITORING_MARKERS if kw in text)
     if text.count("[]") >= 2 or text.count("□") >= 2:  # checkbox watchlist
@@ -244,9 +258,14 @@ def _detect_direction(text: str) -> Optional[str]:
     Only *directional* bearish words (short/reduce/avoid/weaken) decide bearish;
     pure risk-caution words ("风险"/"高估") with no directional signal degrade to
     ``neutral`` rather than fabricating a short (2026-07-14 F3 over-extraction fix).
+    Caution words DO weigh against an explicit bullish signal, though — a hedged
+    "看好但注意风险" is mixed, not clean bullish (pre-fix parity for hedges).
     """
     bullish_count = sum(1 for kw in BULLISH_KEYWORDS if kw in text)
     bearish_count = sum(1 for kw in DIRECTIONAL_BEARISH_KEYWORDS if kw in text)
+    caution_count = sum(1 for kw in RISK_CAUTION_KEYWORDS if kw in text)
+    if bullish_count > 0:
+        bearish_count += caution_count
     if bullish_count > bearish_count:
         return "bullish"
     elif bearish_count > bullish_count:
@@ -254,7 +273,7 @@ def _detect_direction(text: str) -> Optional[str]:
     elif bullish_count > 0 and bullish_count == bearish_count:
         return "mixed"
     # No directional signal: caution-only text is risk awareness, not a short.
-    if any(kw in text for kw in RISK_CAUTION_KEYWORDS):
+    if caution_count > 0:
         return "neutral"
     return None
 
