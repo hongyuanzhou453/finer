@@ -434,3 +434,38 @@ def test_f1_executor_still_accepts_absolute_raw_path(data_root, monkeypatch):
     monkeypatch.setattr(drv, "_ROUTER", _StubRouter())
     out = drv._default_f1_executor(rec, data_root)
     assert out.exists()
+
+
+def test_f1_executor_resolves_repo_root_relative_raw_path(data_root, monkeypatch):
+    """Regression: 215/242 real F0 records (feishu backlog) store raw_path
+    prefixed 'data/...' (repo-root-relative); joining that onto data_root gave
+    <data_root>/data/... and every backlog record failed F1."""
+    import finer.pipeline.driver as drv
+    from finer.schemas.content import ContentRecord
+
+    raw_file = data_root / "raw" / "feishu" / "doc.md"
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    raw_file.write_text("看好储能板块。", encoding="utf-8")
+
+    rec = ContentRecord(
+        content_id="c-data-prefix",
+        source_type="feishu_chat",
+        source_platform="feishu",
+        collected_at=datetime(2026, 6, 1),
+        title="doc",
+        raw_path="data/raw/feishu/doc.md",  # repo-root-relative, as persisted
+        file_type="text",
+    )
+
+    class _StubEnvelope:
+        def model_dump_json(self, indent=2):
+            return "{}"
+
+    class _StubRouter:
+        def route(self, r, raw_path):
+            assert raw_path == raw_file, raw_path
+            return _StubEnvelope(), None
+
+    monkeypatch.setattr(drv, "_ROUTER", _StubRouter())
+    out = drv._default_f1_executor(rec, data_root)
+    assert out.exists()

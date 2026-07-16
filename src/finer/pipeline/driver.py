@@ -222,12 +222,18 @@ def _default_f1_executor(rec: ContentRecord, data_root: Path) -> Path:
             logger.warning("Vision LLM unavailable for F1 (%s); text-only routing", exc)
         _ROUTER = StandardizationRouter(llm_client=vision_llm)
 
-    # rec.raw_path is stored relative to data_root (files.py persists
-    # raw_path.relative_to(DATA_ROOT)); resolve it against data_root, not the
-    # process CWD, or every real F0 record fails F1 with "raw file missing".
+    # rec.raw_path is stored relative, but TWO conventions coexist on disk:
+    # files.py persists data_root-relative ("raw/local/x.jpg") while the feishu
+    # importer backlog persisted repo-root-relative ("data/raw/feishu/x.md" —
+    # 215 of 242 real records). Resolve against data_root and, when that misses
+    # and the path carries the "data/" prefix, retry with the prefix stripped;
+    # never resolve against the process CWD.
     raw_path = Path(rec.raw_path)
     if not raw_path.is_absolute():
-        raw_path = data_root / raw_path
+        candidate = data_root / raw_path
+        if not candidate.exists() and raw_path.parts and raw_path.parts[0] == data_root.name:
+            candidate = data_root.joinpath(*raw_path.parts[1:])
+        raw_path = candidate
     if not raw_path.exists():
         raise FinerStateError(
             ErrorCode.API_NTF_001,
