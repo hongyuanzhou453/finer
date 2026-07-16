@@ -70,8 +70,11 @@ def build_snapshot(
     """Current stance per (KOL, ticker) — latest action by signal clock."""
     kols: Dict[str, dict] = {}
     for action in actions:
-        kol = action.source.creator_id
-        if not kol or kol.lower() in ("unknown", "none", ""):
+        # Strip: a whitespace-padded creator_id must land on the same key the
+        # credibility map uses (opinions._kol_settled_record strips), or the
+        # credibility join below silently misses forever.
+        kol = (action.source.creator_id or "").strip()
+        if not kol or kol.lower() in ("unknown", "none"):
             continue
         ticker = action.target.ticker_normalized or action.target.ticker
         if not ticker:
@@ -153,6 +156,12 @@ def diff_snapshots(prev: dict, curr: dict) -> List[dict]:
             # display ticker rides in the stance value (proxy ETF); older
             # snapshots keyed directly by ticker fall back to the key.
             display_ticker = stance.get("ticker") or stance_key
+            if before is None and display_ticker != stance_key:
+                # Migration: snapshots persisted before sector-aware keys hold
+                # this stance under its raw proxy ticker. Without the fallback,
+                # the first post-deploy diff fabricates a new_call for every
+                # sector-proxy stance and drops fromDirection on real flips.
+                before = prev_stances.get(display_ticker)
             if before is None:
                 if prev_entry:  # KOL existed before → this name is new coverage
                     events.append(

@@ -25,10 +25,28 @@ This is a read-side projection: it reads F5 actions and writes nothing.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from finer.schemas.trade_action import TradeAction
 from finer.timeline.stance_snapshot import signal_clock_of, stance_key_of
+
+_BEIJING = timezone(timedelta(hours=8))
+
+
+def _clock_dt(action: TradeAction) -> datetime:
+    """Chronological sort key for the canonical signal clock.
+
+    Real F5 slots mix UTC offsets (US actions carry -05:00/-04:00 across the
+    DST boundary, CN actions +08:00), so comparing the raw ISO strings is NOT
+    chronological — "T09:00+08:00" sorts after "T08:00-04:00" despite being 11
+    hours earlier. Parse to aware datetimes; naive stamps get the repo's
+    Beijing convention.
+    """
+    dt = datetime.fromisoformat(signal_clock_of(action))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_BEIJING)
+    return dt
 
 
 @dataclass(frozen=True)
@@ -94,7 +112,7 @@ def build_stance_episodes(actions: Iterable[TradeAction]) -> List[StanceEpisode]
 
     episodes: List[StanceEpisode] = []
     for (creator, key), group in groups.items():
-        group.sort(key=lambda a: (signal_clock_of(a), a.trade_action_id))
+        group.sort(key=lambda a: (_clock_dt(a), a.trade_action_id))
 
         run: List[TradeAction] = []
         run_direction: Optional[str] = None
@@ -125,7 +143,7 @@ def build_stance_episodes(actions: Iterable[TradeAction]) -> List[StanceEpisode]
             run.append(action)
         _flush()
 
-    episodes.sort(key=lambda e: (e.creator_id, e.stance_key, e.first_stated_at))
+    episodes.sort(key=lambda e: (e.creator_id, e.stance_key, _clock_dt(e.anchor)))
     return episodes
 
 

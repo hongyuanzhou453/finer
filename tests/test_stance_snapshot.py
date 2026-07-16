@@ -235,3 +235,52 @@ class TestPersistence:
         assert got2 is not None and got2[0] == date(2026, 7, 1)
 
         assert load_latest_snapshot_before(date(2026, 7, 1), snapshot_dir=tmp_path) is None
+
+
+class TestOldFormatMigration:
+    def test_diff_falls_back_to_ticker_key_for_pre_sector_snapshots(self):
+        """Snapshots persisted before sector-aware keys hold sector stances
+        under the raw proxy ticker; the first post-deploy diff must not
+        fabricate a new_call (and must keep fromDirection on real flips)."""
+        prev = {
+            "snapshot_date": "2026-07-10",
+            "kols": {
+                "k1": {
+                    "credibility": 70,
+                    "stances": {
+                        # old format: keyed by proxy ticker directly
+                        "159819": {
+                            "direction": "bullish",
+                            "clock": "2026-07-10T09:30:00",
+                            "trade_action_id": "a-old",
+                            "company_name": "AI ETF",
+                        }
+                    },
+                }
+            },
+        }
+        curr = {
+            "snapshot_date": "2026-07-11",
+            "kols": {
+                "k1": {
+                    "credibility": 70,
+                    "stances": {
+                        # new format: sector-aware key, ticker rides in the value
+                        "sector:AI_COMPUTING": {
+                            "direction": "bearish",
+                            "clock": "2026-07-11T09:30:00",
+                            "trade_action_id": "a-new",
+                            "ticker": "159819",
+                            "company_name": "AI ETF",
+                        }
+                    },
+                }
+            },
+        }
+        events = diff_snapshots(prev, curr)
+        # migration fallback: recognized as a FLIP of the old ticker-keyed
+        # stance, not fabricated as brand-new coverage
+        assert [e["type"] for e in events] == ["flip"]
+        assert events[0]["fromDirection"] == "bullish"
+        assert events[0]["toDirection"] == "bearish"
+        assert events[0]["ticker"] == "159819"
