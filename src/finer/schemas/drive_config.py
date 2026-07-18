@@ -7,26 +7,24 @@ so a pass is replayable from its own logged parameters. Phase 0 card C2 / OPS-2.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, get_args
 
 from pydantic import BaseModel, Field, field_validator
+
+from finer.schemas.import_receipt import SourceChannel
 
 # Stages the driver can run, in canonical order. 'settle' is the F8 batch step
 # (settle_actions); the F1/F2/F5 stages are the per-content fill-only steps.
 DRIVE_STAGES: tuple[str, ...] = ("f1", "f2", "f5", "settle")
 
-# Known import channels. 'all' is the sentinel for "every channel" (no filter).
-# Specific values match stage_status.source_channel (written by F0IndexWriter).
-DRIVE_CHANNELS: tuple[str, ...] = (
-    "all",
-    "broker",
-    "feishu",
-    "local",
-    "wechat",
-    "wechat_channels",
-    "bilibili",
-    "nlm",
-)
+# Known import channels. 'all' is the sentinel for "every channel" (no filter);
+# the specific values are DERIVED from the canonical ``SourceChannel`` Literal so
+# the driver's ``--channel`` filter can never drift from what F0IndexWriter writes
+# into ``stage_status.source_channel`` (it stores ``receipt.source_channel``
+# verbatim). Hand-copying these once shipped dead knobs — 'local'/'nlm' instead of
+# the canonical 'local_upload'/'notebooklm' — that matched 0 rows while the correct
+# names were rejected by validation. See R1 (external review of C0-C2).
+DRIVE_CHANNELS: tuple[str, ...] = ("all", *get_args(SourceChannel))
 
 
 class DriveRunConfig(BaseModel):

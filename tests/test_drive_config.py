@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 from pydantic import ValidationError
 
-from finer.schemas.drive_config import DRIVE_STAGES, DriveRunConfig
+from finer.schemas.drive_config import DRIVE_CHANNELS, DRIVE_STAGES, DriveRunConfig
+from finer.schemas.import_receipt import SourceChannel
 
 
 def test_defaults_reproduce_legacy_behaviour() -> None:
@@ -35,6 +38,40 @@ def test_broker_channel_is_valid_and_not_all() -> None:
 def test_unknown_channel_rejected() -> None:
     with pytest.raises(ValidationError):
         DriveRunConfig(channel="brokr")
+
+
+def test_drive_channels_derived_from_source_channel() -> None:
+    """R1 drift guard: the driver's channel set must stay in lock-step with the
+    canonical ``SourceChannel`` Literal in both directions.
+
+    ``stage_status.source_channel`` stores ``receipt.source_channel`` verbatim,
+    so any drivable channel that is not a real ``SourceChannel`` value (the old
+    'local'/'nlm' shorthands) is a dead knob that matches 0 rows, and any intake
+    channel missing from ``DRIVE_CHANNELS`` is undrivable. This guard catches the
+    pydantic↔pydantic hand-copy that the contracts.ts drift check cannot see.
+    """
+    canonical = set(get_args(SourceChannel))
+    drivable = set(DRIVE_CHANNELS) - {"all"}
+    assert drivable == canonical, (
+        "DRIVE_CHANNELS drifted from SourceChannel; derive it via "
+        "get_args(SourceChannel), do not hand-copy channel names"
+    )
+    assert "all" in DRIVE_CHANNELS  # sentinel present
+    assert "all" not in canonical  # and not itself an intake channel
+
+
+def test_canonical_local_and_nlm_channels_are_valid() -> None:
+    """The two values that used to be mis-spelled must now pass under their
+    canonical names and reach the driver filter (R1)."""
+    assert DriveRunConfig(channel="local_upload").channel == "local_upload"
+    assert DriveRunConfig(channel="notebooklm").channel == "notebooklm"
+
+
+@pytest.mark.parametrize("shorthand", ["local", "nlm"])
+def test_legacy_channel_shorthand_rejected(shorthand: str) -> None:
+    """Pre-R1 shorthand must not silently pass — it never matched any row."""
+    with pytest.raises(ValidationError):
+        DriveRunConfig(channel=shorthand)
 
 
 def test_unknown_stage_rejected() -> None:
