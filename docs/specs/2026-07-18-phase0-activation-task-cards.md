@@ -83,6 +83,8 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 - **做法**：`pipeline-drive` CLI 与 `drive_once` 加 `--channel broker|feishu|local|all` 与 `--stages f1,f2,f5,settle`（默认值 = 现行为，零破坏兼容）；解除每轮强制 F5+settle（由 --stages 决定）；移除 `driver.py` 对 `/bilibili/` 与 local pdf 的硬编码排除，改为渠道能力声明表（broker pdf 必须可驱动——现排除规则会让研报 100% 蒸发，即 R1 风险）。**注意 PR #8 合入后 drive_once 已有 fcntl 单飞锁与孤儿 reconcile，别破坏**。
 - **owning**: `src/finer/pipeline/driver.py`、`src/finer/cli.py`、`src/finer/schemas/`(DriveRunConfig)、测试；**禁改**: ingestion/、backtest/
 - **验收**：`pipeline-drive --channel broker --stages f1,f2 --limit 2 --dry-run` 能发现 C1 回填的 broker 内容且不触发 F5/settle；`--channel feishu` 不含 broker 行；全量 pytest 绿。
+- ✅ **2026-07-18 完成**（commit `3a63e4bf`，已推 main）：新增 `DriveRunConfig`（channel / stages 白名单 / concurrency / max_items；落 `report.config` 与 `pipeline_runs.summary_json` 可重放，默认=旧行为零破坏）；`drive_once` + CLI 加 `--channel {all,broker,feishu,…}`（过滤 `stage_status.source_channel`）与 `--stages f1,f2,f5,settle`（逐阶段门控）；`_is_excluded` 由 raw_path 字符串匹配改为 **source_platform 声明式表** `_NON_DRIVEABLE_CHANNELS={bilibili}`，broker pdf 显式可驱动（R1）；PR#8 fcntl 单飞锁 + F0 orphan reconcile 原样保留。实测 live dry-run：`--channel broker --stages f1,f2 --limit 2` → scanned=2、f5_ran=0、settle=null；`--channel feishu` → scanned=0（不含 broker，settle 是全局非渠道）。测试 +7 driver +8 drive_config；full suite **3603 passed / 22 skipped**。
+  - 注：feishu/local 历史 F0 行 `source_channel` 仍为 NULL → `--channel feishu` 暂时找不到自身内容（但确实不含 broker，验收成立）；`--channel all`（默认）仍驱动全部含 NULL。C1 的 F0IndexWriter 已让**新导入**自填渠道；要让存量 feishu/local 可按渠道过滤，需一次性回填其 `source_channel`（未来小任务，非 activation 主线）。
 
 ### C3 · OPS-3 batch_runner 并发批量执行池
 
