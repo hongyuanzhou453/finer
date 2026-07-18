@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, get_args
@@ -360,3 +361,54 @@ def test_receipt_never_carries_forbidden_key_material(tmp_path: Path) -> None:
     payload = result.receipts[0].model_dump_json().lower()
     for forbidden in ("token", "secret", "password", "cookie", "authorization", "api_key"):
         assert forbidden not in payload
+
+
+# ---------------------------------------------------------------------------
+# 10. F0-index registration (opt-in; Phase 0 C1)
+# ---------------------------------------------------------------------------
+
+
+def test_execute_registers_into_stage_status_with_injected_writer(tmp_path: Path) -> None:
+    """With an injected F0IndexWriter, a new broker record lands in stage_status
+    tagged source_channel='broker' — the gap C1 closes."""
+    from finer.ingestion.f0_index_writer import F0IndexWriter
+    from finer.scripts.project_memory_migrate import apply_migrations
+
+    pdf = _make_pdf(tmp_path, "reg.pdf")
+    meta_jsonl = _write_fixture(tmp_path, [_meta_line(pdf)])
+    data_root = tmp_path / "data"
+    db_path = tmp_path / "pm.sqlite3"
+    apply_migrations(db_path)
+    writer = F0IndexWriter(db_path=db_path)
+
+    result = run_intake(meta_jsonl, data_root, limit=5, execute=True, index_writer=writer)
+
+    assert result.new == 1
+    assert result.registered == 1
+    assert result.register_failed == 0
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute(
+            "SELECT content_id, source_channel, status FROM stage_status WHERE stage='F0'"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    assert row[0] == result.items[0].content_id
+    assert row[1] == "broker"
+    assert row[2] == "ready"
+
+
+def test_execute_without_writer_does_not_touch_any_db(tmp_path: Path) -> None:
+    """Default library call registers nothing — no live-DB writes from tests."""
+    pdf = _make_pdf(tmp_path, "noreg.pdf")
+    meta_jsonl = _write_fixture(tmp_path, [_meta_line(pdf)])
+    data_root = tmp_path / "data"
+
+    result = run_intake(meta_jsonl, data_root, limit=5, execute=True)  # no index_writer
+
+    assert result.new == 1
+    assert result.written_records == 1
+    assert result.registered == 0
+    assert result.register_failed == 0

@@ -37,11 +37,14 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from finer.paths import DATA_ROOT
 from finer.schemas.content import ContentRecord
 from finer.schemas.import_receipt import ImportErrorEnvelope, ImportReceipt
+
+if TYPE_CHECKING:  # pragma: no cover - type hint only; keeps F0 planning import-light
+    from finer.ingestion.f0_index_writer import F0IndexWriter
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -92,6 +95,7 @@ class BrokerIntakeItem:
     error_message: Optional[str] = None
     retryable: bool = False
     fix_hint: Optional[str] = None
+    register_error: Optional[str] = None  # F0-index registration failure (best-effort)
 
 
 @dataclass
@@ -107,6 +111,8 @@ class BrokerIntakeResult:
     failed: int = 0
     written_records: int = 0
     written_receipts: int = 0
+    registered: int = 0        # records registered into PM stage_status (F0 index)
+    register_failed: int = 0   # best-effort registration failures (record still on disk)
     items: list[BrokerIntakeItem] = field(default_factory=list)
     receipts: list[ImportReceipt] = field(default_factory=list)
 
@@ -420,6 +426,7 @@ def run_intake(
     execute: bool = False,
     mode: str = "symlink",
     collected_at: Optional[datetime] = None,
+    index_writer: "Optional[F0IndexWriter]" = None,
 ) -> BrokerIntakeResult:
     """Plan (and with ``execute=True`` persist) F0 intake for meta JSONL lines.
 
@@ -427,6 +434,15 @@ def run_intake(
     Execute archives raw PDFs, writes ContentRecords and ImportReceipts under
     ``data_root``. Records/receipts are validated (constructed) in both modes
     so schema problems surface before any disk write.
+
+    When ``index_writer`` is supplied (and ``execute`` is True), each newly
+    written ContentRecord is also registered into Project Memory stage_status /
+    asset_index via ``F0IndexWriter.record_imported`` — the same F0-index path
+    the other channels use. Registration is **opt-in** (default off) so library
+    callers and unit tests never touch the live project DB; the CLI injects a
+    writer bound to the real DB. A registration failure is best-effort: the
+    record file on disk stays the F0 truth and the backfill script can
+    re-register idempotently.
     """
     if mode not in _ARCHIVE_MODES:
         raise ValueError(f"mode must be one of {_ARCHIVE_MODES}, got {mode!r}")
@@ -497,6 +513,17 @@ def run_intake(
                 item.record_path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
                 result.written_records += 1
 
+                # F0-index registration (opt-in; record file is already durable
+                # above, so the write-atomicity guard passes). Best-effort: never
+                # fail the intake on an index hiccup.
+                if index_writer is not None:
+                    try:
+                        index_writer.record_imported(record, receipt)
+                        result.registered += 1
+                    except Exception as exc:  # noqa: BLE001 - PM index is a hot projection
+                        result.register_failed += 1
+                        item.register_error = f"{type(exc).__name__}: {exc}"
+
             receipt_key = item.content_id or _error_key(item, meta_jsonl)
             f0_dir.mkdir(parents=True, exist_ok=True)
             receipt_path = _receipt_write_path(f0_dir, receipt_key, run_id)
@@ -535,6 +562,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--execute", action="store_true", help="actually write records/receipts/archive (requires --limit)")
     parser.add_argument("--data-root", type=Path, default=None, help=f"data root (default: {DATA_ROOT})")
     parser.add_argument("--mode", choices=_ARCHIVE_MODES, default="symlink", help="raw archive mode (default: symlink)")
+    parser.add_argument(
+        "--no-register",
+        action="store_true",
+        help="skip Project Memory F0-index registration (stage_status / asset_index)",
+    )
     args = parser.parse_args(argv)
 
     if args.execute and args.limit is None:
@@ -543,12 +575,24 @@ def main(argv: Optional[list[str]] = None) -> int:
         parser.error(f"meta JSONL not found: {args.meta_jsonl}")
 
     data_root = args.data_root or DATA_ROOT
+
+    # Register imported records into Project Memory by default so new broker
+    # imports appear in stage_status / the Import Console. Dry-runs never
+    # register; --no-register opts out explicitly.
+    index_writer = None
+    if args.execute and not args.no_register:
+        from finer.ingestion.f0_index_writer import F0IndexWriter
+
+        pm_db_path = data_root / "project_memory" / "finer.project.sqlite3"
+        index_writer = F0IndexWriter(db_path=pm_db_path)
+
     result = run_intake(
         args.meta_jsonl,
         data_root,
         limit=args.limit,
         execute=args.execute,
         mode=args.mode,
+        index_writer=index_writer,
     )
 
     header = "[execute]" if args.execute else "[dry-run]"
@@ -561,7 +605,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(
         f"summary: scanned={result.scanned} new={result.new} duplicate={result.duplicates} "
         f"exists={result.existing} failed={result.failed} "
-        f"written_records={result.written_records} written_receipts={result.written_receipts}"
+        f"written_records={result.written_records} written_receipts={result.written_receipts} "
+        f"registered={result.registered} register_failed={result.register_failed}"
     )
     if not args.execute:
         print("dry-run: nothing written. Re-run with --execute --limit N to persist.")

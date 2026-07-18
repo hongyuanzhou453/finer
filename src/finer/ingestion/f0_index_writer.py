@@ -201,16 +201,20 @@ class F0IndexWriter:
             (source_record_id, content_id, now),
         )
 
-        # 5. F0 stage status — asset_index rebuild only projects ready/partial rows
+        # 5. F0 stage status — asset_index rebuild only projects ready/partial rows.
+        #    source_channel (from the receipt) lets the driver filter work by
+        #    import channel (Phase 0 C1); COALESCE keeps an existing channel if a
+        #    later re-register ever arrives without one.
         conn.execute(
             """
-            INSERT INTO stage_status (content_id, stage, status, updated_at)
-            VALUES (?, 'F0', 'ready', ?)
+            INSERT INTO stage_status (content_id, stage, status, source_channel, updated_at)
+            VALUES (?, 'F0', 'ready', ?, ?)
             ON CONFLICT(content_id, stage) DO UPDATE SET
                 status = 'ready',
+                source_channel = COALESCE(excluded.source_channel, stage_status.source_channel),
                 updated_at = excluded.updated_at
             """,
-            (content_id, now),
+            (content_id, receipt.source_channel, now),
         )
 
         conn.commit()

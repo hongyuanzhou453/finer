@@ -34,10 +34,10 @@ def runner() -> CliRunner:
 
 
 class TestDiscoverMigrations:
-    def test_finds_all_four_migrations(self) -> None:
+    def test_finds_all_migrations(self) -> None:
         migrations = discover_migrations()
-        assert len(migrations) == 4
-        assert [m.version for m in migrations] == [1, 2, 3, 4]
+        assert len(migrations) == 5
+        assert [m.version for m in migrations] == [1, 2, 3, 4, 5]
 
     def test_versions_are_sequential(self) -> None:
         migrations = discover_migrations()
@@ -165,7 +165,7 @@ class TestCliUpgrade:
     def test_upgrade_applies_all(self, runner: CliRunner, tmp_db: Path) -> None:
         result = runner.invoke(cli, ["--db-path", str(tmp_db), "upgrade"])
         assert result.exit_code == 0
-        assert "Applied 4 migration(s)" in result.output
+        assert "Applied 5 migration(s)" in result.output
 
         # Verify tables exist
         conn = sqlite3.connect(str(tmp_db))
@@ -216,7 +216,7 @@ class TestCliUpgrade:
             rows = conn.execute(
                 "SELECT version, checksum, execution_ms FROM schema_migrations ORDER BY version"
             ).fetchall()
-            assert len(rows) == 4
+            assert len(rows) == 5
             for row in rows:
                 assert len(row[1]) == 64  # sha256 hex
                 assert row[2] >= 0  # execution_ms
