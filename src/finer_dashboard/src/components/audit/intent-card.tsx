@@ -25,6 +25,7 @@ const ACTIONABILITY: Record<IntentActionability, { label: string; tone: Tone }> 
   opinion: { label: "纯观点", tone: "neutral" },
   watch: { label: "观察", tone: "gold" },
   explicit_action: { label: "明确行动", tone: "red" },
+  recommendation: { label: "机构建议", tone: "gold" },
   review_required: { label: "待审核", tone: "gold" },
 };
 

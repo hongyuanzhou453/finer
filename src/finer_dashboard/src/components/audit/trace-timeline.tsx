@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, GitBranch, Unlink } from "lucide-react";
+import { ArrowUpRight, GitBranch, Layers, Repeat, Unlink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
   ActionStep,
@@ -133,13 +133,31 @@ export function TraceTimeline({
   activeSpanId: string | null;
   onHoverSpan: (id: string | null) => void;
 }) {
-  const { trade_action: ta, intent, policy, envelope } = bundle;
+  const { trade_action: ta, intent, policy, envelope, provenance } = bundle;
   const dir = DIRECTION[ta.direction];
+  const f15Topic = provenance?.f15_topic;
+  const sectorProxy = provenance?.sector_proxy;
 
   return (
     <div>
       {/* F3 Intent */}
       <StageNode stage="F3" role="AI · Intent">
+        {f15Topic && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 rounded-sm border border-[var(--table-border)] bg-[var(--surface-strong)] px-2.5 py-1.5">
+            <Layers className="h-3.5 w-3.5 text-foreground/40" strokeWidth={1.8} />
+            <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+              F1.5 主题分组
+            </span>
+            <span className="text-[12px] font-semibold text-foreground">
+              {f15Topic.topic_title}
+            </span>
+            {f15Topic.merged_topics && f15Topic.merged_topics.length > 0 && (
+              <span className="font-mono text-[10px] text-foreground/45">
+                合并 {f15Topic.merged_topics.join(" · ")}
+              </span>
+            )}
+          </div>
+        )}
         {intent ? (
           <IntentCard intent={intent} activeSpanId={activeSpanId} onHoverSpan={onHoverSpan} />
         ) : (
@@ -171,6 +189,25 @@ export function TraceTimeline({
 
           {ta.rationale && (
             <p className="mt-2 text-[12px] leading-6 text-foreground/80">{ta.rationale}</p>
+          )}
+
+          {sectorProxy && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-sm border border-[var(--table-border)] bg-[var(--surface-muted)]/60 px-2.5 py-1.5">
+              <Repeat className="h-3.5 w-3.5 text-foreground/40" strokeWidth={1.8} />
+              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+                F2 板块代理
+              </span>
+              <span className="text-[12px] text-foreground/80">
+                {sectorProxy.sector_name ?? sectorProxy.sector_symbol}
+              </span>
+              <span className="text-foreground/30">→</span>
+              <span className="font-mono text-[12px] font-semibold text-foreground">
+                {sectorProxy.proxy_symbol ?? "—"}
+              </span>
+              {sectorProxy.proxy_name && (
+                <span className="text-[11px] text-foreground/50">{sectorProxy.proxy_name}</span>
+              )}
+            </div>
           )}
 
           <div className="mt-3">

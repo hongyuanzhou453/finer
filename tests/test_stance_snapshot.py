@@ -128,6 +128,89 @@ class TestDiff:
         assert events == []
 
 
+def make_sector_action(
+    kol: str,
+    proxy_ticker: str,
+    sector_symbol: str,
+    direction: TradeDirection,
+    ts: datetime,
+    action_id: str,
+) -> TradeAction:
+    """A sector-proxy action: the display ticker is the proxy ETF, but F2
+    provenance records which sector it stands in for."""
+    action = make_action(kol, proxy_ticker, direction, ts, action_id)
+    action.metadata = {
+        "sector_proxy": {
+            "sector_symbol": sector_symbol,
+            "sector_name": sector_symbol.title(),
+            "proxy_symbol": proxy_ticker,
+            "proxy_name": proxy_ticker,
+            "rule": "sector_proxy_v1",
+            "config_version": 1,
+        }
+    }
+    return action
+
+
+class TestSectorProxyStanceKey:
+    """F7 fix: two sectors proxying to the SAME ETF must not collapse into one
+    stance slot (sector spec Open Issue #2)."""
+
+    def test_two_sectors_same_proxy_stay_distinct(self):
+        # COMPUTE_POWER and AI_COMPUTING both proxy to 159819 with opposite calls.
+        actions = [
+            make_sector_action(
+                "k1", "159819", "COMPUTE_POWER", TradeDirection.BULLISH, T1, "a1"
+            ),
+            make_sector_action(
+                "k1", "159819", "AI_COMPUTING", TradeDirection.BEARISH, T2, "a2"
+            ),
+        ]
+        snap = build_snapshot(actions, snapshot_date=date(2026, 7, 3))
+        stances = snap["kols"]["k1"]["stances"]
+        # keyed by sector, NOT collapsed under the shared proxy ticker
+        assert set(stances) == {"sector:COMPUTE_POWER", "sector:AI_COMPUTING"}
+        assert stances["sector:COMPUTE_POWER"]["direction"] == "bullish"
+        assert stances["sector:AI_COMPUTING"]["direction"] == "bearish"
+        # display ticker is still the proxy ETF the reader recognizes
+        assert stances["sector:COMPUTE_POWER"]["ticker"] == "159819"
+        assert stances["sector:AI_COMPUTING"]["ticker"] == "159819"
+
+    def test_direct_ticker_still_keys_by_ticker(self):
+        actions = [
+            make_action("k1", "600519.SH", TradeDirection.BULLISH, T1, "a1"),
+        ]
+        snap = build_snapshot(actions, snapshot_date=date(2026, 7, 3))
+        stances = snap["kols"]["k1"]["stances"]
+        assert set(stances) == {"600519.SH"}
+        assert stances["600519.SH"]["ticker"] == "600519.SH"
+
+    def test_diff_does_not_fabricate_flip_across_shared_proxy(self):
+        prev = build_snapshot(
+            [
+                make_sector_action(
+                    "k1", "159819", "COMPUTE_POWER", TradeDirection.BULLISH, T1, "a1"
+                )
+            ],
+            snapshot_date=date(2026, 7, 2),
+        )
+        curr = build_snapshot(
+            [
+                make_sector_action(
+                    "k1", "159819", "COMPUTE_POWER", TradeDirection.BULLISH, T1, "a1"
+                ),
+                make_sector_action(
+                    "k1", "159819", "AI_COMPUTING", TradeDirection.BEARISH, T2, "a2"
+                ),
+            ],
+            snapshot_date=date(2026, 7, 3),
+        )
+        events = diff_snapshots(prev, curr)
+        # the second sector is a NEW coverage slot, not a flip of the first
+        assert [e["type"] for e in events] == ["new_call"]
+        assert events[0]["ticker"] == "159819"
+
+
 class TestPersistence:
     def test_roundtrip_and_latest_before(self, tmp_path):
         s1 = build_snapshot(
@@ -152,3 +235,52 @@ class TestPersistence:
         assert got2 is not None and got2[0] == date(2026, 7, 1)
 
         assert load_latest_snapshot_before(date(2026, 7, 1), snapshot_dir=tmp_path) is None
+
+
+class TestOldFormatMigration:
+    def test_diff_falls_back_to_ticker_key_for_pre_sector_snapshots(self):
+        """Snapshots persisted before sector-aware keys hold sector stances
+        under the raw proxy ticker; the first post-deploy diff must not
+        fabricate a new_call (and must keep fromDirection on real flips)."""
+        prev = {
+            "snapshot_date": "2026-07-10",
+            "kols": {
+                "k1": {
+                    "credibility": 70,
+                    "stances": {
+                        # old format: keyed by proxy ticker directly
+                        "159819": {
+                            "direction": "bullish",
+                            "clock": "2026-07-10T09:30:00",
+                            "trade_action_id": "a-old",
+                            "company_name": "AI ETF",
+                        }
+                    },
+                }
+            },
+        }
+        curr = {
+            "snapshot_date": "2026-07-11",
+            "kols": {
+                "k1": {
+                    "credibility": 70,
+                    "stances": {
+                        # new format: sector-aware key, ticker rides in the value
+                        "sector:AI_COMPUTING": {
+                            "direction": "bearish",
+                            "clock": "2026-07-11T09:30:00",
+                            "trade_action_id": "a-new",
+                            "ticker": "159819",
+                            "company_name": "AI ETF",
+                        }
+                    },
+                }
+            },
+        }
+        events = diff_snapshots(prev, curr)
+        # migration fallback: recognized as a FLIP of the old ticker-keyed
+        # stance, not fabricated as brand-new coverage
+        assert [e["type"] for e in events] == ["flip"]
+        assert events[0]["fromDirection"] == "bullish"
+        assert events[0]["toDirection"] == "bearish"
+        assert events[0]["ticker"] == "159819"

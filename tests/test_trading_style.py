@@ -1,6 +1,7 @@
 """Tests for the KOL trading-style profile service (services/trading_style.py)."""
 from __future__ import annotations
 
+import itertools
 from datetime import datetime
 from pathlib import Path
 
@@ -27,17 +28,25 @@ from finer.services.trading_style import (
 # Helpers
 # =============================================================================
 
+_TICKER_SEQ = itertools.count()
+
+
 def _action(
     action_type: ActionType = ActionType.LONG,
     creator_id: str = "kol-style-test",
     metadata: dict | None = None,
+    ticker: str | None = None,
 ) -> TradeAction:
+    """One observed action. Defaults to a UNIQUE ticker so each call is a
+    distinct stance slot — i.e. one independent voter. Style votes are cast per
+    stance episode, so passing the SAME ticker models a restated standing view
+    (which deliberately collapses to a single vote)."""
     return TradeAction(
         timestamp=datetime(2026, 6, 1, 10, 0),
         source=SourceInfo(
             content_id="c-1", evidence_text="test", creator_id=creator_id
         ),
-        target=TargetInfo(ticker="TEST", market="CN"),
+        target=TargetInfo(ticker=ticker or f"T{next(_TICKER_SEQ)}", market="CN"),
         direction=TradeDirection.BULLISH,
         action_chain=[
             ActionStep(
@@ -179,6 +188,86 @@ class TestComputeObservedStyle:
         assert observed.entry_style_sample_size == 6
         assert observed.entry_style_observed == "left_side"
 
+    def test_restated_standing_view_votes_once_and_cannot_stuff_the_ballot(self):
+        """A weekly template restating ONE view must not outvote real calls.
+
+        Regression for the 2026-07-14 finding: trader_ji's template restated a
+        single AAPL view ~19x, and per-action voting let it dominate a ~24-vote
+        denominator — manufacturing a 自述右侧 vs 实测左侧 contradiction that was
+        an artifact of his template, not his trading. Per-episode voting makes the
+        restated view worth exactly one vote, so the real calls decide the verdict.
+        """
+        restated_one_view = [
+            _action(metadata={"entry_timing_style": "left_side"}, ticker="AAPL")
+            for _ in range(19)
+        ]
+        genuine_calls = [
+            _action(metadata={"entry_timing_style": "right_side"}, ticker=t)
+            for t in ("NVDA", "0700.HK", "600519.SH", "9992.HK", "GOOGL")
+        ]
+        observed = compute_observed_style(restated_one_view + genuine_calls)
+        assert observed is not None
+        # 19 restatements collapse to 1 vote; 5 distinct calls keep 5
+        assert observed.left_side_count == 1
+        assert observed.right_side_count == 5
+        assert observed.entry_style_sample_size == 6
+        # verdict follows the real calls, not the template
+        assert observed.entry_style_observed == "right_side"
+
+    def test_watch_tier_mentions_are_not_entry_evidence(self):
+        """A view he never entered has no entry to time."""
+        actions = [
+            _action(
+                ActionType.WATCH,
+                metadata={"entry_timing_style": "left_side", "tier": "opinion"},
+            )
+            for _ in range(6)
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.left_side_count == 0
+        assert observed.entry_style_sample_size == 0
+        assert observed.entry_style_observed == "unknown"
+
+    def test_reduce_is_an_exit_not_an_entry(self):
+        observed = compute_observed_style(
+            [_action(ActionType.REDUCE, metadata={"entry_timing_style": "right_side"})]
+        )
+        assert observed is not None
+        assert observed.right_side_count == 0
+
+    def test_real_entries_still_count(self):
+        actions = [
+            _action(ActionType.LONG, metadata={"entry_timing_style": "right_side"}),
+            _action(ActionType.ADD, metadata={"entry_timing_style": "right_side"}),
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.right_side_count == 2
+
+    def test_trader_ji_shape_refuses_to_judge_instead_of_faking_a_conflict(self):
+        """Regression for the 2026-07-15 false 言行不一 verdict.
+
+        trader_ji's live evidence was 6 watch-tier "left_side" mentions plus one
+        reduce tagged "right_side" — zero real entries. The old per-action count
+        read that as entry_style_observed="left_side" and the UI rendered a red
+        ⚠冲突 against his declared right_side. With no entry evidence the honest
+        answer is "unknown", which the card renders as 数据不足.
+        """
+        actions = [
+            _action(
+                ActionType.WATCH,
+                metadata={"entry_timing_style": "left_side", "tier": "opinion"},
+            )
+            for _ in range(6)
+        ] + [
+            _action(ActionType.REDUCE, metadata={"entry_timing_style": "right_side"})
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.entry_style_observed == "unknown"
+        assert (observed.left_side_count, observed.right_side_count) == (0, 0)
+
     def test_entry_style_mixed_when_no_majority(self):
         # 3 left, 3 right -> 50%/50%, both below 60% -> mixed
         actions = (
@@ -253,3 +342,52 @@ class TestBuildStyleProfile:
         assert payload["creator_id"] == "ghost"
         assert payload["declared"] is None
         assert payload["observed"] is None
+
+
+class TestReviewHardening:
+    """2026-07-16 adversarial-review fixes: mention stats are per-action
+    (existence evidence must not be masked by anchor-only counting), entry
+    votes are per-episode via the episode's first REAL entry."""
+
+    def test_margin_flag_on_a_restatement_still_counts(self):
+        # same ticker = one episode; the flag rides on the 3rd restatement.
+        actions = [
+            _action(ticker="AAPL"),
+            _action(ticker="AAPL"),
+            _action(ticker="AAPL", metadata={"margin_flag": True}),
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.margin_mention_count == 1  # anchor-only counting gave 0
+
+    def test_short_on_a_later_action_in_episode_still_counts(self):
+        actions = [
+            _action(ActionType.WATCH, ticker="AAPL"),
+            _action(ActionType.SHORT, ticker="AAPL"),
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.short_side_count == 1
+
+    def test_episode_entered_later_still_casts_its_entry_vote(self):
+        # anchor is a watch (no entry to time); the REAL entry comes later in
+        # the same episode and must cast the episode's one vote.
+        actions = [
+            _action(
+                ActionType.WATCH, ticker="AAPL",
+                metadata={"tier": "opinion", "entry_timing_style": "left_side"},
+            ),
+            _action(
+                ActionType.LONG, ticker="AAPL",
+                metadata={"entry_timing_style": "right_side"},
+            ),
+        ]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert (observed.left_side_count, observed.right_side_count) == (0, 1)
+
+    def test_sample_size_is_attributed_action_count_per_schema(self):
+        actions = [_action(ticker="AAPL") for _ in range(3)]
+        observed = compute_observed_style(actions)
+        assert observed is not None
+        assert observed.sample_size == 3  # schema: 参与统计的 action 总数

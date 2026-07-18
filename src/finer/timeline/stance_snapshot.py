@@ -42,6 +42,26 @@ def signal_clock_of(action: TradeAction) -> str:
     return dt.isoformat()
 
 
+def stance_key_of(action: TradeAction, ticker: str) -> str:
+    """Stance-slot key for a (KOL, stance) pair.
+
+    Two distinct sectors can proxy to the SAME ETF ticker (e.g. COMPUTE_POWER
+    and AI_COMPUTING both → 159819). Keying stances purely by the proxy ticker
+    would collapse those independent viewpoints into one slot and fabricate
+    flips. When the action carries F2 sector-proxy provenance, key by
+    ``metadata.sector_proxy.sector_symbol`` so each underlying sector keeps its
+    own stance; the display ticker stays the proxy ETF the reader recognizes.
+    Direct-ticker actions (no sector proxy) key by ticker as before.
+    """
+    meta = getattr(action, "metadata", None) or {}
+    proxy = meta.get("sector_proxy") if isinstance(meta, dict) else None
+    if isinstance(proxy, dict):
+        sector_symbol = proxy.get("sector_symbol")
+        if sector_symbol:
+            return f"sector:{sector_symbol}"
+    return ticker
+
+
 def build_snapshot(
     actions: List[TradeAction],
     credibility_by_kol: Optional[Dict[str, int]] = None,
@@ -50,24 +70,29 @@ def build_snapshot(
     """Current stance per (KOL, ticker) — latest action by signal clock."""
     kols: Dict[str, dict] = {}
     for action in actions:
-        kol = action.source.creator_id
-        if not kol or kol.lower() in ("unknown", "none", ""):
+        # Strip: a whitespace-padded creator_id must land on the same key the
+        # credibility map uses (opinions._kol_settled_record strips), or the
+        # credibility join below silently misses forever.
+        kol = (action.source.creator_id or "").strip()
+        if not kol or kol.lower() in ("unknown", "none"):
             continue
         ticker = action.target.ticker_normalized or action.target.ticker
         if not ticker:
             continue
+        stance_key = stance_key_of(action, ticker)
         clock = signal_clock_of(action)
         entry = kols.setdefault(kol, {"credibility": None, "stances": {}})
-        prev = entry["stances"].get(ticker)
+        prev = entry["stances"].get(stance_key)
         # deterministic: latest clock wins; ties broken by trade_action_id
         if prev is None or (clock, action.trade_action_id) > (
             prev["clock"],
             prev["trade_action_id"],
         ):
-            entry["stances"][ticker] = {
+            entry["stances"][stance_key] = {
                 "direction": action.direction.value,
                 "clock": clock,
                 "trade_action_id": action.trade_action_id,
+                "ticker": ticker,
                 "company_name": action.target.company_name or ticker,
             }
 
@@ -126,8 +151,17 @@ def diff_snapshots(prev: dict, curr: dict) -> List[dict]:
         prev_entry = prev_kols.get(kol) or {}
         prev_stances: Dict[str, dict] = prev_entry.get("stances") or {}
 
-        for ticker, stance in (curr_entry.get("stances") or {}).items():
-            before = prev_stances.get(ticker)
+        for stance_key, stance in (curr_entry.get("stances") or {}).items():
+            before = prev_stances.get(stance_key)
+            # display ticker rides in the stance value (proxy ETF); older
+            # snapshots keyed directly by ticker fall back to the key.
+            display_ticker = stance.get("ticker") or stance_key
+            if before is None and display_ticker != stance_key:
+                # Migration: snapshots persisted before sector-aware keys hold
+                # this stance under its raw proxy ticker. Without the fallback,
+                # the first post-deploy diff fabricates a new_call for every
+                # sector-proxy stance and drops fromDirection on real flips.
+                before = prev_stances.get(display_ticker)
             if before is None:
                 if prev_entry:  # KOL existed before → this name is new coverage
                     events.append(
@@ -136,8 +170,8 @@ def diff_snapshots(prev: dict, curr: dict) -> List[dict]:
                             "type": "new_call",
                             "kolId": kol,
                             "kolName": kol,
-                            "ticker": ticker,
-                            "companyName": stance.get("company_name") or ticker,
+                            "ticker": display_ticker,
+                            "companyName": stance.get("company_name") or display_ticker,
                             "toDirection": stance["direction"],
                             "detail": "较上一快照新增覆盖标的",
                             "timestamp": stance.get("clock") or curr_date,
@@ -150,8 +184,8 @@ def diff_snapshots(prev: dict, curr: dict) -> List[dict]:
                         "type": "flip",
                         "kolId": kol,
                         "kolName": kol,
-                        "ticker": ticker,
-                        "companyName": stance.get("company_name") or ticker,
+                        "ticker": display_ticker,
+                        "companyName": stance.get("company_name") or display_ticker,
                         "fromDirection": before.get("direction"),
                         "toDirection": stance.get("direction"),
                         "detail": "较上一快照立场翻向",

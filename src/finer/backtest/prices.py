@@ -252,23 +252,31 @@ class CachedPriceProvider:
         if cached:
             return cached
 
-        # Try async fetch (for sync compatibility, we run in thread)
+        # Try async fetch (for sync compatibility). Runs on a PERSISTENT private
+        # loop (not asyncio.run): the FinanceSkillsClient singleton caches an
+        # httpx.AsyncClient bound to whichever loop first used it, so a
+        # loop-per-call design breaks every API call after the first with
+        # "Event loop is closed". Deprecated get_event_loop() is avoided too.
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Already in async context, need to schedule
-                if self._fallback_to_mock:
-                    return self._get_mock_price(ticker, date)
-                self._raise_price_unavailable(ticker, date)
-            else:
-                # Can run async
-                price = loop.run_until_complete(self._fetch_from_api(ticker, date))
-                if price:
-                    self._cache.set(ticker, price, date)
-                    return price
+            running_loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No event loop
-            pass
+            running_loop = None
+
+        if running_loop is not None:
+            # Already inside an event loop — cannot block on it from a sync call.
+            if self._fallback_to_mock:
+                return self._get_mock_price(ticker, date)
+            self._raise_price_unavailable(ticker, date)
+        else:
+            try:
+                price = self._sync_loop().run_until_complete(
+                    self._fetch_from_api(ticker, date)
+                )
+            except RuntimeError:
+                price = None
+            if price:
+                self._cache.set(ticker, price, date)
+                return price
 
         # Fallback to mock
         if self._fallback_to_mock:
@@ -380,6 +388,20 @@ class CachedPriceProvider:
 
         return prices
 
+    def _sync_loop(self) -> asyncio.AbstractEventLoop:
+        """Persistent private loop for sync wrappers.
+
+        One loop for the fetcher's lifetime keeps the FinanceSkillsClient
+        singleton's cached httpx.AsyncClient bound to a live loop across calls
+        (asyncio.run would close the loop each call and strand the client), and
+        replaces the deprecated asyncio.get_event_loop() pattern.
+        """
+        loop = getattr(self, "_own_loop", None)
+        if loop is None or loop.is_closed():
+            loop = asyncio.new_event_loop()
+            self._own_loop = loop
+        return loop
+
     def get_latest_price(self, ticker: str) -> Optional[float]:
         """Get latest price for ticker.
 
@@ -391,16 +413,23 @@ class CachedPriceProvider:
         if cached:
             return cached
 
-        # Try API
+        # Try API (same persistent-private-loop pattern as get_price; the old
+        # get_event_loop() call raises RuntimeError on Python 3.12+ once no
+        # current loop is set, silently disabling this path).
         try:
-            loop = asyncio.get_event_loop()
-            if not loop.is_running():
-                price = loop.run_until_complete(self._fetch_from_api(ticker))
-                if price:
-                    self._cache.set(ticker, price)
-                    return price
+            running_loop = asyncio.get_running_loop()
         except RuntimeError:
-            pass
+            running_loop = None
+        if running_loop is None:
+            try:
+                price = self._sync_loop().run_until_complete(
+                    self._fetch_from_api(ticker)
+                )
+            except RuntimeError:
+                price = None
+            if price:
+                self._cache.set(ticker, price)
+                return price
 
         # Fallback
         if self._fallback_to_mock:

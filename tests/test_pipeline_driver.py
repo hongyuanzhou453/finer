@@ -352,3 +352,120 @@ def test_report_to_dict_roundtrip(data_root, pm_db):
     d = report.to_dict()
     assert d["run_id"] == "drive_test"
     assert json.dumps(d)  # JSON-serializable
+
+
+def test_f1_executor_resolves_relative_raw_path_against_data_root(
+    data_root, monkeypatch
+):
+    """Regression: ``rec.raw_path`` is persisted relative to data_root (files.py
+    writes ``raw_path.relative_to(DATA_ROOT)``). The F1 executor must resolve it
+    against data_root, not the process CWD — otherwise every real upload fails
+    F1 with ``API_NTF_001 raw file missing`` and the driver never produces
+    throughput (the activation bug found on the first real run)."""
+    import finer.pipeline.driver as drv
+    from finer.schemas.content import ContentRecord
+
+    # A real raw file under data_root, referenced by a RELATIVE raw_path.
+    raw_file = data_root / "raw" / "local" / "sample.txt"
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    raw_file.write_text("看好半导体板块。", encoding="utf-8")
+
+    rec = ContentRecord(
+        content_id="c-rel-path",
+        source_type="manual_upload",
+        source_platform="local",
+        creator_id="trader_ji",
+        collected_at=datetime(2026, 5, 31),
+        title="sample",
+        raw_path="raw/local/sample.txt",  # relative, exactly as production persists
+        file_type="text",
+    )
+
+    captured = {}
+
+    class _StubEnvelope:
+        def model_dump_json(self, indent=2):
+            return "{}"
+
+    class _StubRouter:
+        def route(self, r, raw_path):
+            # The executor must hand us an EXISTING, data_root-resolved path.
+            captured["raw_path"] = raw_path
+            assert raw_path.exists(), f"unresolved path: {raw_path}"
+            return _StubEnvelope(), None
+
+    monkeypatch.setattr(drv, "_ROUTER", _StubRouter())
+
+    out = drv._default_f1_executor(rec, data_root)
+
+    assert out == data_root / "F1_standardized" / "c-rel-path" / "content_envelope.json"
+    assert out.exists()
+    assert captured["raw_path"] == data_root / "raw" / "local" / "sample.txt"
+
+
+def test_f1_executor_still_accepts_absolute_raw_path(data_root, monkeypatch):
+    """Absolute raw_paths (legacy records / receipts) must keep working."""
+    import finer.pipeline.driver as drv
+    from finer.schemas.content import ContentRecord
+
+    raw_file = data_root / "raw" / "abs.txt"
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    raw_file.write_text("绝对路径样本。", encoding="utf-8")
+
+    rec = ContentRecord(
+        content_id="c-abs-path",
+        source_type="manual_upload",
+        source_platform="local",
+        collected_at=datetime(2026, 5, 31),
+        title="abs",
+        raw_path=str(raw_file),  # absolute
+        file_type="text",
+    )
+
+    class _StubEnvelope:
+        def model_dump_json(self, indent=2):
+            return "{}"
+
+    class _StubRouter:
+        def route(self, r, raw_path):
+            assert raw_path == raw_file
+            return _StubEnvelope(), None
+
+    monkeypatch.setattr(drv, "_ROUTER", _StubRouter())
+    out = drv._default_f1_executor(rec, data_root)
+    assert out.exists()
+
+
+def test_f1_executor_resolves_repo_root_relative_raw_path(data_root, monkeypatch):
+    """Regression: 215/242 real F0 records (feishu backlog) store raw_path
+    prefixed 'data/...' (repo-root-relative); joining that onto data_root gave
+    <data_root>/data/... and every backlog record failed F1."""
+    import finer.pipeline.driver as drv
+    from finer.schemas.content import ContentRecord
+
+    raw_file = data_root / "raw" / "feishu" / "doc.md"
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    raw_file.write_text("看好储能板块。", encoding="utf-8")
+
+    rec = ContentRecord(
+        content_id="c-data-prefix",
+        source_type="feishu_chat",
+        source_platform="feishu",
+        collected_at=datetime(2026, 6, 1),
+        title="doc",
+        raw_path="data/raw/feishu/doc.md",  # repo-root-relative, as persisted
+        file_type="text",
+    )
+
+    class _StubEnvelope:
+        def model_dump_json(self, indent=2):
+            return "{}"
+
+    class _StubRouter:
+        def route(self, r, raw_path):
+            assert raw_path == raw_file, raw_path
+            return _StubEnvelope(), None
+
+    monkeypatch.setattr(drv, "_ROUTER", _StubRouter())
+    out = drv._default_f1_executor(rec, data_root)
+    assert out.exists()

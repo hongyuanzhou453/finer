@@ -10,6 +10,7 @@ Vision tasks: MiMo-V2.5 via Xiaomi MiMo API Open Platform
 from __future__ import annotations
 
 import os
+import time
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -20,6 +21,82 @@ import json
 logger = logging.getLogger(__name__)
 
 _MIMO_OPENAI_EXTRA_BODY = {"stream": False, "thinking": {"type": "disabled"}}
+
+#: Default failure cooldown in seconds (override via FINER_MODEL_FAIL_COOLDOWN).
+_DEFAULT_FAIL_COOLDOWN_SECONDS = 120.0
+
+
+def _monotonic_now() -> float:
+    """Injectable time source for failure cooldowns (monkeypatch in tests)."""
+    return time.monotonic()
+
+
+def _fail_cooldown_seconds() -> float:
+    """Cooldown window for failed models.
+
+    Read from FINER_MODEL_FAIL_COOLDOWN on every check so long-running batch
+    processes pick up changes without re-creating the registry singletons.
+    A value of 0 disables failure marking entirely (entries expire at once).
+    """
+    raw = os.getenv("FINER_MODEL_FAIL_COOLDOWN")
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            logger.warning(
+                "Ignoring invalid FINER_MODEL_FAIL_COOLDOWN=%r; using default %.0fs",
+                raw,
+                _DEFAULT_FAIL_COOLDOWN_SECONDS,
+            )
+    return _DEFAULT_FAIL_COOLDOWN_SECONDS
+
+
+class _FailureCooldownDict(Dict[str, str]):
+    """``failed_models`` mapping whose entries auto-expire after a cooldown.
+
+    The registries are module-level singletons, so a permanent
+    ``failed_models`` entry used to poison a model for the whole process
+    lifetime (``reset_failures()`` has no callers): after one transient 429
+    on the single vision model, every subsequent ``LLMClient.from_registry()``
+    returned None and batch OCR silently degraded to its failure fallback.
+
+    Membership checks (``name in failed_models``) return False — and prune
+    the entry — once FINER_MODEL_FAIL_COOLDOWN seconds (default 120) have
+    elapsed since the failure was recorded, so the model automatically gets
+    another chance. Values keep their error-string semantics for callers
+    that read ``failed_models[name]``.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._failed_at: Dict[str, float] = {key: _monotonic_now() for key in self}
+
+    def __setitem__(self, key: str, value: str) -> None:
+        super().__setitem__(key, value)
+        self._failed_at[key] = _monotonic_now()
+
+    def __delitem__(self, key: str) -> None:
+        super().__delitem__(key)
+        self._failed_at.pop(key, None)
+
+    def clear(self) -> None:
+        super().clear()
+        self._failed_at.clear()
+
+    def __contains__(self, key: object) -> bool:
+        if not super().__contains__(key):
+            return False
+        failed_at = self._failed_at.get(key)  # type: ignore[arg-type]
+        if failed_at is None:
+            # Entry recorded without a timestamp (e.g. injected directly);
+            # start its cooldown now so it still expires eventually.
+            self._failed_at[key] = _monotonic_now()  # type: ignore[index]
+            return True
+        if _monotonic_now() - failed_at >= _fail_cooldown_seconds():
+            super().__delitem__(key)  # type: ignore[arg-type]
+            self._failed_at.pop(key, None)  # type: ignore[arg-type]
+            return False
+        return True
 
 
 def _text_extra_body_from_env() -> Dict[str, Any]:
@@ -65,10 +142,16 @@ class ModelConfig:
 
 @dataclass
 class BaseModelRegistry:
-    """Base registry with shared fallback logic."""
+    """Base registry with shared fallback logic.
+
+    Failure marking is cooldown-based: entries in ``failed_models`` expire
+    automatically after FINER_MODEL_FAIL_COOLDOWN seconds (default 120), so
+    a transient quota/rate-limit error never permanently disables a model
+    on the module-level registry singletons.
+    """
 
     models: List[ModelConfig] = field(default_factory=list)
-    failed_models: Dict[str, str] = field(default_factory=dict)
+    failed_models: Dict[str, str] = field(default_factory=_FailureCooldownDict)
 
     def get_available_model(self) -> Optional[ModelConfig]:
         """Get the highest priority available model."""
@@ -83,14 +166,40 @@ class BaseModelRegistry:
         return None
 
     def mark_failed(self, model_name: str, error: str):
-        """Mark a model as failed, trigger fallback."""
+        """Mark a model as failed for the cooldown window, trigger fallback.
+
+        The mark expires automatically after FINER_MODEL_FAIL_COOLDOWN
+        seconds (default 120); call reset_failures() to lift it early.
+        """
         self.failed_models[model_name] = error
         logger.warning(f"Model {model_name} failed: {error}. Trying fallback...")
 
     def reset_failures(self):
-        """Reset failed models (e.g., after quota refresh)."""
+        """Reset failed models immediately (e.g., after quota refresh)."""
         self.failed_models.clear()
         logger.info("Reset all model failures")
+
+
+def _mimo_vision_base_url() -> str:
+    """Resolve the MiMo vision endpoint.
+
+    Precedence: MIMO_VISION_BASE_URL > MIMO_BASE_URL > key-prefix default.
+
+    MiMo issues keys bound to different hosts:
+    - token-plan quota keys (prefix ``tp-``) are only valid on
+      https://token-plan-cn.xiaomimimo.com/v1
+    - standard open-platform keys are valid on https://api.xiaomimimo.com/v1
+
+    Sending a ``tp-`` key to api.xiaomimimo.com returns 401, so when neither
+    env override is set the default host is chosen from the key prefix
+    (prefix check only — the key value itself is never logged or stored).
+    """
+    explicit = os.getenv("MIMO_VISION_BASE_URL") or os.getenv("MIMO_BASE_URL")
+    if explicit:
+        return explicit
+    if (os.getenv("MIMO_API_KEY") or "").startswith("tp-"):
+        return "https://token-plan-cn.xiaomimimo.com/v1"
+    return "https://api.xiaomimimo.com/v1"
 
 
 @dataclass
@@ -106,11 +215,7 @@ class VisionModelRegistry(BaseModelRegistry):
             name="mimo-v2.5",
             provider=ModelProvider.MIMO,
             api_key_env="MIMO_API_KEY",
-            base_url=(
-                os.getenv("MIMO_VISION_BASE_URL")
-                or os.getenv("MIMO_BASE_URL")
-                or "https://api.xiaomimimo.com/v1"
-            ),
+            base_url=_mimo_vision_base_url(),
             max_tokens=4096,
             priority=0,
             api_key_header="api-key",
@@ -121,27 +226,47 @@ class VisionModelRegistry(BaseModelRegistry):
     ])
 
 
+def _primary_text_model_config() -> ModelConfig:
+    """Build the env-overridable primary text model.
+
+    Guards against the known key/endpoint misroute: pointing
+    FINER_LLM_BASE_URL at a MiMo host while the key still comes from
+    DEEPSEEK_API_KEY (FINER_LLM_API_KEY_ENV unset) sends the DeepSeek key
+    to MiMo and fails with 401.
+    """
+    base_url = os.getenv("FINER_LLM_BASE_URL", "https://api.deepseek.com")
+    api_key_env = os.getenv("FINER_LLM_API_KEY_ENV", "DEEPSEEK_API_KEY")
+    if "xiaomimimo" in base_url and api_key_env == "DEEPSEEK_API_KEY":
+        logger.warning(
+            "FINER_LLM_BASE_URL points at a MiMo endpoint but the API key env "
+            "is still DEEPSEEK_API_KEY (FINER_LLM_API_KEY_ENV not set). The "
+            "DeepSeek key will be sent to MiMo and rejected with 401. Set "
+            "FINER_LLM_API_KEY_ENV=MIMO_API_KEY to match the endpoint."
+        )
+    return ModelConfig(
+        name=os.getenv("FINER_LLM_MODEL", "deepseek-v4-pro"),
+        provider=ModelProvider.DEEPSEEK,
+        api_key_env=api_key_env,
+        base_url=base_url,
+        max_tokens=int(os.getenv("FINER_LLM_MAX_TOKENS", "8192")),
+        priority=0,
+        api_key_header=os.getenv("FINER_LLM_API_KEY_HEADER", "Authorization"),
+        api_key_scheme=(
+            None
+            if os.getenv("FINER_LLM_API_KEY_SCHEME", "Bearer") == ""
+            else os.getenv("FINER_LLM_API_KEY_SCHEME", "Bearer")
+        ),
+        max_tokens_field=os.getenv("FINER_LLM_MAX_TOKENS_FIELD", "max_tokens"),
+        extra_body=_text_extra_body_from_env(),
+    )
+
+
 @dataclass
 class TextModelRegistry(BaseModelRegistry):
     """Registry of text/chat models for F1/F2 enrichment."""
 
     models: List[ModelConfig] = field(default_factory=lambda: [
-        ModelConfig(
-            name=os.getenv("FINER_LLM_MODEL", "deepseek-v4-pro"),
-            provider=ModelProvider.DEEPSEEK,
-            api_key_env=os.getenv("FINER_LLM_API_KEY_ENV", "DEEPSEEK_API_KEY"),
-            base_url=os.getenv("FINER_LLM_BASE_URL", "https://api.deepseek.com"),
-            max_tokens=int(os.getenv("FINER_LLM_MAX_TOKENS", "8192")),
-            priority=0,
-            api_key_header=os.getenv("FINER_LLM_API_KEY_HEADER", "Authorization"),
-            api_key_scheme=(
-                None
-                if os.getenv("FINER_LLM_API_KEY_SCHEME", "Bearer") == ""
-                else os.getenv("FINER_LLM_API_KEY_SCHEME", "Bearer")
-            ),
-            max_tokens_field=os.getenv("FINER_LLM_MAX_TOKENS_FIELD", "max_tokens"),
-            extra_body=_text_extra_body_from_env(),
-        ),
+        _primary_text_model_config(),
         ModelConfig(
             name="qwen-plus",
             provider=ModelProvider.DASHSCOPE,

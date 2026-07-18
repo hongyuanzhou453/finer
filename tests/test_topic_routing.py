@@ -556,3 +556,115 @@ class TestPerTopicFallbackSemantics:
         assert labels[-1] == "未分组"
         kept_blocks = {b.block_id for _, sub in subs for b in sub.blocks}
         assert len(kept_blocks) == 8  # no block dropped
+
+
+# ── 6. LLM-assembler runner integration (f15 spec Open Issue #2: the 0-测试 gap) ─
+
+
+def _llm_topic_payload() -> str:
+    """A constrained-LLM topic proposal that splits the two-topic envelope,
+    mirroring the on-the-wire adapter payload shape (see the Cat Lord fixture)."""
+    import json
+
+    payload = {
+        "topic_blocks": [
+            {
+                "topic_title": "腾讯",
+                "topic_type": "single_stock",
+                "source_block_ids": ["b0", "b1", "b2", "b3"],
+                "primary_entity_ids": ["0700.HK"],
+                "secondary_entity_ids": [],
+                "summary": "腾讯基本面与买入观点",
+                "segmentation_reason": "连续讨论腾讯",
+                "confidence": 0.9,
+                "ambiguity_flags": [],
+            },
+            {
+                "topic_title": "泡泡玛特",
+                "topic_type": "single_stock",
+                "source_block_ids": ["b4", "b5", "b6", "b7"],
+                "primary_entity_ids": ["9992.HK"],
+                "secondary_entity_ids": [],
+                "summary": "泡泡玛特成长性与买入观点",
+                "segmentation_reason": "连续讨论泡泡玛特",
+                "confidence": 0.9,
+                "ambiguity_flags": [],
+            },
+        ],
+        "unassigned_block_ids": [],
+        "reasoning_summary": "两个独立单票主题。",
+        "confidence": 0.9,
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+class TestRunnerLLMAssemblerIntegration:
+    """``FINER_F15_ASSEMBLER=llm`` through ``run_canonical_from_envelope``.
+
+    Closes f15 spec Open Issue #2: the LLM assembler had adapter unit tests but
+    NO runner integration test. Only the LLM network boundary
+    (``LLMTopicAssemblyAdapter._call_llm``) is stubbed — real routing, real
+    payload parsing/validation, real per-topic sub-enveloping and real F3→F5
+    extraction all run.
+    """
+
+    _CALL_LLM = (
+        "finer.parsing.llm_topic_assembly_adapter."
+        "LLMTopicAssemblyAdapter._call_llm"
+    )
+
+    def _use_llm(self, monkeypatch):
+        monkeypatch.delenv("FINER_F15_MODE", raising=False)  # auto; env is long
+        monkeypatch.setenv("FINER_F15_ASSEMBLER", "llm")
+
+    def test_llm_assembler_engaged_and_extracts_per_topic(self, monkeypatch, tmp_path):
+        import json
+
+        self._use_llm(monkeypatch)
+        canned = _llm_topic_payload()
+        monkeypatch.setattr(self._CALL_LLM, lambda self, messages: canned)
+
+        env = _two_topic_envelope()
+        actions = asyncio.run(run_canonical_from_envelope(env, {}, persist_dir=tmp_path))
+        assert actions
+        assert {"0700.HK", "9992.HK"} <= {a.target.ticker for a in actions}
+
+        # PROOF the LLM path ran (not a silent rule fallback): the persisted
+        # F1.5 assembly carries the constrained-LLM strategy tag.
+        topic_files = list((tmp_path / "F1_5_topics").glob("*.json"))
+        assert topic_files
+        assembly = json.loads(topic_files[0].read_text())
+        assert assembly["assembly_strategy"] == "llm_constrained_deepseek_v1"
+
+        # per-topic provenance survives on the persisted F3 intents
+        intents = [
+            json.loads(p.read_text())
+            for p in (tmp_path / "F3_intents").glob("*.json")
+        ]
+        by_symbol = {i["target_symbol"]: i for i in intents if i.get("target_symbol")}
+        assert by_symbol["0700.HK"]["metadata"]["f15_topic_title"] == "腾讯"
+        assert by_symbol["9992.HK"]["metadata"]["f15_topic_title"] == "泡泡玛特"
+
+    def test_llm_failure_falls_back_to_rule_assembler(self, monkeypatch, tmp_path):
+        import json
+
+        self._use_llm(monkeypatch)
+
+        def _boom(self, messages):
+            from finer.parsing.llm_topic_assembly_adapter import LLMTopicAssemblyError
+
+            raise LLMTopicAssemblyError("simulated DeepSeek outage")
+
+        monkeypatch.setattr(self._CALL_LLM, _boom)
+
+        env = _two_topic_envelope()
+        actions = asyncio.run(run_canonical_from_envelope(env, {}, persist_dir=tmp_path))
+        # F1.5 degrades to the deterministic rule assembler; extraction still
+        # runs per topic (LLM is a precision upgrade, not a recall dependency).
+        assert actions
+        assert {"0700.HK", "9992.HK"} <= {a.target.ticker for a in actions}
+
+        topic_files = list((tmp_path / "F1_5_topics").glob("*.json"))
+        assert topic_files
+        assembly = json.loads(topic_files[0].read_text())
+        assert assembly["assembly_strategy"] == "deterministic_keyword_v1"

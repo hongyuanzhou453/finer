@@ -1,0 +1,17 @@
+# Broker creator 档案 — F0 broker 渠道（外资研报）。creator_id = F0 ContentRecord.creator_id（中文券商名，join key）。
+creator_id: 伯恩斯坦
+display_name: 伯恩斯坦
+handle: Bernstein
+style_label: 机构研报
+specialties: [深度行业研究, 个股评级]
+aliases: [Bernstein, Sanford C. Bernstein, AllianceBernstein]
+platforms: [broker]
+platform_identities: []
+content_types: [research_report]
+markets: [US, HK]
+focus: [sector, single_stock]
+default_horizons: []
+notes:
+  - 机构聚合账号：以券商为粒度聚合全部研报，非单一分析师。
+  - "R6 已知风险（spec 2026-07-15 §7）：不同 desk/分析师的矛盾判断会合并成单一 creator，可能制造虚假翻转；分析师粒度建模待后续。"
+enabled: true

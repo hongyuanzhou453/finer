@@ -121,6 +121,41 @@ OPINION_WATCH_KEYWORDS = [
     "看好", "关注", "观察", "留意", "值得", "埋伏",
 ]
 
+# Direction lexicon split (2026-07-14): the naive BEARISH_KEYWORDS bag conflated
+# a *directional* short/reduce/avoid stance with mere *risk caution*, so any note
+# containing "风险" (risk) or "高估" (overvalued) was scored as bearish. Split so
+# only genuine directional words decide bearish; caution words alone → neutral.
+DIRECTIONAL_BEARISH_KEYWORDS = [
+    "看空", "减仓", "清仓", "卖出", "减持", "退出", "回避",
+    "走弱", "回落", "下跌", "落后", "不及预期", "卖就卖",
+]
+# Caution / valuation words: they flag risk but are NOT a directional short on
+# their own (e.g. "SP风险变高", a monitoring note, must not read as "sell").
+RISK_CAUTION_KEYWORDS = ["风险", "谨慎", "高估", "透支"]
+
+# Structural markers for sections that are NOT directional viewpoints:
+#  - a technical-status watchlist ("左侧/右侧/破位/观察...") — a right-side
+#    trader's "左侧为主" means "not buying yet", not "short it";
+#  - a portfolio-allocation framework ("60进攻+20防守+20现金") — position
+#    structure, not a directional call.
+# Sections matching these become neutral/watch so settle skips them as
+# non-directional instead of counting them as (usually failed) bearish bets.
+MONITORING_MARKERS = [
+    "观察", "左侧", "右侧", "破位", "周线", "溢价", "转折价", "盯", "跟踪",
+]
+# Allocation frameworks are recognized by their SIGNATURE — "60进攻+20防守+20现金"
+# style number+bucket pairs or an explicit 配置 phrase — not by bare substrings:
+# 现金 also matches 现金流, 分配 matches 利润分配, 防守 matches 防守板块, so bare
+# markers neutralized ordinary dividend/cash-flow stock pitches.
+_ALLOCATION_SPLIT_RE = re.compile(r"\d+\s*(?:成|%|％)?\s*(?:进攻|防守|现金)")
+ALLOCATION_PHRASES = ["仓位配置", "账户配置", "资产配置"]
+# A concrete tradeable instruction, or an explicit stance word, overrides the
+# monitoring/allocation framing (e.g. "半导体减仓" inside a tracking table is a
+# real trim, and "看好" inside one is a real view). The full explicit-action
+# vocabulary applies — a narrower list silently neutralized 买入/减持/退出 etc.
+STRONG_ACTION_KEYWORDS = list(EXPLICIT_ACTION_KEYWORDS)
+STANCE_OVERRIDE_KEYWORDS = ["看好", "看空"]
+
 SKIP_PATTERNS = [
     re.compile(r'^\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}:\d{2}$'),
     re.compile(r'^猫大人FIRE\s+\d{4}年'),
@@ -189,16 +224,57 @@ def _extract_entity_from_heading(heading_text: str) -> Optional[Tuple[str, Entit
     return None
 
 
+def _classify_nondirectional_section(text: str) -> Optional[str]:
+    """Return ``"monitoring"`` / ``"allocation"`` when a section is a technical
+    watchlist or a portfolio-allocation framework rather than a directional view.
+
+    Such sections carry caution/technical vocabulary ("左侧", "破位", "SP风险")
+    or structure ("60进攻+20防守+20现金") that the keyword bag would otherwise
+    misread as a bearish call. Any explicit trade instruction (full
+    EXPLICIT_ACTION_KEYWORDS vocabulary) or stance word ("看好"/"看空")
+    overrides the framing so a real "减仓"/"看好" inside a tracking table still
+    extracts; allocation is recognized by its number+bucket signature, not bare
+    substrings (现金 also matches 现金流, 分配 matches 利润分配).
+    """
+    if any(kw in text for kw in STRONG_ACTION_KEYWORDS):
+        return None
+    if any(kw in text for kw in STANCE_OVERRIDE_KEYWORDS):
+        return None
+    if len(_ALLOCATION_SPLIT_RE.findall(text)) >= 2 or any(
+        kw in text for kw in ALLOCATION_PHRASES
+    ):
+        return "allocation"
+    mon = sum(1 for kw in MONITORING_MARKERS if kw in text)
+    if text.count("[]") >= 2 or text.count("□") >= 2:  # checkbox watchlist
+        mon += 2
+    if mon >= 2:
+        return "monitoring"
+    return None
+
+
 def _detect_direction(text: str) -> Optional[str]:
-    """Detect sentiment direction from text."""
+    """Detect sentiment direction from text.
+
+    Only *directional* bearish words (short/reduce/avoid/weaken) decide bearish;
+    pure risk-caution words ("风险"/"高估") with no directional signal degrade to
+    ``neutral`` rather than fabricating a short (2026-07-14 F3 over-extraction fix).
+    Caution words DO weigh against an explicit bullish signal, though — a hedged
+    "看好但注意风险" is mixed, not clean bullish (pre-fix parity for hedges).
+    """
     bullish_count = sum(1 for kw in BULLISH_KEYWORDS if kw in text)
-    bearish_count = sum(1 for kw in BEARISH_KEYWORDS if kw in text)
+    bearish_count = sum(1 for kw in DIRECTIONAL_BEARISH_KEYWORDS if kw in text)
+    caution_count = sum(1 for kw in RISK_CAUTION_KEYWORDS if kw in text)
+    if bullish_count > 0:
+        bearish_count += caution_count
     if bullish_count > bearish_count:
         return "bullish"
     elif bearish_count > bullish_count:
         return "bearish"
     elif bullish_count > 0 and bullish_count == bearish_count:
         return "mixed"
+    # No directional signal: caution-only text is risk awareness, not a short.
+    if caution_count > 0:
+        return "neutral"
     return None
 
 
@@ -657,14 +733,21 @@ def _rule_based_extract_impl(
 
         combined_text = " ".join(b.text for b in content_blocks)
 
-        direction = _detect_direction(combined_text)
-        if not direction:
-            processing_notes.append(
-                f"Section '{section['heading']}': no clear direction"
-            )
-            continue
-
-        actionability, position_hint = _detect_actionability(combined_text)
+        # Guardrail: technical watchlists and allocation frameworks are not
+        # directional viewpoints. Emit them as neutral/watch so settle skips them
+        # as non-directional rather than scoring them as (usually failed) shorts.
+        section_kind = _classify_nondirectional_section(combined_text)
+        if section_kind:
+            direction = "neutral"
+            actionability, position_hint = "watch", "none"
+        else:
+            direction = _detect_direction(combined_text)
+            if not direction:
+                processing_notes.append(
+                    f"Section '{section['heading']}': no clear direction"
+                )
+                continue
+            actionability, position_hint = _detect_actionability(combined_text)
 
         # Build evidence spans
         section_evidence: List[EvidenceSpan] = []
@@ -685,6 +768,8 @@ def _rule_based_extract_impl(
 
         # Ambiguity flags
         ambiguity_flags: List[str] = []
+        if section_kind:
+            ambiguity_flags.append(f"nondirectional_{section_kind}")
         if target_name == "unknown":
             ambiguity_flags.append("unknown_target")
         if any(kw in combined_text for kw in ["风险高于价值", "回落的风险", "透支"]):

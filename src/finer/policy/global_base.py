@@ -20,6 +20,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from finer.schemas.investment_intent import (
+    HORIZON_EXIT_TIERS,
+    resolve_horizon_tier,
+)
 from finer.schemas.policy import (
     ACTION_HINT_LITERAL,
     POSITION_SIZING_HINT_LITERAL,
@@ -99,6 +103,59 @@ _ACTION_RULES: Dict[Tuple[str, str, str], str] = {
 }
 
 # =============================================================================
+# Recommendation branch: (direction, position_delta_hint) -> action_hint
+# =============================================================================
+# actionability == "recommendation" covers declarative institutional ratings
+# (broker research: buy / sell / hold ratings, initiations, target prices)
+# where the author commits ZERO position of their own. The policy output is
+# honestly "follow the institutional recommendation" — it must never be
+# dressed up as "the analyst opened a position themselves".
+#
+# Two hard rules (spec 2026-07-15 broker-research R4):
+#   1. A sell rating (bearish recommendation) is a NORMAL, executable
+#      reduce/avoid signal. Initiation-at-sell is routine in broker research,
+#      not an anomaly — it MUST NOT fall into the review_required human queue
+#      (unlike (explicit_action, bearish, open), which stays escalated because
+#      a person opening a bearish position could be shorting).
+#   2. Global base never opens shorts. Bearish recommendations map to
+#      reducing / exiting long exposure, never to opening short positions.
+#
+# For recommendations the rating direction dominates the position_delta_hint:
+# the rating IS the recommendation; delta text is secondary color. This is why
+# (bearish, hold) and (bearish, open/add) still resolve to reduce_position.
+_RECOMMENDATION_RULES: Dict[Tuple[str, str], str] = {
+    # -- Recommendation + Bullish (buy / overweight / initiate-buy) →
+    #    executable open semantics; sizing flows through the normal
+    #    conviction pipeline; no forced human review.
+    ("bullish", "open"):    "open_position",
+    ("bullish", "add"):     "add_position",
+    ("bullish", "reduce"):  "reduce_position",   # bullish rating + trimming advice
+    ("bullish", "hold"):    "hold_position",
+    ("bullish", "exit"):    "close_position",
+    ("bullish", "none"):    "open_position",     # maintain/initiate buy: the rating itself is the signal
+    ("bullish", "unknown"): "open_position",
+
+    # -- Recommendation + Bearish (sell / underweight / initiate-sell) →
+    #    executable reduce/avoid semantics. Never review_required, never short.
+    ("bearish", "open"):    "reduce_position",   # "open short" advice → base layer follows as reduce long exposure
+    ("bearish", "add"):     "reduce_position",
+    ("bearish", "reduce"):  "reduce_position",
+    ("bearish", "hold"):    "reduce_position",   # rating direction dominates contradictory delta text
+    ("bearish", "exit"):    "close_position",
+    ("bearish", "none"):    "reduce_position",   # maintain/initiate sell: reduce/avoid, NOT human queue
+    ("bearish", "unknown"): "reduce_position",
+
+    # -- Recommendation + Neutral (hold / market-perform) → watch.
+    ("neutral", "open"):    "watch_only",
+    ("neutral", "add"):     "watch_only",
+    ("neutral", "reduce"):  "watch_only",
+    ("neutral", "hold"):    "watch_only",
+    ("neutral", "exit"):    "watch_only",
+    ("neutral", "none"):    "watch_only",
+    ("neutral", "unknown"): "watch_only",
+}
+
+# =============================================================================
 # Position sizing bands
 # =============================================================================
 
@@ -124,6 +181,50 @@ _HOLDING_PERIOD_MAP: Dict[str, HOLDING_PERIOD_HINT_LITERAL] = {
     "close_position":       "short_term",
     "review_required":      "review_required",
 }
+
+# Horizon tier (from resolve_horizon_tier) → holding_period_hint. Used when
+# the F3 intent carries an explicit time_horizon_hint: the author's stated
+# horizon dominates the action_hint coarse default above, so a broker's
+# 12-month view lands in "long_term" (→ 180d F8 window via TradeAction
+# .time_horizon) instead of the 90d "medium_term" open-position default.
+_TIER_TO_HOLDING_PERIOD: Dict[str, HOLDING_PERIOD_HINT_LITERAL] = {
+    "short":  "short_term",
+    "medium": "medium_term",
+    "long":   "long_term",
+}
+
+# =============================================================================
+# Horizon-aware exit parameters (spec 2026-07-15 broker-research R5)
+# =============================================================================
+# tier -> (stop_loss_pct_hint, take_profit_pct_hint). The window in days for
+# each tier comes from HORIZON_EXIT_TIERS in schemas/investment_intent.py —
+# the single source of truth shared with F8. Do NOT re-declare day counts here.
+#
+# Why per-horizon at all: the historical flat -10% / +20% / 30d rules were
+# tuned for short-swing KOL calls. Applying a 30-day stopwatch to a broker
+# target price that conventionally implies ~12 months measures noise, not
+# judgment (R5: "构造上的抛硬币渲染成自信数字").
+#
+# Parameter rationale (explicit judgment call, documented for audit):
+#   - "short" (30d) is byte-identical to the historical F8 flat constants
+#     (-10% / +20% / 30d) so legacy-equivalent inputs have zero drift.
+#   - Stops widen with horizon: a longer-horizon call must survive interim
+#     drawdowns that are noise at that horizon. Pure sqrt-time scaling of a
+#     -10%@30d stop would give ≈ -17%@90d and ≈ -24.5%@180d; we deliberately
+#     cap tighter (-15% / -20%) as a hard per-position loss floor — wider than
+#     the short tier, but below what raw volatility scaling would permit.
+#   - Take-profit stays at 2x the stop magnitude in every tier, preserving
+#     the legacy 2:1 reward-to-risk shape instead of inventing a new one.
+_HORIZON_EXIT_PARAMS: Dict[str, Tuple[float, float]] = {
+    "short":  (-0.10, 0.20),
+    "medium": (-0.15, 0.30),
+    "long":   (-0.20, 0.40),
+}
+
+# Legacy flat exit defaults — identical to the historical F8 constants.
+# Used when the caller provides no time-horizon information, so existing
+# call sites (and backtest results) stay bit-for-bit unchanged.
+_LEGACY_FLAT_EXIT: Tuple[float, float, int] = (-0.10, 0.20, 30)
 
 
 # =============================================================================
@@ -174,7 +275,8 @@ class GlobalBasePolicy:
         """Resolve the action_hint for a given F3 intent.
 
         Args:
-            actionability:   opinion | watch | explicit_action | review_required.
+            actionability:   opinion | watch | explicit_action | recommendation
+                             | review_required.
             direction:       bullish | bearish | neutral | mixed | unknown.
             position_delta_hint: open | add | reduce | hold | exit | none | unknown.
 
@@ -184,10 +286,23 @@ class GlobalBasePolicy:
         If no rule matches the exact triple, falls back to:
           - "review_required" for explicit_action without a clear match.
           - "watch_only" for opinion/watch without a clear match.
+          - "watch_only" for recommendation without a clear match — a
+            declarative institutional rating never lands in the human queue
+            by construction (R4).
         """
         # Explicit review_required from F3 — escalate immediately
         if actionability == "review_required":
             return "review_required"
+
+        # Recommendation branch: declarative institutional ratings
+        # (broker research). Dedicated table — direction dominates, sell
+        # ratings are executable reduce/avoid, never review_required.
+        if actionability == "recommendation":
+            rec_key = (direction, position_delta_hint)
+            if rec_key in _RECOMMENDATION_RULES:
+                return _RECOMMENDATION_RULES[rec_key]  # type: ignore[return-value]
+            # mixed / unknown rating direction → observe, not human queue
+            return "watch_only"
 
         key = (actionability, direction, position_delta_hint)
         if key in _ACTION_RULES:
@@ -261,16 +376,38 @@ class GlobalBasePolicy:
     def compute_holding_period_hint(
         self,
         action_hint: ACTION_HINT_LITERAL,
+        *,
+        time_horizon_hint: Optional[str] = None,
     ) -> HOLDING_PERIOD_HINT_LITERAL:
-        """Assign a default holding period hint based on action_hint.
+        """Assign a holding period hint.
+
+        Resolution order:
+          1. Non-trade / escalated action hints (watch_*, review_required)
+             always yield "review_required" — a holding period for a
+             non-position action is meaningless, horizon or not.
+          2. When ``time_horizon_hint`` is provided, the author's stated
+             horizon dominates: it is routed through
+             :func:`resolve_horizon_tier` (single source of truth shared
+             with F8) and mapped tier → holding_period_hint.
+          3. Otherwise fall back to the coarse per-action_hint defaults
+             (legacy behavior, bit-for-bit unchanged for horizon-unaware
+             callers).
 
         Args:
-            action_hint: Resolved action hint.
+            action_hint:       Resolved action hint.
+            time_horizon_hint: F3 ``intent.time_horizon_hint``. Pass ``None``
+                when the intent carries no horizon information. Like
+                ``compute_risk_constraints``, any provided string (including
+                "unknown") resolves through ``resolve_horizon_tier``.
 
         Returns:
             Holding period hint.
         """
-        return _HOLDING_PERIOD_MAP.get(action_hint, "review_required")
+        base = _HOLDING_PERIOD_MAP.get(action_hint, "review_required")
+        if time_horizon_hint is None or base == "review_required":
+            return base
+        tier = resolve_horizon_tier(time_horizon_hint)
+        return _TIER_TO_HOLDING_PERIOD[tier]
 
     # ------------------------------------------------------------------
     # Risk constraints
@@ -281,6 +418,9 @@ class GlobalBasePolicy:
         action_hint: ACTION_HINT_LITERAL,
         conviction: float,
         ambiguity_flags: Optional[List[str]] = None,
+        *,
+        time_horizon_hint: Optional[str] = None,
+        actionability: Optional[str] = None,
     ) -> PolicyRiskConstraints:
         """Build risk constraints for this mapping.
 
@@ -288,6 +428,16 @@ class GlobalBasePolicy:
             action_hint:      Resolved action hint.
             conviction:       F3 conviction score.
             ambiguity_flags:  F3 ambiguity flags.
+            time_horizon_hint: F3 ``intent.time_horizon_hint``. When provided
+                (any string, including "unknown"), exit-rule hints are resolved
+                per horizon tier via ``resolve_horizon_tier`` +
+                ``HORIZON_EXIT_TIERS`` (R5). When ``None`` — i.e. the caller
+                is horizon-unaware — the legacy flat -10%/+20%/30d defaults
+                apply, keeping existing call sites bit-for-bit unchanged.
+            actionability:    F3 ``intent.actionability``. When
+                "recommendation", an honesty note is attached: the output
+                follows an institutional recommendation, it is not the
+                author's own position change.
 
         Returns:
             Risk constraints.
@@ -326,20 +476,43 @@ class GlobalBasePolicy:
             for flag in ambiguity_flags:
                 risk_notes.append(f"Ambiguity: {flag}")
 
-        # Numeric exit-rule hints for downstream simulation (F8 per-action).
-        # v1: flat defaults identical to the historical F8 constants, so
-        # backtest results stay unchanged; per-horizon tuning belongs to
-        # higher policy layers.
         position_taking = action_hint in (
             "open_position", "add_position", "reduce_position",
             "close_position", "hold_position",
         )
 
+        # Honesty note: following an institutional rating is not the same
+        # signal class as the author moving their own position. Downstream
+        # consumers (F5/F6 review UI) must be able to tell them apart.
+        if actionability == "recommendation" and position_taking:
+            risk_notes.append(
+                "Follows institutional recommendation (declarative rating); "
+                "not the author's own position change"
+            )
+
+        # Numeric exit-rule hints for downstream simulation (F8 per-action).
+        # Horizon-aware when the caller supplies time_horizon_hint (R5);
+        # legacy flat constants otherwise (zero drift for existing callers).
+        stop_pct: Optional[float] = None
+        tp_pct: Optional[float] = None
+        max_days: Optional[int] = None
+        if position_taking:
+            if time_horizon_hint is None:
+                stop_pct, tp_pct, max_days = _LEGACY_FLAT_EXIT
+            else:
+                tier = resolve_horizon_tier(time_horizon_hint)
+                stop_pct, tp_pct = _HORIZON_EXIT_PARAMS[tier]
+                max_days = HORIZON_EXIT_TIERS[tier]
+                risk_notes.append(
+                    f"Exit window: '{tier}' tier ({max_days}d) resolved from "
+                    f"time_horizon_hint={time_horizon_hint!r}"
+                )
+
         return PolicyRiskConstraints(
             max_position_hint=max_pos,
             requires_human_review=requires_review,
             risk_notes=risk_notes,
-            stop_loss_pct_hint=-0.10 if position_taking else None,
-            take_profit_pct_hint=0.20 if position_taking else None,
-            max_holding_days_hint=30 if position_taking else None,
+            stop_loss_pct_hint=stop_pct,
+            take_profit_pct_hint=tp_pct,
+            max_holding_days_hint=max_days,
         )

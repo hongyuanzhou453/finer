@@ -44,6 +44,34 @@ _SHORT_SIDE_TYPES = {
 # Non-directional primary steps excluded from the directional sample.
 _NON_DIRECTIONAL_TYPES = {ActionType.HOLD, ActionType.WATCH}
 
+# Primary steps that actually OPEN or INCREASE exposure. Entry timing is only
+# observable when the KOL actually entered: a watch/opinion mention has no entry
+# to time, and a reduce/close is an exit. Counting their entry_timing_style is a
+# category error — it manufactured a "left_side" verdict for trader_ji out of 6
+# watch-tier mentions (2026-07-15), producing a red 言行不一 conflict badge
+# against his declared right_side on zero real entry evidence.
+_ENTRY_TYPES = {
+    ActionType.LONG,
+    ActionType.SHORT,
+    ActionType.ADD,
+    ActionType.BUY_CALL,
+    ActionType.BUY_PUT,
+    ActionType.BUY_AND_HOLD,
+}
+
+
+def _is_entry(action: TradeAction) -> bool:
+    """True when the action opens/increases exposure — i.e. has an entry to time.
+
+    Opinion-tier actions are excluded even if their primary step looks like an
+    entry: F4 marks "would buy, but not now" as opinion, and an entry that never
+    happened has no timing.
+    """
+    if (action.metadata or {}).get("tier") == "opinion":
+        return False
+    primary = action.action_chain[0] if action.action_chain else None
+    return primary is not None and primary.action_type in _ENTRY_TYPES
+
 # Majority-vote thresholds for the observed entry style.
 _ENTRY_STYLE_MIN_SAMPLE = 5
 _ENTRY_STYLE_MAJORITY = 0.6
@@ -76,16 +104,30 @@ def compute_observed_style(
     """Aggregate observed style statistics from a KOL's TradeActions.
 
     Returns None for an empty action list (no data ≠ zero counts).
+
+    Two evidence models coexist deliberately:
+
+    - **Per-mention stats** (margin/leverage mentions, short-side counts,
+      directional sample) scan EVERY action. These back existence verdicts
+      ("declared no-margin but mentioned margin") where a flag carried only on
+      a restatement is still real evidence — counting anchors only would mask
+      genuine conflicts into ✓一致.
+    - **Entry-style votes** are cast once per **stance episode**: a weekly
+      template restating one view 19x must not stuff the majority ballot and
+      manufacture a 自述-vs-实测 contradiction. Each episode votes with its
+      first action that actually enters (see :func:`_is_entry`) and carries a
+      left/right tag — so an episode opened as a watch and entered later still
+      votes. See timeline/stance_episodes.py.
     """
     if not actions:
         return None
+
+    from finer.timeline.stance_episodes import build_stance_episodes
 
     directional = 0
     short_side = 0
     margin_mentions = 0
     leverage_mentions = 0
-    left_side = 0
-    right_side = 0
 
     for action in actions:
         primary = action.action_chain[0] if action.action_chain else None
@@ -99,11 +141,20 @@ def compute_observed_style(
             margin_mentions += 1
         if meta.get("leverage_flag") is True:
             leverage_mentions += 1
-        entry_style = meta.get("entry_timing_style")
-        if entry_style == "left_side":
-            left_side += 1
-        elif entry_style == "right_side":
-            right_side += 1
+
+    left_side = 0
+    right_side = 0
+    for episode in build_stance_episodes(actions):
+        for action in episode.actions:  # chronological within the episode
+            if not _is_entry(action):
+                continue
+            entry_style = (action.metadata or {}).get("entry_timing_style")
+            if entry_style == "left_side":
+                left_side += 1
+                break  # one vote per episode — its first real entry decides
+            if entry_style == "right_side":
+                right_side += 1
+                break
 
     entry_sample = left_side + right_side
     entry_style_observed = "unknown"
@@ -118,7 +169,7 @@ def compute_observed_style(
             entry_style_observed = "mixed"
 
     return ObservedTradingStyle(
-        sample_size=len(actions),
+        sample_size=len(actions),  # attributed actions, per the schema contract
         directional_sample_size=directional,
         short_side_count=short_side,
         short_ratio=(short_side / directional) if directional > 0 else None,

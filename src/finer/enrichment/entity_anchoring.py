@@ -7,6 +7,18 @@ EntityAnchor。零 LLM 成本、可审计、可复现。
 - 中文别名 ("腾讯"): 直接子串匹配 (CJK 子串误匹配概率低)。
 - 英文/数字别名 ("NVDA"/"0700"/"LI"): 词边界匹配 (前后非字母数字)，避免
   "LI" 误命中 "QUALITY"、"0700" 误命中 "070012"。
+- 纯数字别名 ("0700"/"2498"/"600989"): 词边界之外还要过数字上下文门——
+  电话/传真号码模式一律拒绝 (UBS "+61-2-9324 2498" 曾被锚成 2498.HK)，
+  且必须带 ticker 上下文 (紧邻括号、交易所后缀、行情/代码类词)。
+- 歧义裸别名 (broker 层的 KEY/SE/ET/SI/IQ/Target/Block/Stone 类常见词):
+  与数字门同等待遇——必须带显式 ticker 上下文 (紧邻括号 "(KEY)"、交易所
+  后缀 "KEY.N"、Ticker:/代码 前导词、Bloomberg "KEY US Equity") 才锚定。
+  歧义集合来自 broker registry 的 `requires_context` 标记 ∪ 加载期
+  `entity_stoplist.is_ambiguous_broker_alias` 分类器；策展 KOL 别名不受影响。
+
+Registry 分层: 策展 KOL registry (`finer.entity_registry.ENTITY_REGISTRY`)
+为主层；broker 语料生成的 `configs/entity_registry_broker.yaml`
+(`enrichment.broker_entity_registry`) 作为追加来源，alias 冲突时策展条目优先。
 
 同一 ticker 的多个别名 / 多次出现合并为单个 envelope 级 EntityAnchor，所有
 出现位置记入 `metadata.occurrences`，供 F2 EvidenceSpan (步骤 5) 消费。
@@ -23,7 +35,12 @@ import re
 from datetime import datetime, time, timedelta
 from typing import Any, Dict, List, NamedTuple, Tuple
 
-from finer.entity_registry import ENTITY_REGISTRY
+from finer.entity_registry import EntityEntry
+from finer.enrichment.broker_entity_registry import (
+    load_context_required_aliases,
+    load_generic_ticker_context_patterns,
+    merged_registry,
+)
 from finer.schemas.content import ContentRecord
 from finer.schemas.content_envelope import ContentEnvelope
 from finer.schemas.entity_anchor import EntityAnchor
@@ -48,13 +65,50 @@ def _is_cjk(text: str) -> bool:
     return any("一" <= c <= "鿿" for c in text)
 
 
-# 预编译: 纯 ASCII (英文/数字) 别名的词边界 pattern；CJK 别名走子串匹配
-_ASCII_ALIAS_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
-    (alias, re.compile(r"(?<![A-Za-z0-9])" + re.escape(alias) + r"(?![A-Za-z0-9])"))
-    for alias in ENTITY_REGISTRY
-    if not _is_cjk(alias)
-]
-_CJK_ALIASES: List[str] = [alias for alias in ENTITY_REGISTRY if _is_cjk(alias)]
+class _AliasTables(NamedTuple):
+    """Precompiled scan tables for one merged-registry snapshot."""
+
+    registry: Dict[str, EntityEntry]
+    ascii_patterns: List[Tuple[str, "re.Pattern[str]"]]
+    cjk_aliases: List[str]
+    context_required: frozenset[str]
+
+
+# 预编译缓存: 按 merged registry 的 alias 集合失效 (broker YAML 重生成 →
+# broker_entity_registry 的 mtime 缓存换新 dict → alias 集合变化 → 重编译)。
+_alias_tables_cache: _AliasTables | None = None
+
+
+def _alias_tables() -> _AliasTables:
+    """Build (and cache) word-boundary patterns over the merged registry.
+
+    ASCII (英文/数字) 别名预编译词边界 pattern；CJK 别名走子串匹配。
+    """
+    global _alias_tables_cache
+    registry = merged_registry()
+    context_required = load_context_required_aliases()
+    cached = _alias_tables_cache
+    if (
+        cached is not None
+        and cached.registry.keys() == registry.keys()
+        and cached.context_required == context_required
+    ):
+        return cached
+    ascii_patterns = [
+        (alias, re.compile(r"(?<![A-Za-z0-9])" + re.escape(alias) + r"(?![A-Za-z0-9])"))
+        for alias in registry
+        if not _is_cjk(alias)
+    ]
+    cjk_aliases = [alias for alias in registry if _is_cjk(alias)]
+    tables = _AliasTables(registry, ascii_patterns, cjk_aliases, context_required)
+    _alias_tables_cache = tables
+    return tables
+
+
+def clear_alias_table_cache() -> None:
+    """Drop the compiled alias tables (test hook)."""
+    global _alias_tables_cache
+    _alias_tables_cache = None
 
 
 class Hit(NamedTuple):
@@ -141,24 +195,182 @@ _CN_WEEKDAY_INDEX = {
 }
 
 
+# ── 纯数字别名上下文门 (F2 numeric-alias context gate) ───────────────────────
+# 负规则: 命中电话/传真号码模式一律拒绝。实锤案例: UBS 落款
+# "+61-2-9324 2498" 中的 "2498" 曾被锚成 2498.HK (速腾聚创)。
+# 紧邻前缀是「数字+分隔符」→ 电话号码分组 (如 "9324 2498")
+_NUMERIC_PHONE_PREFIX_RE = re.compile(r"\d[\s\-–—.]$")
+# 前向窗口内出现「+国家码-」拨号前缀 (如 "+61-2-…" / "＋86 10 …")
+_NUMERIC_PHONE_PLUS_RE = re.compile(r"[+＋]\(?\d{1,4}\)?[\s\-–—.]")
+# 紧邻后缀是「分隔符+4位以上数字」→ 电话号码延续分组
+_NUMERIC_PHONE_SUFFIX_RE = re.compile(r"^[\s\-–—.]\d{4}")
+_NUMERIC_TEL_WORDS = ("tel", "fax", "phone", "电话", "传真", "转分机")
+_NUMERIC_TEL_WINDOW = 24
+_NUMERIC_PHONE_PLUS_WINDOW = 16
+
+# 正规则: 纯数字别名必须带 ticker 上下文之一才算命中。
+_NUMERIC_OPEN_BRACKETS = "（([【"
+_NUMERIC_CLOSE_BRACKETS = "）)]】"
+# 交易所后缀紧跟其后 ("2498.HK" / "600519.SS")
+_NUMERIC_EXCHANGE_SUFFIX_RE = re.compile(
+    r"^\.(HK|SH|SZ|SS|TW|T|US|N|O|OQ)(?![A-Za-z0-9])", re.IGNORECASE
+)
+# Bloomberg 风格交易所码紧跟其后 ("700 HK Equity" / "2330 TT")
+_NUMERIC_BLOOMBERG_RE = re.compile(r"^ (HK|CH|US|TT|JP|KS)(?![A-Za-z0-9])")
+# 「股份」「代码」类词 + 行情动词, 在 ±12 字窗口内即视为 ticker 上下文
+_NUMERIC_CONTEXT_TERMS = (
+    "代码",
+    "股",
+    "证券",
+    "收盘",
+    "开盘",
+    "涨",
+    "跌",
+    "买入",
+    "卖出",
+    "增持",
+    "减持",
+    "持有",
+    "评级",
+    "目标价",
+    "上市",
+    "公司",
+)
+_NUMERIC_CONTEXT_WINDOW = 12
+_NUMERIC_TITLE_PATTERN_WINDOW = 40
+
+
+def numeric_alias_context_ok(text: str, start: int, end: int) -> bool:
+    """Gate one digit-only alias hit on its surrounding context.
+
+    Reject phone/fax number patterns outright; otherwise require an explicit
+    ticker context (adjacent bracket, exchange suffix, Bloomberg exchange code,
+    or a 股份/代码/行情 term nearby). Report-title patterns from the broker
+    negative rules (``generic_ticker_context_patterns``) also reject.
+    """
+    before = text[max(0, start - _NUMERIC_TEL_WINDOW):start]
+    after = text[end:end + _NUMERIC_TEL_WINDOW]
+
+    # ── 负规则: 电话/传真模式 ──
+    if _NUMERIC_PHONE_PREFIX_RE.search(before):
+        return False
+    if _NUMERIC_PHONE_PLUS_RE.search(text[max(0, start - _NUMERIC_PHONE_PLUS_WINDOW):start]):
+        return False
+    if _NUMERIC_PHONE_SUFFIX_RE.match(after):
+        return False
+    window_folded = (before + after).casefold()
+    if any(term in window_folded for term in _NUMERIC_TEL_WORDS):
+        return False
+
+    # ── 负规则: 研报标题类噪声上下文 (来源: entities.yaml 负规则) ──
+    title_window = (
+        text[max(0, start - _NUMERIC_TITLE_PATTERN_WINDOW):start]
+        + text[end:end + _NUMERIC_TITLE_PATTERN_WINDOW]
+    )
+    for pattern in load_generic_ticker_context_patterns():
+        if pattern in title_window:
+            return False
+
+    # ── 正规则: 必须带 ticker 上下文 ──
+    if start > 0 and text[start - 1] in _NUMERIC_OPEN_BRACKETS:
+        return True
+    if end < len(text) and text[end] in _NUMERIC_CLOSE_BRACKETS:
+        return True
+    if _NUMERIC_EXCHANGE_SUFFIX_RE.match(text[end:end + 6]):
+        return True
+    if _NUMERIC_BLOOMBERG_RE.match(text[end:end + 8]):
+        return True
+    context = (
+        text[max(0, start - _NUMERIC_CONTEXT_WINDOW):start]
+        + text[end:end + _NUMERIC_CONTEXT_WINDOW]
+    )
+    return any(term in context for term in _NUMERIC_CONTEXT_TERMS)
+
+
+# ── 歧义裸别名上下文门 (F2 ambiguous bare-alias context gate) ─────────────────
+# broker registry 的 KEY/SE/ET/SI/IQ/Target/Block/Stone 类别名与常见英文词、
+# 法律实体后缀、时区缩写同形。裸出现默认拒绝，必须命中显式 ticker 上下文:
+#   1. 双侧紧邻括号:            "KeyCorp (KEY)" / "速腾聚创（KEY）"
+#   2. 括号 + Bloomberg 交易所:  "Sea Ltd (SE US)"
+#   3. 交易所后缀紧跟其后:       "KEY.N" / "SE.OQ"
+#   4. Ticker:/代码 前导词:      "Ticker: KEY" / "股票代码 KEY"
+#   5. Bloomberg Equity 全形式:  "KEY US Equity"
+# 实锤假阳性 (2026-07-17 验收): "KEY DEFINITIONS"、"UBS Europe SE"、
+# "Price Target"、"Block B-6" (孟买地址)、"4:00 PM ET"、"SI 2017/1064"、
+# 分析师人名 "Stone"、"S&P Capital IQ"。
+_BARE_TICKER_LEAD_RE = re.compile(
+    r"(?:ticker|symbol|股票代码|代码)\s*[:：]?\s*$", re.IGNORECASE
+)
+_BARE_TICKER_LEAD_WINDOW = 12
+_BARE_BRACKET_EXCHANGE_RE = re.compile(
+    r"^\s+(?:US|UN|UW|HK|CH|TT|JP|GR|LN|SS|SZ)\s*[）)\]】]"
+)
+_BARE_BLOOMBERG_EQUITY_RE = re.compile(
+    r"^ (?:US|UN|UW|HK|CH|TT|JP|GR|LN) Equity(?![A-Za-z0-9])"
+)
+
+
+def bare_alias_context_ok(text: str, start: int, end: int) -> bool:
+    """Gate one ambiguous bare-alias hit on its surrounding context.
+
+    Same posture as ``numeric_alias_context_ok``: default-reject, anchor only
+    with an explicit ticker context. Applied to broker-layer aliases flagged
+    ``requires_context`` (common English words / legal suffixes / timezones);
+    full-name aliases like "Block Inc" or "iQIYI" are separate registry
+    entries and are never gated here.
+    """
+    prev_open = start > 0 and text[start - 1] in _NUMERIC_OPEN_BRACKETS
+    after = text[end:end + 16]
+
+    # 1/2. 双侧紧邻括号 (可含 Bloomberg 交易所码): "(KEY)" / "(SE US)"
+    if prev_open:
+        if end < len(text) and text[end] in _NUMERIC_CLOSE_BRACKETS:
+            return True
+        if _BARE_BRACKET_EXCHANGE_RE.match(after):
+            return True
+
+    # 3. 交易所后缀紧跟其后: "KEY.N"
+    if _NUMERIC_EXCHANGE_SUFFIX_RE.match(text[end:end + 6]):
+        return True
+
+    # 4. Ticker:/代码 前导词
+    before = text[max(0, start - _BARE_TICKER_LEAD_WINDOW):start]
+    if _BARE_TICKER_LEAD_RE.search(before):
+        return True
+
+    # 5. Bloomberg Equity 全形式: "KEY US Equity"
+    if _BARE_BLOOMBERG_EQUITY_RE.match(after):
+        return True
+
+    return False
+
+
 def scan_text(text: str) -> List[Hit]:
     """Scan one text for all registry alias occurrences."""
     if not text:
         return []
+    tables = _alias_tables()
+    registry = tables.registry
     hits: List[Hit] = []
     # 中文别名: 子串匹配，记录所有出现位置
-    for alias in _CJK_ALIASES:
-        ticker, market, etype = ENTITY_REGISTRY[alias]
+    for alias in tables.cjk_aliases:
+        ticker, market, etype = registry[alias]
         schema_type = _TYPE_MAP.get(etype, "unknown")
         start = text.find(alias)
         while start != -1:
             hits.append(Hit(alias, ticker, market, schema_type, start, start + len(alias)))
             start = text.find(alias, start + 1)
     # 英文/数字别名: 词边界匹配，避免短码子串误命中
-    for alias, pat in _ASCII_ALIAS_PATTERNS:
-        ticker, market, etype = ENTITY_REGISTRY[alias]
+    for alias, pat in tables.ascii_patterns:
+        ticker, market, etype = registry[alias]
         schema_type = _TYPE_MAP.get(etype, "unknown")
+        digit_only = alias.isascii() and alias.isdigit()
+        needs_context = alias in tables.context_required
         for m in pat.finditer(text):
+            if digit_only and not numeric_alias_context_ok(text, m.start(), m.end()):
+                continue
+            if needs_context and not bare_alias_context_ok(text, m.start(), m.end()):
+                continue
             hits.append(Hit(alias, ticker, market, schema_type, m.start(), m.end()))
     return hits
 

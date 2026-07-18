@@ -27,6 +27,22 @@ path and the LLM validator import one canonical copy instead of drifting two.
     (e.g. 新华保险 != 保险, 招商银行 != 银行). Used by the F2 LLM proposal
     validator to reject the sector-泛称 the LLM tends to over-propose on
     conversational text.
+
+``AMBIGUOUS_BARE_UPPER_TOKENS`` / ``AMBIGUOUS_TITLECASE_WORDS`` /
+``is_ambiguous_broker_alias``
+    Broker-registry aliases that collide with common English words,
+    abbreviations, legal-entity suffixes, or timezones (KEY, SE, ET, SI, IQ,
+    Target, Block, Stone...). These are NOT dropped — the company reference is
+    real — but a bare occurrence in broker-report text is far more often the
+    common word ("KEY DEFINITIONS", "UBS Europe SE", "Price Target",
+    "Block B-6"). The F2 deterministic scan therefore requires an explicit
+    ticker context ("(KEY)", "KEY.N", "Ticker: KEY") before anchoring them —
+    the same treatment digit-only aliases already get. Consumed by:
+
+    - ``scripts/build_broker_entity_registry.py`` — marks matching aliases
+      with ``requires_context: true`` in the generated YAML.
+    - ``finer.enrichment.broker_entity_registry`` — defense-in-depth: applies
+      the classifier at load time so stale YAMLs are still gated.
 """
 
 from __future__ import annotations
@@ -279,3 +295,211 @@ CN_SECTOR_THEME_TERMS: frozenset[str] = frozenset(
         "权重股",
     }
 )
+
+# ── Ambiguous bare broker aliases (context-gated, never silently anchored) ──
+#
+# Upper-case tokens (matched when the alias is ALL-CAPS and ≤4 chars) that are
+# common English words, finance/legal abbreviations, legal-entity suffixes, or
+# timezones. A bare hit is presumed NOT to be the ticker unless an explicit
+# ticker context is adjacent. Confirmed false-positive cases from the broker
+# F2 acceptance run (2026-07-17): KEY ("KEY DEFINITIONS"), SE ("UBS Europe
+# SE"), ET ("4:00 PM ET"), SI ("SI 2017/1064"), IQ ("S&P Capital IQ").
+AMBIGUOUS_BARE_UPPER_TOKENS: frozenset[str] = frozenset(
+    {
+        # --- confirmed false-positive tickers (2026-07-17 acceptance) ---
+        "KEY",
+        "SE",
+        "ET",
+        "SI",
+        "IQ",
+        # --- English function / ultra-common words (ALL-CAPS headings,
+        #     disclaimers, boilerplate) ---
+        "AN",
+        "AND",
+        "ANY",
+        "ALL",
+        "ARE",
+        "AS",
+        "AT",
+        "BE",
+        "BEST",
+        "BUT",
+        "BUY",
+        "CAN",
+        "DID",
+        "DO",
+        "EACH",
+        "END",
+        "ETC",
+        "FOR",
+        "FREE",
+        "FROM",
+        "FULL",
+        "GO",
+        "HAD",
+        "HAS",
+        "HAVE",
+        "HE",
+        "HER",
+        "HIGH",
+        "HIS",
+        "HOLD",
+        "HOW",
+        "IF",
+        "IN",
+        "IS",
+        "IT",
+        "ITS",
+        "LOW",
+        "MAY",
+        "ME",
+        "MORE",
+        "MOST",
+        "MY",
+        "NEXT",
+        "NO",
+        "NON",
+        "NOR",
+        "NOT",
+        "NOW",
+        "OF",
+        "OFF",
+        "ON",
+        "ONE",
+        "ONLY",
+        "OR",
+        "OUR",
+        "OUT",
+        "OVER",
+        "OWN",
+        "PAGE",
+        "PART",
+        "PAST",
+        "PER",
+        "PLAN",
+        "RISK",
+        "SAME",
+        "SEE",
+        "SELL",
+        "SHE",
+        "SO",
+        "SOME",
+        "SUCH",
+        "THAN",
+        "THAT",
+        "THE",
+        "THEY",
+        "THIS",
+        "TIME",
+        "TO",
+        "TOP",
+        "TWO",
+        "UP",
+        "UPON",
+        "USE",
+        "VERY",
+        "VIEW",
+        "WAS",
+        "WAY",
+        "WE",
+        "WELL",
+        "WERE",
+        "WHAT",
+        "WHEN",
+        "WHO",
+        "WHY",
+        "WILL",
+        "WITH",
+        "YEAR",
+        "YET",
+        "YOU",
+        # --- officer / desk abbreviations common in report prose ---
+        "COO",
+        "BOE",  # Bank of England in macro text, not BOE Varitronix
+        # --- legal-entity suffixes ("UBS Europe SE", "Adyen NV") ---
+        "AG",
+        "AB",
+        "ASA",
+        "BV",
+        "CO",
+        "GMBH",
+        "INC",
+        "KK",
+        "LLC",
+        "LLP",
+        "LP",
+        "LTD",
+        "NV",
+        "OYJ",
+        "PLC",
+        "SA",
+        "SPA",
+        # --- timezones ("4:00 PM ET") ---
+        "PT",
+        "CT",
+        "MT",
+        "EST",
+        "EDT",
+        "CST",
+        "CDT",
+        "MST",
+        "MDT",
+        "PST",
+        "PDT",
+        "BST",
+        "CET",
+        "CEST",
+        "HKT",
+        "JST",
+        "SGT",
+        "IST",
+        # --- misc abbreviations ---
+        "ID",
+        "IE",
+        "EG",
+        "EX",
+        "VS",
+        "VIA",
+        "QTR",
+        "YTD",
+        "QOQ",
+        "YOY",
+        "FY",
+    }
+)
+
+# Title-case single common English words used as bare broker aliases
+# (lower-case forms; matched when the alias is one Title-case word). Confirmed
+# false-positive cases (2026-07-17): Target ("Price Target"), Block (Mumbai
+# address "Block B-6"), Stone (analyst surname). Full company names such as
+# "Block Inc" are multi-word and never match.
+AMBIGUOUS_TITLECASE_WORDS: frozenset[str] = frozenset(
+    {
+        "target",
+        "block",
+        "stone",
+        "key",
+        "array",
+    }
+)
+
+
+def is_ambiguous_broker_alias(alias: str) -> bool:
+    """True when a broker-registry alias needs an explicit ticker context.
+
+    Two deterministic layers (see module docstring):
+
+    - short ALL-CAPS alias (≤4 chars) that is a common English word /
+      abbreviation / legal suffix / timezone (``AMBIGUOUS_BARE_UPPER_TOKENS``);
+    - single Title-case common English word (``AMBIGUOUS_TITLECASE_WORDS``).
+
+    Multi-word aliases ("Block Inc") and non-alpha aliases (digit codes have
+    their own numeric context gate) never match.
+    """
+    if not alias or not alias.isascii() or not alias.isalpha():
+        return False
+    if len(alias) <= 4 and alias.isupper() and alias in AMBIGUOUS_BARE_UPPER_TOKENS:
+        return True
+    if alias.istitle() and alias.lower() in AMBIGUOUS_TITLECASE_WORDS:
+        return True
+    return False

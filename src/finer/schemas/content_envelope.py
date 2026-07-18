@@ -399,10 +399,9 @@ class ContentEnvelope(BaseModel):
     chat logs, transcripts) into a consistent, queryable format.
     """
 
-    model_config = ConfigDict(
-        strict=True,
-        json_encoders={datetime: lambda v: v.isoformat() if v else None},
-    )
+    # datetime already serializes to ISO 8601 by default in Pydantic V2;
+    # json_encoders is deprecated (removed in V3), so it is omitted here.
+    model_config = ConfigDict(strict=True)
 
     # =========================================================================
     # Core Fields (Required per F1 Contract)

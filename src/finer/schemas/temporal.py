@@ -78,10 +78,9 @@ class TemporalAnchor(BaseModel):
         ...     timezone="Asia/Shanghai",
         ... )
     """
-    model_config = ConfigDict(
-        strict=True,
-        json_encoders={datetime: lambda v: v.isoformat() if v else None}
-    )
+    # datetime fields already serialize to ISO 8601 by default in Pydantic V2;
+    # no json_encoders needed (json_encoders is deprecated and removed in V3).
+    model_config = ConfigDict(strict=True)
 
     # =========================================================================
     # Schema Version

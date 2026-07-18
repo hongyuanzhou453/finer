@@ -41,6 +41,7 @@ SourceChannel = Literal[
     "wechat",
     "wechat_channels",
     "bilibili",
+    "broker",
 ]
 
 ImportStatus = Literal["pending", "running", "completed", "skipped", "failed"]

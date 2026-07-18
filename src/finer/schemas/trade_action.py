@@ -599,9 +599,9 @@ class TradeAction(BaseModel):
         - rlhf_feedback: Human feedback for model improvement
     """
     model_config = ConfigDict(
+        # datetime already serializes to ISO 8601 by default in Pydantic V2;
+        # json_encoders is deprecated (removed in V3), so it is omitted here.
         strict=True,
-        # Enable serialization of datetime as ISO 8601
-        json_encoders={datetime: lambda v: v.isoformat() if v else None}
     )
 
     # =========================================================================

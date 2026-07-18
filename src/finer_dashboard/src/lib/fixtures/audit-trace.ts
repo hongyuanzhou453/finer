@@ -222,6 +222,13 @@ const BUNDLE_CANONICAL: AuditTraceBundle = {
     creator_id: "trader_ji",
     kol_id: "trader_ji",
   },
+  provenance: {
+    f15_topic: {
+      topic_title: "贵州茅台",
+      topic_index: 1,
+      assembly_id: "asm-mt-0520",
+    },
+  },
 };
 
 // --- bundle 2: partial — 缺 F4 Policy (五粮液 000858) -------------------------

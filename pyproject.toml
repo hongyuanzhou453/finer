@@ -49,8 +49,6 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
-asyncio_mode = "auto"
-addopts = "-v --tb=short"
+# pytest configuration lives solely in pytest.ini (single source of truth).
+# Do not re-add [tool.pytest.ini_options] here — a second config source
+# silently drifts from pytest.ini, which takes precedence when both exist.
