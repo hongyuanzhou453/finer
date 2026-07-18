@@ -11,11 +11,63 @@ from __future__ import annotations
 import os
 import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, List, Dict, Any
+from urllib.parse import urlsplit
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+#: Default usage-log location (override via FINER_LLM_USAGE_LOG).
+_DEFAULT_USAGE_LOG_RELPATH = Path("data") / "llm_usage" / "usage.jsonl"
+
+
+def _usage_log_path() -> Path:
+    """Resolve the JSONL usage-log destination."""
+    raw = os.getenv("FINER_LLM_USAGE_LOG")
+    if raw:
+        return Path(raw)
+    try:
+        # Lazy import: keep client.py import-light and cycle-free.
+        from finer.paths import DATA_ROOT
+
+        return DATA_ROOT / "llm_usage" / "usage.jsonl"
+    except Exception:
+        return _DEFAULT_USAGE_LOG_RELPATH
+
+
+def _log_usage(
+    model: str,
+    base_url: Optional[str],
+    usage: Any,
+    caller_tag: Optional[str],
+) -> None:
+    """Best-effort JSONL token accounting so quota consumption can be paced.
+
+    Records metadata only — never message content, never API keys. Any
+    failure (bad path, permissions, serialization) is swallowed: usage
+    accounting must never break the LLM call itself.
+    """
+    try:
+        usage_dict: Dict[str, Any] = usage if isinstance(usage, dict) else {}
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "model": model,
+            "base_url_host": urlsplit(base_url).netloc if base_url else None,
+            "prompt_tokens": usage_dict.get("prompt_tokens"),
+            "completion_tokens": usage_dict.get("completion_tokens"),
+            "total_tokens": usage_dict.get("total_tokens"),
+            "caller_tag": caller_tag,
+        }
+        path = _usage_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        # Silent by design: telemetry must never affect the call.
+        pass
 
 
 class LLMClient:
@@ -168,8 +220,13 @@ class LLMClient:
         temperature: float = 0.3,
         response_format: Optional[Dict[str, Any]] = None,
         extra_body: Optional[Dict[str, Any]] = None,
+        caller_tag: Optional[str] = None,
     ) -> Optional[str]:
-        """Send a chat completion request with full message dicts."""
+        """Send a chat completion request with full message dicts.
+
+        ``caller_tag`` is an optional label written to the usage log so
+        batch jobs (e.g. OCR sweeps) can attribute token consumption.
+        """
         config = self._resolve_config()
         if not config:
             return None
@@ -205,6 +262,14 @@ class LLMClient:
                 if response.status_code == 200:
                     result = response.json()
                     content = result["choices"][0]["message"]["content"]
+                    # Log before the empty-content check: even empty
+                    # responses consumed quota.
+                    _log_usage(
+                        config["model"],
+                        config["base_url"],
+                        result.get("usage"),
+                        caller_tag,
+                    )
                     if not content or not content.strip():
                         self.last_error = "empty_model_response"
                         logger.warning("LLM returned empty response")
@@ -241,13 +306,19 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         temperature: float = 0.3,
         system: Optional[str] = None,
+        caller_tag: Optional[str] = None,
     ) -> Optional[str]:
         """Convenience method: send a plain string prompt."""
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        return self.chat(messages, max_tokens=max_tokens, temperature=temperature)
+        return self.chat(
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            caller_tag=caller_tag,
+        )
 
     def chat_with_images(
         self,
@@ -255,6 +326,7 @@ class LLMClient:
         image_base64: str,
         mime_type: str = "image/png",
         max_tokens: Optional[int] = None,
+        caller_tag: Optional[str] = None,
     ) -> Optional[str]:
         """Send a chat completion request with an image (vision)."""
         messages = [
@@ -271,7 +343,7 @@ class LLMClient:
                 ],
             }
         ]
-        return self.chat(messages, max_tokens=max_tokens)
+        return self.chat(messages, max_tokens=max_tokens, caller_tag=caller_tag)
 
     def chat_completion(
         self,
