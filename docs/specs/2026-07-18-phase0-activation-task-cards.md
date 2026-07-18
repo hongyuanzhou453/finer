@@ -63,6 +63,8 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
   5. 合流后在 main 跑全量验证；删除已合并本地分支（被 worktree 占用的跳过）。
 - **owning**: git 操作本身；**禁改**: 任何业务代码（冲突解决除外）
 - **验收**：main 上 `pytest tests/ -v` 全绿且计数 ≥ 合流前两分支各自计数的合理并集；`git status` 干净；`gh pr list` 无遗留 OPEN（除有意保留）；main 上能 `grep -r "broker_research_intake" src/` 命中。
+- ✅ **2026-07-18 完成**：broker 波拆为 8 个 conventional commit（`b0b1eb2b`…`41ff5160`）→ PR #10 合入 main（merge `1d8d6885`）；PR #8 经本地冲突解决合入 main（merge `4495a412`，GitHub 已标 MERGED）。冲突仅 2 文件：`policy/global_base.py`（exit hint = horizon-tier 主路 + PR#8 tunable `base_exit` 作无-horizon 回退，`base_exit` 默认值与旧 `_LEGACY_FLAT_EXIT` 逐位相同 → 回测不变；删除死常量）与 `tests/test_pipeline_driver.py`（两分支测试并集）。main 全量 **3580 passed, 22 skipped**（合流前 quality-collar 3548 + PR#8 新增 32）。`git status` 干净；仅 PR #9(kol-check) 有意保留 OPEN。**留待用户确认**：已合并本地分支 `chore/quality-collar` 未删（删除本地分支属红线，未单独授权）。
+  - ⚠️ **给 C1/C2/C6 的现场校正**：① 项目 DB 真实路径是 `data/project_memory/finer.project.sqlite3`（非本卡原写的 `data/finer.project.sqlite3`），WAL 模式在用，备份需连 `-wal/-shm` 或先 `PRAGMA wal_checkpoint`；② broker F1 输出是扁平 `data/F1_standardized/<每文档目录>/`（~2009 个 broker 前缀目录），**无 `broker/` 子目录**，C2 渠道过滤必须靠 `source_channel`/ContentRecord，不能靠路径段；③ 另有并行会话在跑 `broker_scaleup_runner.py --workers 8`（不写 stage_status），C10 前先确认不双开。
 
 ### C1 · OPS-1 broker F0 索引注册 + 存量回填
 
