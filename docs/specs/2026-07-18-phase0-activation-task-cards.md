@@ -166,14 +166,14 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 
 | # | 严重度 | 发现 | 处置建议 |
 |---|---|---|---|
-| R1 | **major（CONFIRMED）** | `DRIVE_CHANNELS`（drive_config.py:20-29）手写 `'local'/'nlm'`，与 canonical `SourceChannel` Literal（import_receipt.py 的 `'local_upload'/'notebooklm'`）值集漂移：`--channel local` 永远静默 scanned=0，而正确名 `local_upload` 被 validator+argparse 双双拒绝——该旋钮对这两渠道出厂即死。正是项目枚举漂移防护要防的模式，但 drift guard 只守 pydantic↔contracts.ts | **C10 前修**（顺手级）：`DRIVE_CHANNELS = ("all", *get_args(SourceChannel))` 派生 + 补 drift 断言测试。可并入 C3 |
+| R1 | ~~major（CONFIRMED）~~ **✅ 已修复 `8c50ccca`** | `DRIVE_CHANNELS`（drive_config.py:20-29）手写 `'local'/'nlm'`，与 canonical `SourceChannel` Literal（import_receipt.py 的 `'local_upload'/'notebooklm'`）值集漂移：`--channel local` 永远静默 scanned=0，而正确名 `local_upload` 被 validator+argparse 双双拒绝——该旋钮对这两渠道出厂即死。正是项目枚举漂移防护要防的模式，但 drift guard 只守 pydantic↔contracts.ts | **✅ 2026-07-18 已修**（commit `8c50ccca`，已推 main）：`DRIVE_CHANNELS = ("all", *get_args(SourceChannel))` 从 import_receipt 派生（无循环），旧简写 `local`/`nlm` 现被拒、canonical `local_upload`/`notebooklm` 现有效；补 4 个 drift-guard 测试（双向值集 + 正/负渠道名）锁死 pydantic↔pydantic 手抄。full suite `3607 passed / 22 skipped`（=旧基线 3603 + 4） |
 | R2 | minor（major 经对抗验证降级） | 回填后 4298 条 broker 行进入默认 `channel='all'` 工作集：一次无参 `pipeline-drive` 或开 autodrive 即全量扫描驱动。降级理由：F3 默认 rule-based、F2 确定性（无 LLM），真实 LLM 暴露仅 ~94-124 份 F1 OCR 缺口，且会与在跑的 scaleup 进程双烧（drive 锁不覆盖它） | C3 给 batch/drive 补默认 max_items 或至少把「scaleup 在跑时禁止无参 drive」写进操作纪律；C10 前置检查已含 ps 确认 |
 | R3 | minor | C1 的 COALESCE 语义与声明相反：代码是**新值覆盖既有**（f0_index_writer.py:214，且 receipt.source_channel 必填使「保留既有」分支不可达），commit message 与本卡 ✅ 行写「保留既有」。当前无实害 | 修正措辞，或如果产品语义要求首次归属不可变则翻转 COALESCE 参数序+补测试。领 C3 的 agent 顺手 |
 | R4 | minor | 非法 `--stages` 值以裸 pydantic traceback 逃逸 CLI；`--watch` 下首轮即砸死守护循环（cli.py:207-215 无校验，对照 --channel 有 argparse choices） | C4（调度壳）前必修——launchd 常驻场景下参数错误应拒绝启动而非循环崩溃 |
 | R5 | minor | C0 合并组合出的潜在优先级冲突：`_apply_style_exit_overlay` 只查 hint is None 不辨来源，未来 by_style 非空时会覆盖 horizon-tier 退出参数（R5「30 天秒表量长线」回归通道）。当前 by_style={} 惰性零影响 | 挂 C7：定义 style overlay 与 horizon-tier 的优先级（建议 horizon 主导）并写进 f3f4-policy.yaml 注释 |
 | R6 | info | `--channel bilibili` 合法但保证空转（渠道过滤键是 source_channel、排除表键是 source_platform，两处 'bilibili' 相等是巧合非契约）；stage 门控下 skipped_complete 语义悄变（--stages f1,f2 轮该计数归 0）；dry-run 不落 pipeline_runs（C2 的 live dry-run 声明无法事后独立复核，设计如此） | 随 C5 ledger 落地一并覆盖：dry-run 落 ledger、加 skipped_stage_gated 计数、DRIVE_CHANNELS 剔除或提示不可驱动渠道 |
 
-无 blocker。R1 是唯一必修项（C10 金丝雀会用到渠道旋钮，值集漂移属「同类病防护缺口」）；其余按处置列归入后续卡顺手完成即可，不单开卡。
+无 blocker。~~R1 是唯一必修项~~ **R1 已于 2026-07-18 修复并推 main（`8c50ccca`）**——领 C3 的 agent 只需顺手带上 R2（默认 max_items 护栏）与 R3（COALESCE 措辞/语义）；R4 挂 C4 前必修，R5 挂 C7，R6 随 C5 ledger 覆盖。其余按处置列归入后续卡顺手完成即可，不单开卡。
 
 ## 3. Phase 0 总验收门（对照路线图 §7）
 
