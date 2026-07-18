@@ -61,6 +61,10 @@ REGISTRY: Dict[str, Tuple[str, str, str]] = {
     "IntentTimeHorizon": ("finer.schemas.investment_intent", "TIME_HORIZON_LITERAL", "literal"),
     "IntentRiskPreference": ("finer.schemas.investment_intent", "RISK_PREFERENCE_LITERAL", "literal"),
     "PositionDeltaHint": ("finer.schemas.investment_intent", "POSITION_DELTA_HINT_LITERAL", "literal"),
+    "IntentActionability": ("finer.schemas.investment_intent", "ACTIONABILITY_LITERAL", "literal"),
+    "IntentPriorDirection": ("finer.schemas.investment_intent", "PRIOR_DIRECTION_LITERAL", "literal"),
+    "IntentRatingAction": ("finer.schemas.investment_intent", "RATING_ACTION_LITERAL", "literal"),
+    "IntentConvictionSource": ("finer.schemas.investment_intent", "CONVICTION_SOURCE_LITERAL", "literal"),
 }
 
 # TS enums that intentionally have no pydantic mirror (UI-only vocabularies).

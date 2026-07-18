@@ -1469,11 +1469,47 @@ export type IntentTargetType =
 
 export type IntentDirection = "bullish" | "bearish" | "neutral" | "mixed" | "unknown";
 
+/**
+ * F3 actionability 三分语义（mirrors ACTIONABILITY_LITERAL）:
+ * opinion = 纯观点「我看好」; watch = 观察名单; explicit_action = 本人仓位
+ * 变动「我加仓」; recommendation = 零仓位承诺的机构建议「机构建议买入」（研报
+ * 评级）; review_required = 需人工审核。
+ * NOTE: keep this union a pure string union (no inline comments in the body)
+ * so scripts/check_contract_drift.py can parse it.
+ */
 export type IntentActionability =
-  | "opinion" //          纯观点，无行动意图
-  | "watch" //            观察名单，待机
-  | "explicit_action" //  明确的行动指令
-  | "review_required"; // 需人工审核
+  | "opinion"
+  | "watch"
+  | "explicit_action"
+  | "recommendation"
+  | "review_required";
+
+/** Prior stance declared by the source (mirrors PRIOR_DIRECTION_LITERAL). */
+export type IntentPriorDirection = "bullish" | "bearish" | "neutral";
+
+/** Declared rating action for institutional recommendations (mirrors RATING_ACTION_LITERAL). */
+export type IntentRatingAction =
+  | "upgrade"
+  | "downgrade"
+  | "maintain"
+  | "initiate"
+  | "unknown";
+
+/**
+ * Provenance of the conviction value (mirrors CONVICTION_SOURCE_LITERAL).
+ * derived_lookup（评级查表）不得进 credibility 计算。
+ */
+export type IntentConvictionSource =
+  | "stated"
+  | "derived_lookup"
+  | "model_inferred";
+
+/** Declarative target price stated by the source (mirrors IntentTargetPrice). */
+export type IntentTargetPrice = {
+  value: number;
+  currency: string;
+  prior_value?: number;
+};
 
 export type PositionDeltaHint =
   | "open"
@@ -1511,7 +1547,12 @@ export type NormalizedInvestmentIntent = {
   direction: IntentDirection;
   actionability: IntentActionability;
   position_delta_hint: PositionDeltaHint;
+  target_price?: IntentTargetPrice;
+  prior_direction?: IntentPriorDirection;
+  rating_action?: IntentRatingAction;
   conviction: number; //       0..1
+  /** Absent in pre-A2-1 persisted payloads; backend defaults to "model_inferred". */
+  conviction_source?: IntentConvictionSource;
   sentiment_score?: number; // -1..1
   risk_preference_hint: IntentRiskPreference;
   time_horizon_hint: IntentTimeHorizon;
