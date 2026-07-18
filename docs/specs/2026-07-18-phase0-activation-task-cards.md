@@ -158,6 +158,23 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 
 ---
 
+## 2.5 外部审查记录（Fable，2026-07-18，覆盖 C0/C1/C2）
+
+只读对抗审查（4 路审查 + major 发现逐条对抗验证，工作流 wf_b644be54-e32）。**总判定：三卡质量高，可检验声明全部属实**——全量测试独立重跑 `3603 passed / 22 skipped` 与声明逐字一致；live DB（source_channel 列、broker 4298 行 F0/ready、迁移 005 账、cnt_* 未动）、热备份（.bak-20260718-prebroker 经只读打开实证为迁移前快照）、PR #8/#10 MERGED、每卡已推 main 全部核实。两个最重的事前担忧均被数据驳倒：① driver F1 幂等路径与 scaleup 产物布局逐位一致（4174 个 broker envelope 全扫无缺失，不会重烧 OCR）；② local pdf「解禁」方向反了——新 source_platform 规则对 4692 条 F0-ready 行逐条 diff 与旧规则零差异，且 12 个直播转写/课代表 PDF 根本不在 stage_status，新规则把该类路径关得更死。
+
+**裁决后的发现清单（按处置归属）**：
+
+| # | 严重度 | 发现 | 处置建议 |
+|---|---|---|---|
+| R1 | **major（CONFIRMED）** | `DRIVE_CHANNELS`（drive_config.py:20-29）手写 `'local'/'nlm'`，与 canonical `SourceChannel` Literal（import_receipt.py 的 `'local_upload'/'notebooklm'`）值集漂移：`--channel local` 永远静默 scanned=0，而正确名 `local_upload` 被 validator+argparse 双双拒绝——该旋钮对这两渠道出厂即死。正是项目枚举漂移防护要防的模式，但 drift guard 只守 pydantic↔contracts.ts | **C10 前修**（顺手级）：`DRIVE_CHANNELS = ("all", *get_args(SourceChannel))` 派生 + 补 drift 断言测试。可并入 C3 |
+| R2 | minor（major 经对抗验证降级） | 回填后 4298 条 broker 行进入默认 `channel='all'` 工作集：一次无参 `pipeline-drive` 或开 autodrive 即全量扫描驱动。降级理由：F3 默认 rule-based、F2 确定性（无 LLM），真实 LLM 暴露仅 ~94-124 份 F1 OCR 缺口，且会与在跑的 scaleup 进程双烧（drive 锁不覆盖它） | C3 给 batch/drive 补默认 max_items 或至少把「scaleup 在跑时禁止无参 drive」写进操作纪律；C10 前置检查已含 ps 确认 |
+| R3 | minor | C1 的 COALESCE 语义与声明相反：代码是**新值覆盖既有**（f0_index_writer.py:214，且 receipt.source_channel 必填使「保留既有」分支不可达），commit message 与本卡 ✅ 行写「保留既有」。当前无实害 | 修正措辞，或如果产品语义要求首次归属不可变则翻转 COALESCE 参数序+补测试。领 C3 的 agent 顺手 |
+| R4 | minor | 非法 `--stages` 值以裸 pydantic traceback 逃逸 CLI；`--watch` 下首轮即砸死守护循环（cli.py:207-215 无校验，对照 --channel 有 argparse choices） | C4（调度壳）前必修——launchd 常驻场景下参数错误应拒绝启动而非循环崩溃 |
+| R5 | minor | C0 合并组合出的潜在优先级冲突：`_apply_style_exit_overlay` 只查 hint is None 不辨来源，未来 by_style 非空时会覆盖 horizon-tier 退出参数（R5「30 天秒表量长线」回归通道）。当前 by_style={} 惰性零影响 | 挂 C7：定义 style overlay 与 horizon-tier 的优先级（建议 horizon 主导）并写进 f3f4-policy.yaml 注释 |
+| R6 | info | `--channel bilibili` 合法但保证空转（渠道过滤键是 source_channel、排除表键是 source_platform，两处 'bilibili' 相等是巧合非契约）；stage 门控下 skipped_complete 语义悄变（--stages f1,f2 轮该计数归 0）；dry-run 不落 pipeline_runs（C2 的 live dry-run 声明无法事后独立复核，设计如此） | 随 C5 ledger 落地一并覆盖：dry-run 落 ledger、加 skipped_stage_gated 计数、DRIVE_CHANNELS 剔除或提示不可驱动渠道 |
+
+无 blocker。R1 是唯一必修项（C10 金丝雀会用到渠道旋钮，值集漂移属「同类病防护缺口」）；其余按处置列归入后续卡顺手完成即可，不单开卡。
+
 ## 3. Phase 0 总验收门（对照路线图 §7）
 
 全部满足才算 Phase 0 关闭、Phase 1 开工：
