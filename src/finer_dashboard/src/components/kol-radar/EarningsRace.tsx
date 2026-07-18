@@ -21,6 +21,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   deriveEarningsBoard,
   deriveLatestSettleDate,
+  type EarningsWindow,
   type KOLRadarData,
 } from "@/lib/fixtures/kol-radar";
 import { fmtPct } from "@/components/kol-snapshot/primitives";
@@ -28,9 +29,10 @@ import { DEMO_RADAR_LINKS, kolHref, type RadarLinks } from "./links";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 30 } as const;
 
-const WINDOWS: { days: 7 | 30; label: string }[] = [
+const WINDOWS: { days: EarningsWindow; label: string }[] = [
   { days: 7, label: "近一周" },
   { days: 30, label: "近一月" },
+  { days: "all", label: "全时段" },
 ];
 
 function returnColor(value: number): string {
@@ -40,11 +42,13 @@ function returnColor(value: number): string {
 export function EarningsRace({
   data,
   links = DEMO_RADAR_LINKS,
+  defaultWindow = 7,
 }: {
   data: KOLRadarData;
   links?: RadarLinks;
+  defaultWindow?: EarningsWindow;
 }) {
-  const [windowDays, setWindowDays] = useState<7 | 30>(7);
+  const [windowDays, setWindowDays] = useState<EarningsWindow>(defaultWindow);
   const rows = deriveEarningsBoard(data, windowDays);
   const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(r.cumReturn)), 0);
 

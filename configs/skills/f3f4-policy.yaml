@@ -26,18 +26,41 @@ f3_intent:
 
 # --- F4 Policy 仓位/风控阈值 ---
 f4_policy:
-  # 仓位规模 conviction 桶（qualitative: none/small/medium/large）
-  # SOURCE: src/finer/policy/global_base.py:~105-110
+  # 仓位规模 conviction 桶（qualitative: none/small/medium/large）—— ✅ 已 wire (2026-07-14)
+  # SOURCE: src/finer/policy/global_base.py::compute_position_sizing_hint
+  # LOADER: src/finer/policy/policy_config.py::PolicyTuning.conviction_bands()（值==旧硬编码）
   position_sizing_bands:
-    none_below: 0.0
-    small_at: 0.35
-    medium_at: 0.7
+    none_below: 0.0           # (固定 0.0，不可调；GlobalBase 恒有 none 桶)
+    small_at: 0.35            # conviction >= 0.35 -> small
+    medium_at: 0.7            # conviction >= 0.7  -> medium
     # 注: 当前无 "large" 桶（见 F3-F4-F5 探查），是否补 large 属内核变更，需评审
-  # 风控升级阈值
-  # SOURCE: src/finer/policy/global_base.py:~300-313
+  # 风控升级阈值 —— ✅ 已 wire (2026-07-13)
+  # SOURCE: src/finer/policy/global_base.py::compute_risk_constraints
+  # LOADER: src/finer/policy/policy_config.py (值 == 旧硬编码，行为不变)
   risk_flags:
     human_review_below: 0.3   # conviction < 0.3 -> 人工复核
     risk_note_below: 0.4      # conviction < 0.4 -> 风险备注
+
+  # 退出规则 hint（F8 per-action 模拟用）—— ✅ 已 wire (2026-07-13)
+  # base: 值镜像历史硬编码 (-0.10 / 0.20 / 30)，GlobalBase(Layer0,风格无关)只用 base。
+  # by_style: 按 declared entry_style (left_side/right_side/mixed/unknown) 覆盖 base，
+  #   仅覆盖显式给出的字段，缺省字段落回 base。PolicyMapper 在 by_style 非空时才解析
+  #   creator_id→entry_style(KOL registry)并应用；空 map = 全用 base(当前默认，零行为变化)。
+  # SOURCE: src/finer/policy/global_base.py::compute_risk_constraints (base)
+  #       + src/finer/policy/policy_mapper.py::_apply_style_exit_overlay (by_style)
+  exit_rules:
+    base:
+      stop_loss_pct: -0.10      # 负数：-10% 逆向止损
+      take_profit_pct: 0.20     # 正数：+20% 止盈
+      max_holding_days: 30      # 时间止损
+    by_style: {}
+      # 示例（填入即生效，仅改该风格的持仓/风控 hint，其余字段落回 base）：
+      # right_side:            # 右侧/追突破：趋势跟随 → 放宽止盈、缩短最长持有
+      #   take_profit_pct: 0.30
+      #   max_holding_days: 20
+      # left_side:            # 左侧/抄底：给更长时间兑现 → 收紧止损、拉长持有
+      #   stop_loss_pct: -0.08
+      #   max_holding_days: 60
 
 # --- F5 TradeAction 置信阈值 ---
 f5_action:

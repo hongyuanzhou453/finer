@@ -5,6 +5,7 @@ Falls back to filesystem scan (degraded_scan) when Project Memory is unavailable
 """
 
 from fastapi import APIRouter, UploadFile, File, Query
+from fastapi.concurrency import run_in_threadpool
 from typing import Optional
 from pathlib import Path
 import hashlib
@@ -289,9 +290,11 @@ async def get_files(
                 "projectMemory": catalog_result["projectMemory"],
             }
 
-    # Degraded fallback: filesystem scan via asset_builder
+    # Degraded fallback: filesystem scan via asset_builder. This is a heavy
+    # synchronous scan (manifests + previews, slow/LLM-backed on a cold cache),
+    # so offload it to the threadpool — a GET must never block the event loop.
     try:
-        files = build_workflow_assets(workflow)
+        files = await run_in_threadpool(build_workflow_assets, workflow)
 
         if source_type and source_type != "all":
             files = [f for f in files if f.source_type == source_type]

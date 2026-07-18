@@ -24,6 +24,7 @@ from finer.schemas.investment_intent import (
     HORIZON_EXIT_TIERS,
     resolve_horizon_tier,
 )
+from finer.policy.policy_config import PolicyTuning, load_policy_tuning
 from finer.schemas.policy import (
     ACTION_HINT_LITERAL,
     POSITION_SIZING_HINT_LITERAL,
@@ -159,12 +160,9 @@ _RECOMMENDATION_RULES: Dict[Tuple[str, str], str] = {
 # Position sizing bands
 # =============================================================================
 
-_CONVICTION_BANDS: List[Tuple[float, POSITION_SIZING_HINT_LITERAL]] = [
-    (0.0,  "none"),
-    (0.35, "small"),
-    (0.7,  "medium"),
-    # Global Base NEVER outputs "large" — that requires higher layers.
-]
+# Position sizing bands moved to the tunable surface (configs/skills/f3f4-policy.yaml
+# → PolicyTuning.conviction_bands()). Defaults mirror the historical thresholds
+# (0.35 / 0.70), so behavior is unchanged. Global Base NEVER outputs "large".
 
 # =============================================================================
 # Default holding period by action_hint
@@ -221,11 +219,6 @@ _HORIZON_EXIT_PARAMS: Dict[str, Tuple[float, float]] = {
     "long":   (-0.20, 0.40),
 }
 
-# Legacy flat exit defaults — identical to the historical F8 constants.
-# Used when the caller provides no time-horizon information, so existing
-# call sites (and backtest results) stay bit-for-bit unchanged.
-_LEGACY_FLAT_EXIT: Tuple[float, float, int] = (-0.10, 0.20, 30)
-
 
 # =============================================================================
 # GlobalBasePolicy
@@ -261,6 +254,12 @@ class GlobalBasePolicy:
     max_position_ceiling: MAX_POSITION_HINT_LITERAL = "medium"
 
     default_requires_human_review: bool = False
+
+    # Tunable surface (configs/skills/f3f4-policy.yaml). Defaults mirror the
+    # historical hardcoded thresholds, so behavior is unchanged until the YAML
+    # overrides them. GlobalBase only consumes the *base* (style-independent)
+    # values; per-style overlays are applied by higher layers (PolicyMapper).
+    tuning: PolicyTuning = field(default_factory=load_policy_tuning)
 
     # ------------------------------------------------------------------
     # Action hint lookup
@@ -356,11 +355,11 @@ class GlobalBasePolicy:
         if ambiguity_flags and len(ambiguity_flags) >= 2:
             return "review_required"
 
-        # Conviction-based sizing
+        # Conviction-based sizing (thresholds from the tunable surface)
         hint: POSITION_SIZING_HINT_LITERAL = "none"
-        for threshold, band in _CONVICTION_BANDS:
+        for threshold, band in self.tuning.conviction_bands():
             if conviction >= threshold:
-                hint = band
+                hint = band  # type: ignore[assignment]
 
         # Clamp to global-base ceiling
         ceiling_order = {"none": 0, "small": 1, "medium": 2, "large": 3, "review_required": 99}
@@ -458,15 +457,16 @@ class GlobalBasePolicy:
             requires_review = True
         if ambiguity_flags and len(ambiguity_flags) >= 2:
             requires_review = True
-        if conviction < 0.3 and action_hint not in ("watch_only", "watch_or_no_trade",
-                                                     "avoid_or_watch_risk"):
+        if conviction < self.tuning.human_review_below and action_hint not in (
+            "watch_only", "watch_or_no_trade", "avoid_or_watch_risk"
+        ):
             requires_review = True
 
         # Risk notes
         risk_notes: List[str] = []
         if requires_review:
             risk_notes.append("Flagged for human review by GlobalBasePolicy")
-        if conviction < 0.4:
+        if conviction < self.tuning.risk_note_below:
             risk_notes.append("Low conviction — consider tighter risk controls")
         if action_hint in ("open_position", "add_position"):
             risk_notes.append("New position opened — monitor closely for first 72h")
@@ -476,10 +476,16 @@ class GlobalBasePolicy:
             for flag in ambiguity_flags:
                 risk_notes.append(f"Ambiguity: {flag}")
 
+        # Numeric exit-rule hints for downstream simulation (F8 per-action).
+        # GlobalBase emits the *base* (style-independent) hints from the tunable
+        # surface; defaults mirror the historical F8 constants so backtests stay
+        # unchanged. Per-style tuning is overlaid by higher layers (PolicyMapper
+        # reads tuning.by_style keyed on the KOL's declared entry_style).
         position_taking = action_hint in (
             "open_position", "add_position", "reduce_position",
             "close_position", "hold_position",
         )
+        base_exit = self.tuning.base_exit
 
         # Honesty note: following an institutional rating is not the same
         # signal class as the author moving their own position. Downstream
@@ -490,15 +496,17 @@ class GlobalBasePolicy:
                 "not the author's own position change"
             )
 
-        # Numeric exit-rule hints for downstream simulation (F8 per-action).
-        # Horizon-aware when the caller supplies time_horizon_hint (R5);
-        # legacy flat constants otherwise (zero drift for existing callers).
+        # Horizon-aware exit window (R5): the author's stated horizon dominates
+        # when supplied; otherwise fall back to the tunable base_exit surface
+        # (defaults mirror the historical flat constants, so zero drift).
         stop_pct: Optional[float] = None
         tp_pct: Optional[float] = None
         max_days: Optional[int] = None
         if position_taking:
             if time_horizon_hint is None:
-                stop_pct, tp_pct, max_days = _LEGACY_FLAT_EXIT
+                stop_pct = base_exit.stop_loss_pct
+                tp_pct = base_exit.take_profit_pct
+                max_days = base_exit.max_holding_days
             else:
                 tier = resolve_horizon_tier(time_horizon_hint)
                 stop_pct, tp_pct = _HORIZON_EXIT_PARAMS[tier]

@@ -139,10 +139,16 @@ def test_wechat_channels_import_route(tmp_path: Path) -> None:
     video = tmp_path / "downloaded.mp4"
     video.write_bytes(b"video-bytes")
 
+    # Isolate PM registration: F0IndexWriter() binds to the LIVE project DB, and
+    # REPO_ROOT is patched to tmp (so the ContentRecord file lands in tmp). Without
+    # this patch the route writes stage_status F0='ready' for this /sph/test record
+    # into the real DB; when tmp is torn down the record file vanishes, leaving an
+    # orphan (ready + no ContentRecord) recreated on every run. PM registration is
+    # covered by test_wechat_channels_import_registers_pm.
     with patch.object(wechat, "REPO_ROOT", tmp_path), patch(
         "finer.ingestion.wechat_channels_adapter.WeChatChannelsDownloadClient.get_feed_profile",
         return_value=_profile_payload(),
-    ):
+    ), patch("finer.api.routes.wechat._register_f0_index"):
         client = TestClient(app)
         resp = client.post(
             "/api/wechat/channels/import",

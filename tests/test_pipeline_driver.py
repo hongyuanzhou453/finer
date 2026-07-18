@@ -307,16 +307,66 @@ def test_pipeline_runs_row_written(data_root, pm_db):
     assert summary["f5_ran"] == 1
 
 
-def test_missing_content_record_is_failure(data_root, pm_db):
-    # Registered in the ledger but the ContentRecord file vanished.
+def test_missing_content_record_is_reconciled_not_failed(data_root, pm_db):
+    # Registered in the ledger but the ContentRecord file vanished (the F0
+    # write-atomicity gap: PM row outlived its durable record).
     _register_content(pm_db, data_root, "c-ghost")
     (data_root / "F0_intake" / "local" / "c-ghost.json").unlink()
     rec = StageRecorder(data_root)
 
     report = _drive(data_root, pm_db, rec)
 
-    assert report.failures[0]["error_code"] == "ContentRecordMissing"
+    # Handled as a reconciliation, NOT a failure — a run with only orphans is clean.
+    assert report.failures == []
+    assert len(report.reconciled) == 1
+    assert report.reconciled[0]["content_id"] == "c-ghost"
+    assert report.reconciled[0]["action"] == "marked_failed"
     assert rec.f1_calls == []
+    # The F0 row is flipped to 'failed' so it leaves the ready set.
+    assert _stage_rows(pm_db, "c-ghost")["F0"] == "failed"
+
+
+def test_reconciled_orphan_not_rediscovered_next_run(data_root, pm_db):
+    _register_content(pm_db, data_root, "c-ghost")
+    (data_root / "F0_intake" / "local" / "c-ghost.json").unlink()
+    rec = StageRecorder(data_root)
+
+    first = _drive(data_root, pm_db, rec)
+    assert len(first.reconciled) == 1
+
+    # Second pass: the orphan is no longer F0='ready', so it isn't scanned.
+    second = _drive(data_root, pm_db, rec)
+    assert second.reconciled == []
+    assert second.failures == []
+    assert second.scanned == 0
+
+
+def test_reimport_restores_reconciled_orphan(data_root, pm_db):
+    _register_content(pm_db, data_root, "c-ghost")
+    (data_root / "F0_intake" / "local" / "c-ghost.json").unlink()
+    rec = StageRecorder(data_root)
+    _drive(data_root, pm_db, rec)  # reconcile → F0 failed
+    assert _stage_rows(pm_db, "c-ghost")["F0"] == "failed"
+
+    # A genuine re-import rewrites the record + flips F0 back to 'ready'.
+    _register_content(pm_db, data_root, "c-ghost")
+    assert _stage_rows(pm_db, "c-ghost")["F0"] == "ready"
+    report = _drive(data_root, pm_db, rec)
+    assert report.reconciled == []
+    assert rec.f1_calls == ["c-ghost"]  # now processed normally
+
+
+def test_dry_run_reports_orphan_without_writing(data_root, pm_db):
+    _register_content(pm_db, data_root, "c-ghost")
+    (data_root / "F0_intake" / "local" / "c-ghost.json").unlink()
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, dry_run=True)
+
+    assert len(report.reconciled) == 1
+    assert report.reconciled[0]["action"] == "would_mark_failed"
+    # dry-run must NOT mutate the ledger — row stays 'ready'.
+    assert _stage_rows(pm_db, "c-ghost")["F0"] == "ready"
 
 
 def test_legacy_identity_rows_skipped_quietly(data_root, pm_db):
@@ -351,6 +401,7 @@ def test_report_to_dict_roundtrip(data_root, pm_db):
     report = DriveReport(run_id="drive_test")
     d = report.to_dict()
     assert d["run_id"] == "drive_test"
+    assert d["skipped_locked"] is False
     assert json.dumps(d)  # JSON-serializable
 
 
@@ -469,3 +520,25 @@ def test_f1_executor_resolves_repo_root_relative_raw_path(data_root, monkeypatch
     monkeypatch.setattr(drv, "_ROUTER", _StubRouter())
     out = drv._default_f1_executor(rec, data_root)
     assert out.exists()
+
+
+def test_concurrent_drive_is_skipped(data_root, pm_db):
+    """A drive holding the single-flight lock makes a concurrent pass a no-op."""
+    from finer.pipeline.driver import _acquire_drive_lock, _release_drive_lock
+
+    _register_content(pm_db, data_root, "c-lock")
+    rec = StageRecorder(data_root)
+
+    held = _acquire_drive_lock(pm_db.parent)  # simulate another drive in flight
+    try:
+        report = _drive(data_root, pm_db, rec)  # db_path=pm_db → same lock dir
+        assert report.skipped_locked is True
+        assert report.scanned == 0
+        assert rec.f1_calls == []  # nothing processed
+    finally:
+        _release_drive_lock(held)
+
+    # Lock released → a subsequent drive proceeds normally.
+    report2 = _drive(data_root, pm_db, rec)
+    assert report2.skipped_locked is False
+    assert rec.f1_calls == ["c-lock"]

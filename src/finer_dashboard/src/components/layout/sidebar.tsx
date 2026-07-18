@@ -275,6 +275,27 @@ export function Sidebar({
           </div>
           <div className="space-y-1.5">
             <Link
+              href="/radar"
+              className="block w-full rounded-sm border border-transparent px-3 py-2.5 text-left transition-all duration-150 hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-sm border border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] p-2 text-[var(--ink-soft)]">
+                  <Radar className="w-4 h-4" strokeWidth={1.6} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-bold text-foreground">观点雷达 Radar</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--accent-teal)]">
+                      LIVE
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
+                    跨 KOL 观点横截面与收益榜（真实数据）
+                  </div>
+                </div>
+              </div>
+            </Link>
+            <Link
               href="/audit"
               className="block w-full rounded-sm border border-transparent px-3 py-2.5 text-left transition-all duration-150 hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
             >
