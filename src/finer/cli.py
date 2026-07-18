@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from finer.pipeline import dry_run_pipeline, init_storage, register_directory
+from finer.schemas.drive_config import DRIVE_CHANNELS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,6 +117,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     drive_cmd.add_argument("--limit", type=int, default=None, help="Max content items per pass")
     drive_cmd.add_argument(
+        "--channel", default="all", choices=list(DRIVE_CHANNELS),
+        help="Only drive one import channel (default: all)",
+    )
+    drive_cmd.add_argument(
+        "--stages", default=None, metavar="f1,f2,f5,settle",
+        help="Comma-separated stage whitelist (default: all stages). e.g. --stages f1,f2 stops before F5/settle",
+    )
+    drive_cmd.add_argument(
         "--watch", type=int, default=None, metavar="SECONDS",
         help="Keep driving on an interval (Ctrl+C to stop)",
     )
@@ -195,11 +204,17 @@ def _cmd_feishu_watch(args: argparse.Namespace) -> dict:
 def _cmd_pipeline_drive(args: argparse.Namespace) -> dict:
     from finer.pipeline.driver import drive_once
 
+    stages = None
+    if getattr(args, "stages", None):
+        stages = [s.strip() for s in args.stages.split(",") if s.strip()]
+
     def _one_pass() -> dict:
         return drive_once(
             limit=args.limit,
             run_settle=not args.no_settle,
             dry_run=args.dry_run,
+            channel=args.channel,
+            stages=stages,
         ).to_dict()
 
     if args.watch is None:

@@ -49,6 +49,7 @@ from finer.errors.exceptions import FinerError, FinerStateError
 from finer.errors import ErrorCode
 from finer.paths import DATA_ROOT
 from finer.schemas.content import ContentRecord
+from finer.schemas.drive_config import DRIVE_STAGES, DriveRunConfig
 from finer.services.project_memory.connection import get_connection
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ class DriveReport:
     settle: Optional[Dict[str, Any]] = None
     dry_run: bool = False
     skipped_locked: bool = False
+    config: Optional[Dict[str, Any]] = None  # the DriveRunConfig for this pass (replay)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -92,6 +94,7 @@ class DriveReport:
             "settle": self.settle,
             "dry_run": self.dry_run,
             "skipped_locked": self.skipped_locked,
+            "config": self.config,
         }
 
 
@@ -280,16 +283,27 @@ def _default_f5_executor(f2_path: Path, data_root: Path) -> int:
     return count
 
 
-def _is_excluded(rec: ContentRecord) -> bool:
-    """Content the pipeline intentionally does not standardize.
+# Import channels whose F0 content is archived but intentionally NOT
+# standardized downstream — a declarative table replacing the old raw_path
+# string-matching. A channel absent here is driveable; broker research
+# (source_platform='broker') is deliberately NOT listed, so its rating /
+# target-price PDFs flow through F1+ (R1: the exclusion must never silently
+# evaporate the entire broker source).
+_NON_DRIVEABLE_CHANNELS: frozenset[str] = frozenset({"bilibili"})
 
-    Mirrors scripts/backfill_f1_standardize.py: bilibili video covers carry
-    no text, and the local tutorial PDF is non-investment content.
+
+def _is_excluded(rec: ContentRecord) -> bool:
+    """Content archived at F0 but intentionally not standardized downstream.
+
+    Declarative by import channel (``source_platform``) plus two narrow content
+    heuristics preserved from the original rule:
+      * bilibili video covers carry no text;
+      * the local tutorial PDF is non-investment content ('教程' / local PDF).
+    Broker research PDFs (source_platform='broker') are explicitly driveable.
     """
-    rp = (rec.raw_path or "").replace("\\", "/")
-    if "/bilibili/" in rp:
+    if rec.source_platform in _NON_DRIVEABLE_CHANNELS:
         return True
-    if rec.file_type == "pdf" and "/raw/local/" in rp:
+    if rec.file_type == "pdf" and rec.source_platform == "local":
         return True
     if "教程" in (rec.title or ""):
         return True
@@ -387,12 +401,27 @@ def _reconcile_orphan(
 # =============================================================================
 
 
-def _discover_ready_content(conn: sqlite3.Connection) -> List[str]:
+def _discover_ready_content(
+    conn: sqlite3.Connection, channel: str = "all"
+) -> List[str]:
+    """F0-ready content_ids, optionally filtered to one import channel.
+
+    ``channel='all'`` returns every ready row (legacy behaviour, including rows
+    whose source_channel is NULL — pre-C1 registrations). A specific channel
+    matches ``stage_status.source_channel`` exactly, so NULL-channel legacy rows
+    are only reached under 'all' (their channel is unknown until re-registered).
+    """
+    sql = (
+        "SELECT content_id FROM stage_status "
+        "WHERE stage = 'F0' AND status = 'ready'"
+    )
+    params: tuple = ()
+    if channel and channel != "all":
+        sql += " AND source_channel = ?"
+        params = (channel,)
+    sql += " ORDER BY updated_at"
     try:
-        rows = conn.execute(
-            "SELECT content_id FROM stage_status "
-            "WHERE stage = 'F0' AND status = 'ready' ORDER BY updated_at"
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     except sqlite3.OperationalError as exc:
         raise FinerStateError(
             ErrorCode.API_INT_001,
@@ -480,6 +509,8 @@ def drive_once(
     limit: Optional[int] = None,
     run_settle: bool = True,
     dry_run: bool = False,
+    channel: str = "all",
+    stages: Optional[List[str]] = None,
     f1_executor: Optional[Callable[[ContentRecord, Path], Path]] = None,
     f2_executor: Optional[Callable[[Path, ContentRecord, Path], Path]] = None,
     f5_executor: Optional[Callable[[Path, Path], int]] = None,
@@ -492,18 +523,29 @@ def drive_once(
     uuid churn). If another drive holds the lock, this pass is skipped
     (``skipped_locked=True``) and retried next cycle. See ``_drive_once_unlocked``
     for the actual work.
+
+    ``channel`` filters discovery to one import channel ('all' = every channel);
+    ``stages`` is the stage whitelist (default: all of DRIVE_STAGES). Both default
+    to the legacy behaviour, so an un-parameterised drive is unchanged.
     """
+    config = DriveRunConfig(
+        channel=channel,
+        stages=list(stages) if stages is not None else list(DRIVE_STAGES),
+        max_items=limit,
+    )
     lock_dir = Path(db_path).parent if db_path is not None else data_root
     handle = _acquire_drive_lock(lock_dir)
     if handle is None:
         run_id = f"drive_{datetime.now().strftime('%Y%m%d-%H%M%S')}_{uuid.uuid4().hex[:8]}"
         logger.info("pipeline drive %s: skipped — another drive holds the lock", run_id)
-        return DriveReport(run_id=run_id, dry_run=dry_run, skipped_locked=True)
+        return DriveReport(
+            run_id=run_id, dry_run=dry_run, skipped_locked=True, config=config.model_dump()
+        )
     try:
         return _drive_once_unlocked(
+            config=config,
             data_root=data_root,
             db_path=db_path,
-            limit=limit,
             run_settle=run_settle,
             dry_run=dry_run,
             f1_executor=f1_executor,
@@ -516,17 +558,18 @@ def drive_once(
 
 def _drive_once_unlocked(
     *,
+    config: DriveRunConfig,
     data_root: Path = DATA_ROOT,
     db_path: Optional[Path] = None,
-    limit: Optional[int] = None,
     run_settle: bool = True,
     dry_run: bool = False,
     f1_executor: Optional[Callable[[ContentRecord, Path], Path]] = None,
     f2_executor: Optional[Callable[[Path, ContentRecord, Path], Path]] = None,
     f5_executor: Optional[Callable[[Path, Path], int]] = None,
 ) -> DriveReport:
-    """One incremental pass: fill missing F1/F2/F5 outputs, then settle.
+    """One incremental pass: fill the requested stages, then settle.
 
+    Scoped by ``config`` (channel filter + stage whitelist + max_items).
     Per-content failures are isolated (recorded in the report and in
     stage_status.error_code/error_message); one broken item never blocks the
     batch. Skips (output already present) do NOT touch stage_status so manual
@@ -536,9 +579,11 @@ def _drive_once_unlocked(
     f2_run = f2_executor or _default_f2_executor
     f5_run = f5_executor or _default_f5_executor
 
+    run_f1, run_f2, run_f5 = config.runs("f1"), config.runs("f2"), config.runs("f5")
+
     conn = get_connection(db_path)
     run_id = f"drive_{datetime.now().strftime('%Y%m%d-%H%M%S')}_{uuid.uuid4().hex[:8]}"
-    report = DriveReport(run_id=run_id, dry_run=dry_run)
+    report = DriveReport(run_id=run_id, dry_run=dry_run, config=config.model_dump())
 
     if not dry_run:
         try:
@@ -551,9 +596,9 @@ def _drive_once_unlocked(
         except sqlite3.OperationalError:
             logger.warning("pipeline_runs table missing; run bookkeeping skipped")
 
-    content_ids = _discover_ready_content(conn)
-    if limit is not None:
-        content_ids = content_ids[:limit]
+    content_ids = _discover_ready_content(conn, config.channel)
+    if config.max_items is not None:
+        content_ids = content_ids[: config.max_items]
 
     for content_id in content_ids:
         report.scanned += 1
@@ -581,6 +626,8 @@ def _drive_once_unlocked(
         try:
             # F1 — fill only; an existing envelope is NEVER re-run (uuid churn).
             if not f1_path.exists():
+                if not run_f1:
+                    continue  # F1 not in this pass's stages, no envelope downstream
                 if dry_run:
                     report.f1_ran += 1
                     continue  # downstream stages need the real envelope
@@ -590,6 +637,8 @@ def _drive_once_unlocked(
 
             # F2
             if not f2_path.exists():
+                if not run_f2:
+                    continue
                 if dry_run:
                     report.f2_ran += 1
                     continue
@@ -600,6 +649,8 @@ def _drive_once_unlocked(
             # F5 (+ embedded F8 auto-backtest). A prior legitimate 0-action
             # run is remembered in stage_status so empties aren't re-extracted
             # every drive.
+            if not run_f5:
+                continue
             if f5_path.exists() or _stage_ready(conn, content_id, "F5"):
                 report.skipped_complete += 1
                 continue
@@ -625,7 +676,7 @@ def _drive_once_unlocked(
             )
             _record_failure(conn, report, content_id, stage, exc)
 
-    if run_settle:
+    if run_settle and config.runs("settle"):
         from finer.backtest.settle import settle_actions
 
         try:

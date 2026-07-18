@@ -43,11 +43,19 @@ def data_root(tmp_path):
     return root
 
 
-def _register_content(db_path: Path, data_root: Path, content_id: str, **record_overrides):
+def _register_content(
+    db_path: Path,
+    data_root: Path,
+    content_id: str,
+    *,
+    source_channel: str | None = None,
+    **record_overrides,
+):
     """Write the FK parents + stage_status F0 ready row + ContentRecord file.
 
     Mirrors f0_index_writer: content_identities → contents → stage_status
-    (stage_status has a FOREIGN KEY on contents.content_id).
+    (stage_status has a FOREIGN KEY on contents.content_id). ``source_channel``
+    tags the F0 stage_status row (NULL by default = pre-C1 legacy row).
     """
     now = datetime(2026, 7, 1).isoformat()
     conn = sqlite3.connect(db_path)
@@ -63,10 +71,10 @@ def _register_content(db_path: Path, data_root: Path, content_id: str, **record_
         (content_id, now, now),
     )
     conn.execute(
-        "INSERT INTO stage_status (content_id, stage, status, updated_at) "
-        "VALUES (?, 'F0', 'ready', ?) "
-        "ON CONFLICT(content_id, stage) DO UPDATE SET status='ready'",
-        (content_id, now),
+        "INSERT INTO stage_status (content_id, stage, status, source_channel, updated_at) "
+        "VALUES (?, 'F0', 'ready', ?, ?) "
+        "ON CONFLICT(content_id, stage) DO UPDATE SET status='ready', source_channel=excluded.source_channel",
+        (content_id, source_channel, now),
     )
     conn.commit()
     conn.close()
@@ -248,8 +256,10 @@ def test_zero_action_envelope_not_rerun_next_drive(data_root, pm_db):
 
 
 def test_excluded_content_skipped(data_root, pm_db):
+    # Declarative exclusion keys on source_platform (bilibili covers = no text).
     _register_content(
         pm_db, data_root, "c-cover",
+        source_platform="bilibili",
         raw_path=str(data_root / "raw" / "bilibili" / "cover.png"),
     )
     rec = StageRecorder(data_root)
@@ -542,3 +552,124 @@ def test_concurrent_drive_is_skipped(data_root, pm_db):
     report2 = _drive(data_root, pm_db, rec)
     assert report2.skipped_locked is False
     assert rec.f1_calls == ["c-lock"]
+
+
+# =============================================================================
+# C2: channel filter + stage whitelist (DriveRunConfig)
+# =============================================================================
+
+
+def _broker(pm_db, data_root, content_id):
+    """Register a broker PDF F0 row (source_channel + source_platform = broker)."""
+    return _register_content(
+        pm_db, data_root, content_id,
+        source_channel="broker",
+        source_platform="broker",
+        source_type="research_report",
+        file_type="pdf",
+        raw_path=str(data_root / "raw" / "broker" / f"{content_id}.pdf"),
+    )
+
+
+def test_channel_filter_scopes_discovery_to_broker(data_root, pm_db):
+    _broker(pm_db, data_root, "broker_a")
+    _register_content(pm_db, data_root, "feishu_b", source_channel="feishu", source_platform="feishu")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="broker")
+
+    assert report.scanned == 1
+    assert rec.f1_calls == ["broker_a"]
+
+
+def test_feishu_channel_excludes_broker_rows(data_root, pm_db):
+    _broker(pm_db, data_root, "broker_a")
+    _register_content(pm_db, data_root, "feishu_b", source_channel="feishu", source_platform="feishu")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="feishu")
+
+    assert "broker_a" not in rec.f1_calls
+    assert rec.f1_calls == ["feishu_b"]
+
+
+def test_all_channel_default_drives_everything(data_root, pm_db):
+    _broker(pm_db, data_root, "broker_a")
+    _register_content(pm_db, data_root, "legacy_null")  # NULL source_channel (pre-C1)
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec)  # channel defaults to 'all'
+
+    assert report.scanned == 2
+    assert set(rec.f1_calls) == {"broker_a", "legacy_null"}
+
+
+def test_broker_pdf_is_not_excluded(data_root, pm_db):
+    """R1 guard: broker research PDFs must drive (not silently evaporate)."""
+    _broker(pm_db, data_root, "broker_pdf")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="broker")
+
+    assert report.skipped_excluded == 0
+    assert rec.f1_calls == ["broker_pdf"]
+
+
+def test_stages_whitelist_stops_before_f5(data_root, pm_db):
+    _broker(pm_db, data_root, "c-x")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="broker", stages=["f1", "f2"])
+
+    assert rec.f1_calls == ["c-x"]
+    assert rec.f2_calls == ["c-x"]
+    assert rec.f5_calls == []           # F5 not requested
+    assert report.f5_ran == 0
+    assert _stage_rows(pm_db, "c-x").get("F5") is None
+
+
+def test_config_recorded_in_report(data_root, pm_db):
+    _broker(pm_db, data_root, "c-cfg")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="broker", stages=["f1", "f2"], limit=5)
+
+    assert report.config is not None
+    assert report.config["channel"] == "broker"
+    assert report.config["stages"] == ["f1", "f2"]
+    assert report.config["max_items"] == 5
+    assert report.to_dict()["config"]["channel"] == "broker"
+
+
+def test_settle_gated_by_stage_whitelist(data_root, pm_db, monkeypatch):
+    import finer.backtest.settle as settle_mod
+
+    calls: list = []
+
+    class _FakeSettle:
+        def to_dict(self):
+            return {"settled": 0}
+
+    def _fake_settle(**kwargs):
+        calls.append(kwargs)
+        return _FakeSettle()
+
+    monkeypatch.setattr(settle_mod, "settle_actions", _fake_settle)
+    _broker(pm_db, data_root, "c-s")
+    rec = StageRecorder(data_root)
+
+    # settle in the default stage set + run_settle=True -> called once
+    drive_once(
+        data_root=data_root, db_path=pm_db, run_settle=True, channel="broker",
+        f1_executor=rec.f1, f2_executor=rec.f2, f5_executor=rec.f5,
+    )
+    assert len(calls) == 1
+
+    # stages excludes settle -> settle_actions NOT called even with run_settle=True
+    calls.clear()
+    drive_once(
+        data_root=data_root, db_path=pm_db, run_settle=True, channel="broker",
+        stages=["f1", "f2", "f5"],
+        f1_executor=rec.f1, f2_executor=rec.f2, f5_executor=rec.f5,
+    )
+    assert calls == []
