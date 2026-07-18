@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent — incremental pipeline driver (Phase 0 C4 / OPS-4).
+
+  RunAtLoad + KeepAlive: launchd starts the wrapper on load and restarts it if it
+  exits. The wrapper runs the pipeline driver in watch mode, which drives on its
+  own interval and holds a single-flight fcntl lock per pass — so a second
+  instance is rejected (skipped_locked) rather than double-driving.
+
+  Paths are ABSOLUTE and machine-specific: edit them to match your checkout
+  before `launchctl load`. See docs/specs/2026-07-18-c4-scheduler-shell.md.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.finer.pipeline-drive</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhouhongyuan/Desktop/finer/scripts/ops/run_pipeline_drive.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/zhouhongyuan/Desktop/finer</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>FINER_DRIVE_INTERVAL</key>
+        <string>900</string>
+        <key>FINER_DRIVE_CHANNEL</key>
+        <string>all</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhouhongyuan/Desktop/finer/logs/launchd.pipeline-drive.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/zhouhongyuan/Desktop/finer/logs/launchd.pipeline-drive.err.log</string>
+</dict>
+</plist>

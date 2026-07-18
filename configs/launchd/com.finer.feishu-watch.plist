@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent — Feishu chat watcher (Phase 0 C4 / OPS-4).
+
+  RunAtLoad + KeepAlive: launchd starts the wrapper on load and restarts it if it
+  exits. The wrapper runs the Feishu watcher on a poll interval, syncing new
+  chat content to NotebookLM.
+
+  Paths are ABSOLUTE and machine-specific: edit them to match your checkout
+  before `launchctl load`. See docs/specs/2026-07-18-c4-scheduler-shell.md.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.finer.feishu-watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhouhongyuan/Desktop/finer/scripts/ops/run_feishu_watch.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/zhouhongyuan/Desktop/finer</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>FINER_FEISHU_INTERVAL</key>
+        <string>300</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhouhongyuan/Desktop/finer/logs/launchd.feishu-watch.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/zhouhongyuan/Desktop/finer/logs/launchd.feishu-watch.err.log</string>
+</dict>
+</plist>

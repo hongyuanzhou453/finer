@@ -9,7 +9,57 @@ import time
 from pathlib import Path
 
 from finer.pipeline import dry_run_pipeline, init_storage, register_directory
-from finer.schemas.drive_config import DRIVE_CHANNELS
+from finer.schemas.drive_config import DRIVE_CHANNELS, DRIVE_STAGES
+
+
+def _stages_arg(value: str) -> list[str]:
+    """argparse ``type`` for --stages: parse + validate at parse time (R4).
+
+    Mirrors --channel's ``choices`` so an illegal stage is rejected cleanly by
+    argparse (usage error, exit 2) instead of surfacing a raw pydantic
+    ValidationError — which under ``--watch`` / a launchd KeepAlive job would
+    otherwise dump a traceback and respawn-loop on every tick.
+    """
+    stages = [s.strip() for s in value.split(",") if s.strip()]
+    if not stages:
+        raise argparse.ArgumentTypeError("must list at least one stage")
+    unknown = [s for s in stages if s not in DRIVE_STAGES]
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"unknown stage(s) {unknown}; choose from {', '.join(DRIVE_STAGES)}"
+        )
+    return stages
+
+
+def _drive_heartbeat_state(*, pid: int, started_at: str, cycle: int, interval, report: dict):
+    """Build a HeartbeatState from one drive pass report (C4).
+
+    Extracted from the watch loop so the report→heartbeat mapping (notably
+    ``lock_holder`` from ``skipped_locked``) is unit-testable without running
+    the loop.
+    """
+    from datetime import datetime, timezone
+
+    from finer.schemas.heartbeat import HeartbeatState
+
+    return HeartbeatState(
+        pid=pid,
+        job_type="pipeline_drive",
+        started_at=started_at,
+        last_pass_at=datetime.now(timezone.utc).isoformat(),
+        cycles=cycle,
+        interval_seconds=interval,
+        lock_holder=not report.get("skipped_locked", False),
+        last_pass_stats={
+            "scanned": report.get("scanned"),
+            "f1_ran": report.get("f1_ran"),
+            "f2_ran": report.get("f2_ran"),
+            "f5_ran": report.get("f5_ran"),
+            "skipped_complete": report.get("skipped_complete"),
+            "failures": len(report.get("failures", [])),
+            "skipped_locked": report.get("skipped_locked", False),
+        },
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -121,7 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only drive one import channel (default: all)",
     )
     drive_cmd.add_argument(
-        "--stages", default=None, metavar="f1,f2,f5,settle",
+        "--stages", default=None, type=_stages_arg, metavar="f1,f2,f5,settle",
         help="Comma-separated stage whitelist (default: all stages). e.g. --stages f1,f2 stops before F5/settle",
     )
     drive_cmd.add_argument(
@@ -202,11 +252,20 @@ def _cmd_feishu_watch(args: argparse.Namespace) -> dict:
 
 
 def _cmd_pipeline_drive(args: argparse.Namespace) -> dict:
+    import os
+    from datetime import datetime, timezone
+
     from finer.pipeline.driver import drive_once
 
-    stages = None
-    if getattr(args, "stages", None):
-        stages = [s.strip() for s in args.stages.split(",") if s.strip()]
+    # args.stages arrives already-validated (argparse type=_stages_arg). Defend
+    # the programmatic path (a hand-built Namespace with a raw string) so R4's
+    # guarantee — a bad --stages never reaches the loop — holds there too.
+    stages = getattr(args, "stages", None)
+    if isinstance(stages, str):
+        try:
+            stages = _stages_arg(stages)
+        except argparse.ArgumentTypeError as exc:
+            return {"error": f"invalid --stages: {exc}"}
 
     def _one_pass() -> dict:
         return drive_once(
@@ -220,6 +279,23 @@ def _cmd_pipeline_drive(args: argparse.Namespace) -> dict:
     if args.watch is None:
         return _one_pass()
 
+    def _emit_heartbeat(cycle: int, started_at: str, report: dict) -> None:
+        """Best-effort liveness write at the end of each pass (C4)."""
+        try:
+            from finer.ops.heartbeat import write_heartbeat
+
+            write_heartbeat(
+                _drive_heartbeat_state(
+                    pid=os.getpid(),
+                    started_at=started_at,
+                    cycle=cycle,
+                    interval=args.watch,
+                    report=report,
+                )
+            )
+        except Exception:  # noqa: BLE001 — heartbeat must never break the loop
+            pass
+
     running = True
 
     def _sigint_handler(sig, frame):
@@ -228,6 +304,7 @@ def _cmd_pipeline_drive(args: argparse.Namespace) -> dict:
         running = False
 
     signal.signal(signal.SIGINT, _sigint_handler)
+    started_at = datetime.now(timezone.utc).isoformat()
     print(f"🚚  Driving pipeline (interval: {args.watch}s{' · dry-run' if args.dry_run else ''})")
     print("   Press Ctrl+C to stop.\n")
 
@@ -244,6 +321,8 @@ def _cmd_pipeline_drive(args: argparse.Namespace) -> dict:
             )
         except Exception as e:
             print(f"   ❌ Error: {e}")
+        else:
+            _emit_heartbeat(cycle, started_at, last)
 
         if running:
             for _ in range(args.watch):
