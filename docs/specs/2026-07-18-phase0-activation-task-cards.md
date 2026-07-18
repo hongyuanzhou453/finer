@@ -31,6 +31,7 @@
 4. **红线内动作也要留痕**：每次备份写明路径；每张卡完成后在本文档对应卡下追加一行 `✅ YYYY-MM-DD 完成 + 关键证据`（commit hash / 测试计数 / 报告路径）。
 5. **不碰正在跑的放量进程**：可能有并行会话的 broker F1 scaleup 脚本在写 `data/F1_standardized`；它不碰代码文件，git 操作安全，但 C10 开工前先确认该进程状态（`ps aux | grep broker_scaleup`），避免双开重复烧 OCR。
 6. **commit 规范**：`type(scope): description`；不提交 `data/`、`.env`、`__pycache__`。
+7. **放量护栏（R2，C3 落地）**：`drive_broker_scaleup.py` / batch_runner 必带 `--max-items` + `--budget`（无参全量+无预算属禁用组合）；driver 的 `pipeline-drive` 在 scaleup 进程活跃时禁止无参运行（无参 = `channel='all'` 全量扫描，回填后含 4298 broker 行），先 `ps aux | grep scaleup` 确认无活跃进程再驱动，避免双烧 + 锁不覆盖跨进程。
 
 ### 依赖 DAG
 
@@ -93,6 +94,10 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 - **做法**：新建 `src/finer/pipeline/batch_runner.py`：asyncio semaphore 并发池（F1 默认 8，对齐实测）+ 逐条失败隔离 + checkpoint 文件断点续传 + token 预算硬顶与 quota-strikes 熔断（参照 NAS `/Volumes/NAMEZY/外资研报/rag_system/structured_extract.py` 已实战验证的模式，**迁移语义不迁移代码依赖**）；driver 的 `_default_f1/f2_executor` 与 backfill 脚本共用；把本轮会话的 scratchpad 放量逻辑收编为 `scripts/drive_broker_scaleup.py`（仓内可复现入口，写 stage_status）。预算读数依赖 C0 合入的 LLM usage 计量——若 usage token 字段仍为 null（MiMo 响应未解析），**先修 `llm/client.py` 的 usage 解析再接预算**。
 - **owning**: `src/finer/pipeline/batch_runner.py`、`scripts/drive_broker_scaleup.py`、`src/finer/llm/client.py`（仅 usage 解析）、测试；**禁改**: driver.py 主逻辑（通过 executor 注入协作）
 - **验收**：对 20 条 broker 内容跑 F1 批量：中断后重跑从 checkpoint 续、不重复处理；manifest 落盘字段齐全且 tokens 非 null；模拟预算超限触发熔断（exit code 非 0 + manifest 记录原因）；pytest 绿。
+- ✅ **2026-07-18 完成**（详见 `docs/specs/2026-07-18-c3-batch-runner.md`；已推 main）：新建 `schemas/batch_run.py`（`BatchRunManifest` 后端专用，无 contracts.ts）+ `pipeline/batch_runner.py`（asyncio semaphore 池 + 逐条失败隔离 + append-only checkpoint 断点续传 + token 预算硬顶 + `QuotaTripped`/`BudgetExceeded` 熔断，NAS 语义迁移；manifest 原子快照）+ `scripts/drive_broker_scaleup.py`（仓内可复现 F1 放量入口，写 stage_status，默认 dry-run，熔断→非零退出+resume 命令）。`llm/client.py` 加进程内 usage 累加器 + quota-strike 追踪器 + `_extract_usage_tokens`（total 由 parts 计算、reasoning 兜底）——**telemetry 放在调用边界，batch_runner 只读快照，不 import driver 主逻辑**（禁改约束满足）。测试 +18（batch_runner 8 mock 机制 + usage 累加/quota 7 + R3 COALESCE 3），全 deterministic 无真实 LLM；full suite **3625 passed / 22 skipped**（基线 3607+18）。
+  - ⚠️ **验收口径校正**：核对时另一并行会话 `broker_scaleup_runner.py --workers 8`（PID 78792，7h+ CPU）在活跃写 `data/F1_standardized`。①真跑 20 条 broker F1 会双烧 MiMo 配额 + race，故验收改走 mock 机制 + 真形状 usage 单测（tokens 非 null 由 `_log_usage` 单测证明，NAS 已证 MiMo 返回 `usage.prompt/completion_tokens`），不发真调用；②实况：**4298 条 broker F0-ready 全部已有 F1 envelope**（0 needs、0 record-not-found、0 excluded；磁盘 4723 F1 dir）——broker F1 backlog 已被 scaleup 抽干，discovery 逻辑正确非空转 bug；pool 前瞻价值转向可续传/带预算的未来导入 + F2/F5。
+  - **R2（顺手）**：batch_runner 有 `budget_tokens`+`max_items` 护栏，脚本 `--max-items` 提示 + 熔断非零退出；driver `drive_once` 无参全量扫描风险按卡「或写进操作纪律」处理——见 §1 执行规则第 7 条。
+  - **R3（顺手）**：`f0_index_writer.py` 仅改注释使 COALESCE 语义如实（new-wins；existing 兜底守不可达 NULL-receipt；也回填 legacy NULL 行），**无 SQL/行为变更** + 3 测试锁定。若日后产品要「首次归属不可变」再翻 COALESCE 参数序。
 
 ### C4 · OPS-4 调度器壳（launchd + 心跳）
 

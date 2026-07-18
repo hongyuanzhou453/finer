@@ -226,3 +226,45 @@ class TestWriteAtomicityGuard:
         receipt = _receipt(record_path=None)
         F0IndexWriter(conn).record_imported(_record(), receipt)
         assert _count(conn, "stage_status", "content_id = ? AND stage = 'F0'", ("cnt_w001",)) == 1
+
+
+class TestSourceChannelCoalesce:
+    """R3: pin the stage_status.source_channel COALESCE semantics.
+
+    receipt.source_channel is a REQUIRED field, so COALESCE(excluded, existing)
+    always resolves to the new (excluded) value — a re-register's channel WINS.
+    This is intentional and harmless (a content item's origin channel is stable)
+    and it lets a re-register backfill a legacy row whose channel is still NULL.
+    """
+
+    def _channel(self, conn: sqlite3.Connection, content_id: str = "cnt_w001"):
+        row = conn.execute(
+            "SELECT source_channel FROM stage_status WHERE content_id = ? AND stage = 'F0'",
+            (content_id,),
+        ).fetchone()
+        return row["source_channel"] if row else None
+
+    def test_first_register_sets_channel(self, conn: sqlite3.Connection) -> None:
+        F0IndexWriter(conn).record_imported(_record(), _receipt(source_channel="wechat_channels"))
+        assert self._channel(conn) == "wechat_channels"
+
+    def test_reregister_overwrites_channel_new_wins(self, conn: sqlite3.Connection) -> None:
+        writer = F0IndexWriter(conn)
+        writer.record_imported(_record(), _receipt(source_channel="wechat_channels"))
+        # A re-register carrying a different (still valid) channel wins.
+        writer.record_imported(_record(), _receipt(source_channel="feishu"))
+        assert self._channel(conn) == "feishu"
+
+    def test_null_legacy_row_is_backfilled_on_register(self, conn: sqlite3.Connection) -> None:
+        # Register once (creates the FK-required contents row), then blank the
+        # channel to simulate a pre-C1 legacy row, and re-register.
+        writer = F0IndexWriter(conn)
+        writer.record_imported(_record(), _receipt(source_channel="wechat_channels"))
+        conn.execute(
+            "UPDATE stage_status SET source_channel = NULL "
+            "WHERE content_id = 'cnt_w001' AND stage = 'F0'"
+        )
+        conn.commit()
+        assert self._channel(conn) is None
+        writer.record_imported(_record(), _receipt(source_channel="wechat_channels"))
+        assert self._channel(conn) == "wechat_channels"  # NULL row backfilled

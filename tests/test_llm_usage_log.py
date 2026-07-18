@@ -22,10 +22,27 @@ from typing import Any, Dict, Optional
 import pytest
 
 import finer.llm.client as client_module
-from finer.llm.client import LLMClient
+from finer.llm.client import (
+    LLMClient,
+    _extract_usage_tokens,
+    get_quota_state,
+    get_usage_counter,
+    reset_quota_state,
+    reset_usage_counter,
+)
 
 API_KEY = "dummy-test-api-key-do-not-use"
 USAGE = {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+
+
+@pytest.fixture
+def clean_telemetry():
+    """Reset the process-local usage/quota trackers around a test (C3)."""
+    reset_usage_counter()
+    reset_quota_state()
+    yield
+    reset_usage_counter()
+    reset_quota_state()
 
 
 def install_fake_httpx(
@@ -236,3 +253,106 @@ def test_chat_with_images_forwards_caller_tag(
     assert record["caller_tag"] == "vision_tag"
     raw = log_path.read_text()
     assert "aGk=" not in raw  # image payload never logged
+
+
+# =============================================================================
+# C3 — usage extraction hardening + in-process accumulator + quota tracker
+# =============================================================================
+
+
+def test_extract_usage_computes_total_from_parts() -> None:
+    """MiMo sometimes omits total_tokens; it must be derived from the parts."""
+    tokens = _extract_usage_tokens({"prompt_tokens": 100, "completion_tokens": 250})
+    assert tokens == {"prompt_tokens": 100, "completion_tokens": 250, "total_tokens": 350}
+
+
+def test_extract_usage_folds_reasoning_tokens_when_completion_absent() -> None:
+    """Reasoning-model completion budget must not be lost when completion is absent."""
+    tokens = _extract_usage_tokens(
+        {"prompt_tokens": 10, "completion_tokens_details": {"reasoning_tokens": 40}}
+    )
+    assert tokens["completion_tokens"] == 40
+    assert tokens["total_tokens"] == 50
+
+
+def test_extract_usage_null_on_empty_or_missing() -> None:
+    """An empty/absent usage object yields all-None (the observed null-token case)."""
+    for bad in (None, {}, "not-a-dict", {"prompt_tokens": None}):
+        tokens = _extract_usage_tokens(bad)
+        assert tokens["total_tokens"] is None or tokens["total_tokens"] == 0 or isinstance(
+            tokens["total_tokens"], int
+        )
+    assert _extract_usage_tokens(None) == {
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "total_tokens": None,
+    }
+
+
+def test_usage_accumulator_tracks_across_calls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clean_telemetry
+) -> None:
+    """Two successful chats accumulate real (non-null) tokens in-process (budget source)."""
+    monkeypatch.setenv("FINER_LLM_USAGE_LOG", str(tmp_path / "usage.jsonl"))
+    install_fake_httpx(monkeypatch)  # USAGE = 11/7/18 per call
+
+    client = make_client()
+    client.chat([{"role": "user", "content": "a"}])
+    client.chat([{"role": "user", "content": "b"}])
+
+    counter = get_usage_counter()
+    assert counter["calls"] == 2
+    assert counter["prompt_tokens"] == 22
+    assert counter["completion_tokens"] == 14
+    assert counter["total_tokens"] == 36  # non-null: proves the budget source works
+
+
+def test_accumulator_computes_total_when_provider_omits_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clean_telemetry
+) -> None:
+    """End-to-end: provider omits total_tokens, accumulator still counts it."""
+    monkeypatch.setenv("FINER_LLM_USAGE_LOG", str(tmp_path / "usage.jsonl"))
+    install_fake_httpx(
+        monkeypatch,
+        payload={
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"prompt_tokens": 30, "completion_tokens": 12},  # no total
+        },
+    )
+    make_client().chat([{"role": "user", "content": "x"}])
+    assert get_usage_counter()["total_tokens"] == 42
+
+
+def test_quota_tracker_strikes_then_resets_on_success(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clean_telemetry
+) -> None:
+    """Consecutive 401/429 increment the strike counter; a 200 clears the streak."""
+    monkeypatch.setenv("FINER_LLM_USAGE_LOG", str(tmp_path / "usage.jsonl"))
+    client = make_client()
+
+    install_fake_httpx(monkeypatch, status_code=401, payload={"error": "auth"})
+    client.chat([{"role": "user", "content": "x"}])
+    assert get_quota_state()["consecutive"] == 1
+
+    install_fake_httpx(monkeypatch, status_code=429, payload={"error": "rate"})
+    client.chat([{"role": "user", "content": "x"}])
+    assert get_quota_state()["consecutive"] == 2
+    assert get_quota_state()["last_status"] == 429
+
+    install_fake_httpx(monkeypatch, status_code=200)
+    client.chat([{"role": "user", "content": "x"}])
+    state = get_quota_state()
+    assert state["consecutive"] == 0  # streak cleared by the success
+    assert state["successes"] == 1
+    assert state["strikes_recorded"] == 2  # cumulative strikes preserved
+
+
+def test_non_quota_error_does_not_strike(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clean_telemetry
+) -> None:
+    """A 500 is not a quota/auth problem — it must not trip the breaker."""
+    monkeypatch.setenv("FINER_LLM_USAGE_LOG", str(tmp_path / "usage.jsonl"))
+    install_fake_httpx(monkeypatch, status_code=500, payload={"error": "boom"})
+    make_client().chat([{"role": "user", "content": "x"}])
+    assert get_quota_state()["consecutive"] == 0
+    assert get_quota_state()["strikes_recorded"] == 0

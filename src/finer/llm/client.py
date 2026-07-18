@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -38,27 +39,147 @@ def _usage_log_path() -> Path:
         return _DEFAULT_USAGE_LOG_RELPATH
 
 
+# HTTP statuses that count as a quota / auth strike for the circuit breaker.
+# Mirrors the NAS structured_extract.py semantics (401/402/429) plus 403 (finer
+# treats 403 as auth_failed alongside 401).
+QUOTA_HTTP_STATUSES = (401, 402, 403, 429)
+
+# --- Process-local telemetry -------------------------------------------------
+# An in-process token accumulator + a consecutive-quota-strike tracker. The C3
+# batch runner resets these at the start of a pass and reads them after each item
+# to enforce a token budget and a circuit breaker — WITHOUT needing HTTP-status
+# visibility itself (that lives here, at the call boundary). Process-local by
+# design: a batch runs its LLM work in threads within one process, so a single
+# lock-guarded dict is shared correctly; a separate process (a parallel scaleup)
+# keeps its own independent tally. All telemetry is best-effort and must never
+# affect the LLM call.
+_telemetry_lock = threading.Lock()
+_usage_accumulator: Dict[str, int] = {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
+    "calls": 0,
+}
+_quota_state: Dict[str, Any] = {
+    "consecutive": 0,
+    "last_status": None,
+    "strikes_recorded": 0,
+    "successes": 0,
+}
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    """Best-effort int coercion; None on anything non-numeric."""
+    if isinstance(value, bool):  # guard: bool is an int subclass
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_usage_tokens(usage: Any) -> Dict[str, Optional[int]]:
+    """Normalize an OpenAI-compatible ``usage`` object to prompt/completion/total.
+
+    Robust to MiMo reasoning responses: ``total_tokens`` is computed from the
+    parts when the provider omits it, and hidden reasoning tokens
+    (``completion_tokens_details.reasoning_tokens``) are folded into completion
+    when present so the budget reflects true consumption. Returns Nones when
+    nothing is parseable (e.g. an empty/truncated response with ``usage: null``).
+    """
+    usage_dict: Dict[str, Any] = usage if isinstance(usage, dict) else {}
+    prompt = _coerce_int(usage_dict.get("prompt_tokens"))
+    completion = _coerce_int(usage_dict.get("completion_tokens"))
+    total = _coerce_int(usage_dict.get("total_tokens"))
+
+    details = usage_dict.get("completion_tokens_details")
+    if isinstance(details, dict):
+        reasoning = _coerce_int(details.get("reasoning_tokens"))
+        # Reasoning tokens are usually already inside completion_tokens; only add
+        # them when completion is absent so the budget never under-counts.
+        if reasoning is not None and completion is None:
+            completion = reasoning
+
+    if total is None and (prompt is not None or completion is not None):
+        total = (prompt or 0) + (completion or 0)
+    return {"prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": total}
+
+
+def reset_usage_counter() -> None:
+    """Zero the in-process token accumulator (call at the start of a batch pass)."""
+    with _telemetry_lock:
+        for key in _usage_accumulator:
+            _usage_accumulator[key] = 0
+
+
+def get_usage_counter() -> Dict[str, int]:
+    """Snapshot of cumulative tokens/calls since the last reset."""
+    with _telemetry_lock:
+        return dict(_usage_accumulator)
+
+
+def _accumulate_usage(tokens: Dict[str, Optional[int]]) -> None:
+    with _telemetry_lock:
+        _usage_accumulator["prompt_tokens"] += tokens.get("prompt_tokens") or 0
+        _usage_accumulator["completion_tokens"] += tokens.get("completion_tokens") or 0
+        _usage_accumulator["total_tokens"] += tokens.get("total_tokens") or 0
+        _usage_accumulator["calls"] += 1
+
+
+def reset_quota_state() -> None:
+    """Reset the consecutive-quota-strike tracker (call at the start of a batch)."""
+    with _telemetry_lock:
+        _quota_state.update(
+            {"consecutive": 0, "last_status": None, "strikes_recorded": 0, "successes": 0}
+        )
+
+
+def get_quota_state() -> Dict[str, Any]:
+    """Snapshot of the quota-strike tracker: consecutive/last_status/strikes/successes."""
+    with _telemetry_lock:
+        return dict(_quota_state)
+
+
+def record_quota_error(status: int) -> None:
+    """Register one quota/auth failure; consecutive count drives the breaker."""
+    with _telemetry_lock:
+        _quota_state["consecutive"] += 1
+        _quota_state["last_status"] = status
+        _quota_state["strikes_recorded"] += 1
+
+
+def record_quota_success() -> None:
+    """A successful call clears the consecutive-strike streak."""
+    with _telemetry_lock:
+        _quota_state["consecutive"] = 0
+        _quota_state["successes"] += 1
+
+
 def _log_usage(
     model: str,
     base_url: Optional[str],
     usage: Any,
     caller_tag: Optional[str],
 ) -> None:
-    """Best-effort JSONL token accounting so quota consumption can be paced.
+    """Best-effort JSONL token accounting + in-process accumulation.
 
     Records metadata only — never message content, never API keys. Any
     failure (bad path, permissions, serialization) is swallowed: usage
     accounting must never break the LLM call itself.
     """
+    tokens = _extract_usage_tokens(usage)
     try:
-        usage_dict: Dict[str, Any] = usage if isinstance(usage, dict) else {}
+        _accumulate_usage(tokens)
+    except Exception:
+        pass
+    try:
         record = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "model": model,
             "base_url_host": urlsplit(base_url).netloc if base_url else None,
-            "prompt_tokens": usage_dict.get("prompt_tokens"),
-            "completion_tokens": usage_dict.get("completion_tokens"),
-            "total_tokens": usage_dict.get("total_tokens"),
+            "prompt_tokens": tokens["prompt_tokens"],
+            "completion_tokens": tokens["completion_tokens"],
+            "total_tokens": tokens["total_tokens"],
             "caller_tag": caller_tag,
         }
         path = _usage_log_path()
@@ -261,6 +382,8 @@ class LLMClient:
 
                 if response.status_code == 200:
                     result = response.json()
+                    # A successful call clears the consecutive-quota-strike streak.
+                    record_quota_success()
                     content = result["choices"][0]["message"]["content"]
                     # Log before the empty-content check: even empty
                     # responses consumed quota.
@@ -279,6 +402,9 @@ class LLMClient:
                 else:
                     error_msg = response.text[:200]
                     status = response.status_code
+                    # Register a quota/auth strike for the batch circuit breaker.
+                    if status in QUOTA_HTTP_STATUSES:
+                        record_quota_error(status)
                     self._handle_error(config["model"], error_msg)
                     if status in (401, 403):
                         self.last_error = f"auth_failed ({status})"

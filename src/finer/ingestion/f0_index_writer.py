@@ -203,8 +203,13 @@ class F0IndexWriter:
 
         # 5. F0 stage status — asset_index rebuild only projects ready/partial rows.
         #    source_channel (from the receipt) lets the driver filter work by
-        #    import channel (Phase 0 C1); COALESCE keeps an existing channel if a
-        #    later re-register ever arrives without one.
+        #    import channel (Phase 0 C1). receipt.source_channel is a REQUIRED
+        #    field, so `excluded.source_channel` is never NULL and this COALESCE
+        #    always resolves to it — a re-register's channel wins. That is
+        #    intentional and harmless (a content item's origin channel is stable,
+        #    so the new value equals the old) and it lets a re-register backfill a
+        #    legacy row whose source_channel is still NULL; the existing-value
+        #    fallback only guards the unreachable NULL-receipt case. See R3.
         conn.execute(
             """
             INSERT INTO stage_status (content_id, stage, status, source_channel, updated_at)
