@@ -184,9 +184,22 @@ class PolicyMapper:
             ambiguity_flags=intent.ambiguity_flags if intent.ambiguity_flags else None,
         )
 
+        # --- Horizon plumbing (F3 → F4) ---
+        # "unknown" is the F3 schema default and means the intent carries no
+        # horizon information. Normalize it to None so horizon-unaware intents
+        # keep the legacy flat exit rules (-10%/+20%/30d) and the per-action
+        # holding-period defaults bit-for-bit. Any recognized hint flows
+        # through resolve_horizon_tier-based tiering in GlobalBasePolicy.
+        time_horizon_hint: Optional[str] = (
+            intent.time_horizon_hint
+            if intent.time_horizon_hint and intent.time_horizon_hint != "unknown"
+            else None
+        )
+
         # --- Step 3: Holding period ---
         holding_period_hint = policy.compute_holding_period_hint(
             action_hint=action_hint,
+            time_horizon_hint=time_horizon_hint,
         )
 
         # --- Step 4: Risk constraints ---
@@ -194,6 +207,8 @@ class PolicyMapper:
             action_hint=action_hint,
             conviction=intent.conviction,
             ambiguity_flags=intent.ambiguity_flags if intent.ambiguity_flags else None,
+            time_horizon_hint=time_horizon_hint,
+            actionability=intent.actionability,
         )
 
         # --- Step 5: Mapping rationale ---
