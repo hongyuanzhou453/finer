@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent — heartbeat watchdog (Phase 0 C5 / OPS-5).
+
+  StartInterval (not KeepAlive): launchd runs the wrapper every N seconds as a
+  one-shot. It reads data/run_state/heartbeat.json and alerts (Feishu webhook) if
+  the driver's last pass is older than 2x its interval. Separate from the driver
+  so a crashed driver can still be alerted on.
+
+  Paths are ABSOLUTE and machine-specific: edit them to match your checkout
+  before launchctl load. See docs/specs/2026-07-18-c5-observability-alerts.md.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.finer.alert-check</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhouhongyuan/Desktop/finer/scripts/ops/run_alert_check.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/zhouhongyuan/Desktop/finer</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhouhongyuan/Desktop/finer/logs/launchd.alert-check.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/zhouhongyuan/Desktop/finer/logs/launchd.alert-check.err.log</string>
+</dict>
+</plist>

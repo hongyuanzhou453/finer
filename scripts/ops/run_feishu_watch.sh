@@ -11,9 +11,18 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# Load .env into the environment (Feishu creds etc.); launchd jobs don't inherit
+# an interactive shell's env.
+set -a
+# shellcheck disable=SC1091
+[ -f .env ] && . ./.env
+set +a
+
 INTERVAL="${FINER_FEISHU_INTERVAL:-300}"
 
 mkdir -p logs
+# Retention: drop logs older than 14 days (best-effort, C5).
+.venv/bin/python -m finer.cli prune-logs --keep-days 14 >/dev/null 2>&1 || true
 LOG="logs/feishu-watch-$(date +%Y%m%d).log"
 
 ARGS=(-m finer.cli feishu-watch --interval "$INTERVAL")

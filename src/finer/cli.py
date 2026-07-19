@@ -62,6 +62,24 @@ def _drive_heartbeat_state(*, pid: int, started_at: str, cycle: int, interval, r
     )
 
 
+def _ledger_and_alert_drive(report: dict, duration_s: float, tokens_spent: int) -> None:
+    """Append a run-ledger row and fire a failure-rate alert if warranted (C5).
+
+    Best-effort — observability must never break the drive.
+    """
+    try:
+        from finer.ops.alerts import check_failure_rate, send_alert
+        from finer.ops.ledger import build_drive_ledger_entry, write_ledger_entry
+
+        entry = build_drive_ledger_entry(report, tokens_spent=tokens_spent, duration_s=duration_s)
+        write_ledger_entry(entry)
+        alert = check_failure_rate(entry.stats)
+        if alert is not None:
+            send_alert(alert)
+    except Exception:  # noqa: BLE001 — observability must never break the drive
+        pass
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="finer",
@@ -192,6 +210,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     settle_cmd.add_argument("--limit", type=int, default=None, help="Max PENDING actions to process")
 
+    # ── Ops: alerting + log rotation (C5 / OPS-5) ────────────────
+    alert_test_cmd = subparsers.add_parser(
+        "alert-test", help="Send a test alert to the ops webhook (FINER_ALERT_WEBHOOK)"
+    )
+    alert_test_cmd.add_argument("--webhook", default=None, help="Override webhook URL (default: env FINER_ALERT_WEBHOOK)")
+
+    alert_check_cmd = subparsers.add_parser(
+        "alert-check", help="Check the driver heartbeat and alert if it is stale (schedulable)"
+    )
+    alert_check_cmd.add_argument("--factor", type=int, default=2, help="Stale if last pass age > factor × interval (default 2)")
+    alert_check_cmd.add_argument("--run-state-dir", type=Path, default=None, help="Where heartbeat.json lives (default: data/run_state)")
+
+    prune_logs_cmd = subparsers.add_parser(
+        "prune-logs", help="Delete log files older than the retention window"
+    )
+    prune_logs_cmd.add_argument("--logs-dir", type=Path, default=Path("logs"), help="Log directory (default: logs/)")
+    prune_logs_cmd.add_argument("--keep-days", type=int, default=14, help="Retention window in days (default 14)")
+
     return parser
 
 
@@ -268,13 +304,21 @@ def _cmd_pipeline_drive(args: argparse.Namespace) -> dict:
             return {"error": f"invalid --stages: {exc}"}
 
     def _one_pass() -> dict:
-        return drive_once(
+        from finer.llm.client import get_usage_counter
+
+        before = get_usage_counter().get("total_tokens", 0)
+        t0 = time.monotonic()
+        report = drive_once(
             limit=args.limit,
             run_settle=not args.no_settle,
             dry_run=args.dry_run,
             channel=args.channel,
             stages=stages,
         ).to_dict()
+        duration_s = time.monotonic() - t0
+        tokens_spent = max(0, get_usage_counter().get("total_tokens", 0) - before)
+        _ledger_and_alert_drive(report, duration_s, tokens_spent)
+        return report
 
     if args.watch is None:
         return _one_pass()
@@ -349,10 +393,57 @@ def _cmd_settle(args: argparse.Namespace) -> dict:
             backup = str(dst)
             print(f"backup -> {dst}")
 
+    t0 = time.monotonic()
     report = settle_actions(dry_run=not args.apply, limit=args.limit)
+    duration_s = time.monotonic() - t0
     result = report.to_dict()
     result["backup"] = backup
+
+    # C5: append a run-ledger row (best-effort — never break settle).
+    try:
+        import uuid
+
+        from finer.ops.ledger import build_settle_ledger_entry, write_ledger_entry
+
+        write_ledger_entry(
+            build_settle_ledger_entry(
+                result, run_id=f"settle_{uuid.uuid4().hex[:8]}", duration_s=duration_s
+            )
+        )
+    except Exception:  # noqa: BLE001
+        pass
     return result
+
+
+def _cmd_alert_test(args: argparse.Namespace) -> dict:
+    from finer.ops.alerts import self_test_event, send_alert, webhook_configured
+
+    if not webhook_configured() and not args.webhook:
+        return {
+            "ok": False,
+            "error": "FINER_ALERT_WEBHOOK is not set; export it (or pass --webhook) to send a test alert.",
+        }
+    ok = send_alert(self_test_event(), url=args.webhook)
+    return {"ok": ok, "sent": ok}
+
+
+def _cmd_alert_check(args: argparse.Namespace) -> dict:
+    from finer.ops.alerts import check_heartbeat_stale, send_alert
+    from finer.ops.heartbeat import read_heartbeat
+
+    heartbeat = read_heartbeat(run_state_dir=args.run_state_dir)
+    event = check_heartbeat_stale(heartbeat, factor=args.factor)
+    if event is None:
+        return {"ok": True, "stale": False, "alerted": False}
+    sent = send_alert(event)
+    return {"ok": True, "stale": True, "alerted": sent, "alert": event.to_dict()}
+
+
+def _cmd_prune_logs(args: argparse.Namespace) -> dict:
+    from finer.ops.log_rotation import prune_old_logs
+
+    removed = prune_old_logs(args.logs_dir, keep_days=args.keep_days)
+    return {"ok": True, "removed": [str(p) for p in removed], "removed_count": len(removed)}
 
 
 def _cmd_inbox_status(args: argparse.Namespace) -> dict:
@@ -604,6 +695,12 @@ def main() -> None:
         result = _cmd_pipeline_drive(args)
     elif args.command == "settle":
         result = _cmd_settle(args)
+    elif args.command == "alert-test":
+        result = _cmd_alert_test(args)
+    elif args.command == "alert-check":
+        result = _cmd_alert_check(args)
+    elif args.command == "prune-logs":
+        result = _cmd_prune_logs(args)
     else:
         parser.error(f"unknown command: {args.command}")
         return

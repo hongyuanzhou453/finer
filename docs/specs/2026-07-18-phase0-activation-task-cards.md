@@ -117,6 +117,9 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 - **做法**：①run ledger：drive/settle 每轮落一行 JSONL（`data/run_state/ledger/`）；②告警：`ops/alerts.py` 飞书 webhook（URL 走 `.env` `FINER_ALERT_WEBHOOK`，**代码不落 token**），三类触发：心跳超时（>2×轮询间隔）、单轮失败率>阈值、预算超限；③日志轮转（按天 + 保留 14 天）；④告警自测 CLI（`--test` 发一条测试消息）。
 - **owning**: `src/finer/ops/`、driver/settle 的 ledger 挂点、测试（webhook mock）；**禁改**: 业务提取逻辑
 - **验收**：模拟心跳超时/失败率超阈 → mock webhook 收到 payload（含 fix_hint）；ledger 行 schema 校验通过；pytest 绿。
+- ✅ **2026-07-18 完成**（详见 `docs/specs/2026-07-18-c5-observability-alerts.md`；已推 main）：`schemas/ops.py`(RunLedgerEntry+LedgerErrorEntry 复用 Line F 信封+AlertEvent) + `ops/{ledger,alerts,log_rotation}.py` + `cli.py`(drive/settle 每轮落 ledger、drive 内联失败率告警、`alert-test`/`alert-check`/`prune-logs` 三子命令)。三告警：心跳超时(独立 `alert-check` StartInterval 周期任务，崩溃循环无法自检)/失败率>阈值(driver 内联)/预算超限(check 提供)。webhook URL 只从 `.env FINER_ALERT_WEBHOOK` 读、代码/日志不落 token、未设→no-op。**顺带补 C4 wrapper 的 `.env` 加载缺口**(launchd 不继承交互环境，否则 F1 连 MIMO_API_KEY 都没有)。新增 wrapper `run_alert_check.sh` + plist `com.finer.alert-check.plist`。测试 +22(webhook mock：收到 payload/不泄 URL/未设 no-op/非 200 False)；full suite **3667 passed / 22 skipped**(基线 3645+22)。
+  - 实证：`alert-check` 读真实 heartbeat.json(C4 smoke 遗留 age≈36114s/interval 2s)→正确判 stale 产 critical 事件；`alert-test` 未设 webhook→干净 error；`prune-logs`→removed 0。
+  - **决策**：tokens_spent 用 C3 累加器前后差(非破坏)；error 条目复用 canonical 信封字段；`self_test_event` 避 pytest 误收集 `test_` 前缀。
 
 ### C6 · OPS-6 外置盘护栏（D1 决议的落地）
 

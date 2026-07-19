@@ -19,10 +19,20 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# Load .env into the environment (API keys + FINER_ALERT_WEBHOOK). A launchd job
+# does not inherit an interactive shell's env, so without this a resident driver
+# would be missing MIMO_API_KEY (F1) and FINER_ALERT_WEBHOOK (alerts).
+set -a
+# shellcheck disable=SC1091
+[ -f .env ] && . ./.env
+set +a
+
 INTERVAL="${FINER_DRIVE_INTERVAL:-900}"
 CHANNEL="${FINER_DRIVE_CHANNEL:-all}"
 
 mkdir -p logs
+# Retention: drop logs older than 14 days (best-effort, C5).
+.venv/bin/python -m finer.cli prune-logs --keep-days 14 >/dev/null 2>&1 || true
 LOG="logs/pipeline-drive-$(date +%Y%m%d).log"
 
 ARGS=(-m finer.cli pipeline-drive --watch "$INTERVAL" --channel "$CHANNEL")
