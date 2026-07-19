@@ -571,6 +571,24 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.execute and args.limit is None:
         parser.error("--execute requires --limit N (batch-size guard against accidental full-volume import)")
+
+    # C6: broker raw PDFs live on an external volume. If it's unmounted, skip the
+    # whole broker intake with a warning alert instead of erroring (or flooding
+    # per-item VOLUME_MISSING). Checked before the meta-exists guard so a meta
+    # file that lives on the unmounted volume degrades gracefully too.
+    from finer.ops.mount_health import broker_mount_alert, broker_source_volume, broker_volume_available
+
+    if not broker_volume_available():
+        from finer.ops.alerts import send_alert
+
+        alert = broker_mount_alert(skipped=0, job="broker_intake")
+        send_alert(alert)
+        print(
+            f"[skipped] broker source volume {broker_source_volume()} is not mounted; "
+            f"skipping broker intake. {alert.fix_hint}"
+        )
+        return 0
+
     if not args.meta_jsonl.exists():
         parser.error(f"meta JSONL not found: {args.meta_jsonl}")
 

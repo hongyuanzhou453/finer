@@ -127,6 +127,9 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 - **做法**：①挂载健康检查：driver 与 broker intake 在 `/Volumes/NAMEZY` 未挂载时**跳过 broker 渠道 + 发 AlertEvent（警告级）**，绝不报错中断其他渠道；②确认并成文「关键中间产物全在内置盘」清单（F0 receipt/manifest、F1 envelope、F2 anchor、T3 JSONL）——盘拔最坏损失 = 不能重跑 F1 原文，已有 envelope 不受影响；③`.bak` 保留策略成文 + `scripts/prune_backups.py`（保留最近 3 份 + 结算前快照；**dry-run 默认，实际清删列清单请用户过目**——删除类红线，D4 未覆盖 .bak 清理）。
 - **owning**: driver/intake 的挂载检查、`scripts/prune_backups.py`、spec 段落；**禁改**: raw 归档路径语义
 - **验收**：模拟未挂载（临时改路径）→ broker 渠道 skipped + 告警、feishu/local 渠道正常；prune dry-run 输出清单。
+- ✅ **2026-07-18 完成**（详见 `docs/specs/2026-07-18-c6-external-disk-guardrail.md`；已推 main）：`ops/mount_health.py`(卷路径 env `FINER_BROKER_SOURCE_VOLUME` 可覆盖 + available 检查 + `broker_mount_alert`) + driver 加 `skipped_unmounted`(broker 缺 envelope 且卷未挂载→跳过计数，不误伤已标准化项) + CLI 发 volume_unmounted 告警(复用 C5) + broker intake `main()` 前置 guard(未挂载→`return 0` 优雅跳非报错) + `scripts/prune_backups.py`(保留最近 N + 保护命名安全快照 + wal/shm 同删，**dry-run 默认**)。AlertType 加 `volume_unmounted`。关键产物耐久性清单成文：外置盘只承载 raw PDF，盘拔最坏=不能重烧 F1 原文(但 envelope 已全在内置盘)，F2 起全链不依赖外置盘。测试 +14(C6 11 + driver 3)；full suite **3681 passed / 22 skipped**。
+  - **实证**：prune dry-run 真数据→F5 保留最近 3、10 个旧待删(~1.1MB)、DB 两命名快照 PROTECT、**零删除**；guard 用 env→tmp 模拟未挂载。
+  - **未做（有意）**：10 个旧 F5 备份实删属删除红线，留用户跑 `--execute`(审清单后)。driver 线(C2/C4/C5/C6)至此收尾。
 
 ### C7 · AUD-1/2 券商链 F4 落盘 + honesty note + signal_class
 

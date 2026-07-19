@@ -15,7 +15,9 @@ from pydantic import BaseModel, Field
 
 from finer.utils.time import now_utc
 
-AlertType = Literal["heartbeat_timeout", "failure_rate", "budget_exceeded", "test"]
+AlertType = Literal[
+    "heartbeat_timeout", "failure_rate", "budget_exceeded", "volume_unmounted", "test"
+]
 AlertSeverity = Literal["info", "warning", "critical"]
 
 

@@ -76,6 +76,11 @@ def _ledger_and_alert_drive(report: dict, duration_s: float, tokens_spent: int) 
         alert = check_failure_rate(entry.stats)
         if alert is not None:
             send_alert(alert)
+        # C6: broker external volume unmounted → one warning alert per pass.
+        if report.get("skipped_unmounted"):
+            from finer.ops.mount_health import broker_mount_alert
+
+            send_alert(broker_mount_alert(skipped=report["skipped_unmounted"], job="pipeline_drive"))
     except Exception:  # noqa: BLE001 — observability must never break the drive
         pass
 

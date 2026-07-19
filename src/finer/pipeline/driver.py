@@ -69,6 +69,7 @@ class DriveReport:
     skipped_complete: int = 0
     skipped_excluded: int = 0
     skipped_legacy_identity: int = 0
+    skipped_unmounted: int = 0  # broker F1 items skipped because the source volume is unmounted (C6)
     f1_ran: int = 0
     f2_ran: int = 0
     f5_ran: int = 0
@@ -86,6 +87,7 @@ class DriveReport:
             "skipped_complete": self.skipped_complete,
             "skipped_excluded": self.skipped_excluded,
             "skipped_legacy_identity": self.skipped_legacy_identity,
+            "skipped_unmounted": self.skipped_unmounted,
             "f1_ran": self.f1_ran,
             "f2_ran": self.f2_ran,
             "f5_ran": self.f5_ran,
@@ -600,6 +602,17 @@ def _drive_once_unlocked(
     if config.max_items is not None:
         content_ids = content_ids[: config.max_items]
 
+    # C6: broker raw PDFs live on an external volume. Check it once per pass (only
+    # when the channel can include broker items). When it's unmounted, broker F1
+    # (raw → envelope) is skipped rather than flooding 'raw file missing'
+    # failures; already-standardized broker content and every other channel flow
+    # normally. The unmount alert is emitted by the CLI from report.skipped_unmounted.
+    broker_mounted = True
+    if config.channel in ("all", "broker"):
+        from finer.ops.mount_health import broker_volume_available
+
+        broker_mounted = broker_volume_available()
+
     for content_id in content_ids:
         report.scanned += 1
 
@@ -626,6 +639,12 @@ def _drive_once_unlocked(
         try:
             # F1 — fill only; an existing envelope is NEVER re-run (uuid churn).
             if not f1_path.exists():
+                # C6: broker F1 needs the raw PDF on the external volume. If it's
+                # unmounted, skip (counted) instead of a raw-missing failure.
+                # Broker items that already have an envelope never reach here.
+                if rec.source_platform == "broker" and not broker_mounted:
+                    report.skipped_unmounted += 1
+                    continue
                 if not run_f1:
                     continue  # F1 not in this pass's stages, no envelope downstream
                 if dry_run:

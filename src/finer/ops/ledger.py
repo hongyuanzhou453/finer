@@ -85,6 +85,7 @@ def build_drive_ledger_entry(
             "f5_ran": report.get("f5_ran"),
             "skipped_complete": report.get("skipped_complete"),
             "skipped_excluded": report.get("skipped_excluded"),
+            "skipped_unmounted": report.get("skipped_unmounted"),
             "failure_count": len(failures),
             "dry_run": report.get("dry_run", False),
             "settle": report.get("settle"),

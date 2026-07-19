@@ -673,3 +673,49 @@ def test_settle_gated_by_stage_whitelist(data_root, pm_db, monkeypatch):
         f1_executor=rec.f1, f2_executor=rec.f2, f5_executor=rec.f5,
     )
     assert calls == []
+
+
+# =============================================================================
+# C6 — broker external-volume guardrail
+# =============================================================================
+
+
+def test_broker_f1_skipped_when_volume_unmounted(data_root, pm_db, monkeypatch, tmp_path):
+    """Unmounted broker volume → broker F1 skipped (counted), other channels flow."""
+    monkeypatch.setenv("FINER_BROKER_SOURCE_VOLUME", str(tmp_path / "not-mounted"))
+    _register_content(pm_db, data_root, "brk-1", source_platform="broker", source_channel="broker")
+    _register_content(pm_db, data_root, "loc-1", source_platform="local", source_channel="local")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="all", stages=["f1"])
+
+    assert report.skipped_unmounted == 1
+    assert "brk-1" not in rec.f1_calls   # broker F1 skipped (raw unreachable)
+    assert "loc-1" in rec.f1_calls        # non-broker channel unaffected
+
+
+def test_broker_with_envelope_proceeds_when_volume_unmounted(data_root, pm_db, monkeypatch, tmp_path):
+    """A broker item that already has F1 needs no volume → F2 still runs."""
+    monkeypatch.setenv("FINER_BROKER_SOURCE_VOLUME", str(tmp_path / "not-mounted"))
+    _register_content(pm_db, data_root, "brk-2", source_platform="broker", source_channel="broker")
+    _touch_f1(data_root, "brk-2")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="broker", stages=["f1", "f2"])
+
+    assert report.skipped_unmounted == 0
+    assert "brk-2" in rec.f2_calls  # F2 reads the internal-disk envelope
+
+
+def test_broker_f1_runs_when_volume_available(data_root, pm_db, monkeypatch):
+    """Volume mounted → no skipping; broker F1 runs normally."""
+    import finer.ops.mount_health as mh
+
+    monkeypatch.setattr(mh, "broker_volume_available", lambda: True)
+    _register_content(pm_db, data_root, "brk-3", source_platform="broker", source_channel="broker")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="broker", stages=["f1"])
+
+    assert report.skipped_unmounted == 0
+    assert "brk-3" in rec.f1_calls
