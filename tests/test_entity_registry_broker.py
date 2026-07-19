@@ -105,8 +105,8 @@ class TestTickerNormalization:
             "600519.XX",  # unknown suffix
             "ABC DEF",  # embedded space
             "TOOLONGTICKER",  # >5 letters
-            "600519.L",  # LSE not mapped
-            "005930.KS",  # KOSPI suffix not mapped
+            "600519.L",  # LSE is alpha-only; a numeric base stays unmappable (C9)
+            "600519.SW",  # Swiss is alpha-only; numeric base unmappable (C9)
         ],
     )
     def test_rejects_unmappable(self, raw):

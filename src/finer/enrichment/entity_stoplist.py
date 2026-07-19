@@ -465,6 +465,16 @@ AMBIGUOUS_BARE_UPPER_TOKENS: frozenset[str] = frozenset(
         "QOQ",
         "YOY",
         "FY",
+        # --- broker rating abbreviations (MSCI OW/EW/UW, Market-Perform). These
+        #     collide with real tickers (MP Materials, EW Edwards Lifesciences),
+        #     so CONTEXT-GATE — don't drop — them: bare "Equal-weight: EW" /
+        #     "Market Perform (MP)" prose must not silently anchor as a ticker,
+        #     but "EW.N" / "(MP)" with ticker context still does. Fixes the C9
+        #     broker false positives (裸 EW 撞 MSCI 评级术语). ---
+        "OW",
+        "EW",
+        "UW",
+        "MP",
     }
 )
 
