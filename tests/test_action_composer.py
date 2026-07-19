@@ -168,3 +168,33 @@ class TestVersionStamp:
     def test_extraction_method_recorded(self):
         ta = _compose(extraction_method="rule_based")
         assert ta.extraction_method == "rule_based"
+
+
+# =============================================================================
+# C7 — signal_class classification at the single construction point
+# =============================================================================
+
+
+def test_signal_class_kol_statement_for_non_recommendation():
+    """A KOL's own action (actionability != recommendation) → kol_statement."""
+    ta = _compose()  # _intent() uses actionability="explicit_action"
+    assert ta.signal_class == "kol_statement"
+    assert ta.metadata["signal_class"] == "kol_statement"
+
+
+def test_signal_class_broker_recommendation_for_recommendation():
+    """A declarative institutional rating (actionability=recommendation) →
+    broker_recommendation, set on the field AND surfaced in metadata."""
+    intent = _intent()
+    intent.actionability = "recommendation"
+    ta = _compose(intent=intent)
+    assert ta.signal_class == "broker_recommendation"
+    assert ta.metadata["signal_class"] == "broker_recommendation"
+
+
+def test_signal_class_field_defaults_to_none_for_legacy():
+    """Actions written before the field existed load as None (honest, not
+    mislabeled kol_statement)."""
+    from finer.schemas.trade_action import TradeAction
+
+    assert TradeAction.model_fields["signal_class"].default is None

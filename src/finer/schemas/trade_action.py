@@ -84,6 +84,14 @@ INSTRUMENT_TYPE_LITERAL = Literal[
     "stock", "option", "etf", "index_future", "crypto", "unspecified"
 ]
 
+# Single source of truth for TradeAction.signal_class — what KIND of signal the
+# action encodes (mirrored by the frontend SignalClass union; guarded by
+# scripts/check_contract_drift.py). 'kol_statement' = a KOL's own trading
+# statement/opinion; 'broker_recommendation' = a declarative institutional
+# rating (broker research). Derived at the single F5 construction point from
+# the intent's actionability, so downstream never re-parses free-text.
+SIGNAL_CLASS_LITERAL = Literal["kol_statement", "broker_recommendation"]
+
 
 class ValidationStatus(str, Enum):
     """Validation lifecycle status."""
@@ -777,6 +785,16 @@ class TradeAction(BaseModel):
     time_horizon: Optional[str] = Field(
         None,
         description="Expected holding period (e.g., '1 week', 'long term')"
+    )
+
+    signal_class: Optional[SIGNAL_CLASS_LITERAL] = Field(
+        None,
+        description=(
+            "What kind of signal this action encodes: 'kol_statement' (a KOL's own "
+            "trading statement) vs 'broker_recommendation' (declarative institutional "
+            "rating). Set at the F5 construction point from intent.actionability. "
+            "None = legacy action written before this field existed (unclassified)."
+        ),
     )
 
     rationale: Optional[str] = Field(

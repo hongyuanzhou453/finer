@@ -56,6 +56,7 @@ REGISTRY: Dict[str, Tuple[str, str, str]] = {
     "ExitReason": ("finer.schemas.trade_action", "ExitReason", "enum"),
     "MarketSession": ("finer.schemas.trade_action", "MarketSession", "enum"),
     "InstrumentType": ("finer.schemas.trade_action", "INSTRUMENT_TYPE_LITERAL", "literal"),
+    "SignalClass": ("finer.schemas.trade_action", "SIGNAL_CLASS_LITERAL", "literal"),
     # F3 NormalizedInvestmentIntent literals (investment_intent.py)
     "IntentTargetType": ("finer.schemas.investment_intent", "TARGET_TYPE_LITERAL", "literal"),
     "IntentTimeHorizon": ("finer.schemas.investment_intent", "TIME_HORIZON_LITERAL", "literal"),

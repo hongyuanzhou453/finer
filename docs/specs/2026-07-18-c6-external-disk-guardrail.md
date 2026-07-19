@@ -17,7 +17,7 @@
 | `src/finer/pipeline/driver.py` | 修改（C6 挂载检查） | DriveReport 加 `skipped_unmounted`；每轮开头查一次 broker 卷(仅当 channel 含 broker)；broker 项缺 F1 envelope 且卷未挂载→跳过计数，不走 f1_run（**不改 stage 执行逻辑，只加前置 guard**）；已有 envelope 的 broker 项照走 F2/F5 |
 | `src/finer/cli.py` | 修改 | `_ledger_and_alert_drive`：`skipped_unmounted>0` 时发 `broker_mount_alert`（复用 C5 send_alert） |
 | `src/finer/ops/ledger.py` | 修改 | drive ledger stats 加 `skipped_unmounted` |
-| `src/finer/ingestion/broker_research_intake.py` | 修改 | CLI `main()` 前置 guard：卷未挂载→发 alert + 打印 skip + `return 0`（**在 meta-exists 硬错之前**，meta 在盘上也优雅降级）。**只改 CLI，`run_intake` 库函数不变**（测试直调 run_intake 不受影响） |
+| `src/finer/ingestion/broker_research_intake.py` | 修改 | CLI `main()` guard：**meta 不可达 且 卷未挂载**时→发 alert + skip + `return 0`（真「外置盘拔出」场景）；meta 可达（卷在/本地 meta）照常，meta 缺失但卷在仍是硬错（typo）。C7 精化：不再无条件查卷（避免 tmp meta + 盘掉线时误跳）。**只改 CLI，`run_intake` 库函数不变** |
 | `scripts/prune_backups.py` | 新增 | 两族备份(`F5_executed.bak-*` 目录 / `finer.project.sqlite3.bak-*` 文件)；保留最近 `--keep`(默认3)个时间戳备份、**保护命名安全快照**(非 `YYYYMMDD-HHMMSS` 后缀，如 `-prebroker`/`-pre-*-cleanup`)、wal/shm 随基文件同删；dry-run 默认 |
 | `tests/test_c6_disk_guardrail.py` | 新增 | 11 例：mount_health、prune plan/delete/scan/CLI(dry+execute)、intake guard、CLI mount alert |
 | `tests/test_pipeline_driver.py` | 修改 | +3 例：卷未挂载 broker F1 skip、已有 envelope 照走 F2、卷可用照跑 |

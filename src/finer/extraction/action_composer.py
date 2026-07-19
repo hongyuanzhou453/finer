@@ -77,6 +77,18 @@ class MissingExecutionTimingError(CanonicalBuildError):
 # =============================================================================
 
 
+def derive_signal_class(intent: NormalizedInvestmentIntent) -> str:
+    """Classify an action by signal kind from the intent's actionability.
+
+    ``actionability == "recommendation"`` is the canonical marker for a
+    declarative institutional rating (broker research) — see
+    ``policy/global_base.py`` recommendation branch. Everything else is a KOL's
+    own trading statement. This structured derivation replaces re-parsing the
+    free-text institutional marker out of policy risk_notes (C7).
+    """
+    return "broker_recommendation" if intent.actionability == "recommendation" else "kol_statement"
+
+
 def build_action_metadata(
     intent: NormalizedInvestmentIntent,
     policy_mapped_intent: PolicyMappedIntent,
@@ -94,6 +106,9 @@ def build_action_metadata(
         "action_hint_original": policy_mapped_intent.action_hint,
         "position_sizing_hint": policy_mapped_intent.position_sizing_hint,
         "holding_period_hint": policy_mapped_intent.holding_period_hint,
+        # Carry the signal classification into metadata too, so audit tools that
+        # read metadata (not just the top-level field) see the institutional marker.
+        "signal_class": derive_signal_class(intent),
     }
     if policy_mapped_intent.stop_loss_pct_hint is not None:
         metadata["stop_loss_pct"] = policy_mapped_intent.stop_loss_pct_hint
@@ -183,6 +198,7 @@ def compose_trade_action(
     kwargs: Dict[str, Any] = {
         "intent_id": intent.intent_id,
         "policy_id": policy_mapped_intent.policy_id,
+        "signal_class": derive_signal_class(intent),
         "evidence_span_ids": list(evidence_span_ids),
         "effective_trade_at": effective_trade_at,
         "execution_timing": execution_timing,

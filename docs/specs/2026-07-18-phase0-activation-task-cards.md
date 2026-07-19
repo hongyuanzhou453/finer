@@ -138,6 +138,9 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 - **做法**：①`scripts/drive_broker_recommendations.py` 把 `PolicyMappingResult` 落盘 `data/F4_policy_mapped/{policy_id}.json`（对齐 `services/audit_assembler.py` 的读取约定）；②`extraction/action_composer.py::build_action_metadata` 搬运 risk_notes 中的机构建议标记（**不破坏单一构造点与四要素断言**）；③存量 19 条 bri action 补写 F4 artifact + signal_class 回填（备份 `data/F5_executed` 先行；bri_ 前缀文件不会被 regen 覆盖）。
 - **owning**: `scripts/drive_broker_recommendations.py`、`src/finer/extraction/action_composer.py`、TradeAction schema 文件、`src/finer_dashboard/src/lib/contracts.ts`、测试；**禁改**: `trade_action_extractor.py`（legacy 隔离带）
 - **验收**：任取一条 bri action，`/audit` bundle 三段（intent/policy/action）全非空；`ls data/F4_policy_mapped/ | grep bri | wc -l` ≥ 19；drift guard 绿（`.venv/bin/python scripts/check_contract_drift.py`）；pytest + `npm run build` + `tsc --noEmit` 绿。
+- 🟡 **2026-07-18 前向代码完成，存量回填待用户决策**（详见 `docs/specs/2026-07-18-c7-signal-class-f4-persistence.md`；code 已推 main）：`TradeAction.signal_class`（`SIGNAL_CLASS_LITERAL` 单一真相源 + contracts.ts `SignalClass` + drift REGISTRY 登记，26 enums 绿）；`action_composer.derive_signal_class`（从 `intent.actionability=="recommendation"` 派生，单一构造点设 top-level + metadata，四要素断言不破坏）；`drive_broker_recommendations.py --execute` 落盘 F4 `PolicyMappingResult`。顺带修 C6 test-hygiene（driver 测试独立于外置盘挂载态）+ intake guard 精化（meta 不可达且卷未挂载才跳）。验证：drift 绿 / tsc CLEAN / npm build 绿 / pytest **3686 passed**。
+  - ⚠️ **现状严重偏离卡假设**：卡写「19 条 bri action」，**live 实为 1,773 条**（scorecard 会话放量产出），全部 0 F4 artifact + 0 signal_class；driver 幂等跳过不再生。验收 `grep bri` 口径失效（F4 按 UUID policy_id 命名）。
+  - ⛔ **存量 1,773 回填未执行**：批量变更 scorecard 会话产物 + 其 1,099 结算结果引用这些 id，规模 88× 于卡假设，按 AGENTS.md 须用户确认；且与 C9 重驱动的 id 语义相关，**回填方式需与 C9 一并定**（见 spec §5）。
 
 ### C8 · AUD-3 三向引用完整性审计（只读，进 CI）
 

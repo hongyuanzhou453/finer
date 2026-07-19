@@ -1644,6 +1644,10 @@ export type InstrumentType =
   | "crypto"
   | "unspecified";
 
+/** What kind of signal a TradeAction encodes (mirrors
+ *  schemas/trade_action.py:SIGNAL_CLASS_LITERAL; guarded by check_contract_drift). */
+export type SignalClass = "kol_statement" | "broker_recommendation";
+
 export type SourceInfo = {
   creator_id?: string;
   content_id: string;
@@ -1710,6 +1714,7 @@ export type TradeAction = {
   action_chain: ActionStep[];
   intent_id?: string;
   policy_id?: string;
+  signal_class?: SignalClass;
   evidence_span_ids: string[];
   effective_trade_at?: string;
   canonical_trace_status: CanonicalTraceStatus;

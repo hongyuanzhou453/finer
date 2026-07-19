@@ -48,6 +48,7 @@ from finer.schemas.policy import PolicyContext  # noqa: E402
 DATA_ROOT = REPO_ROOT / "data"
 F3_DIR = DATA_ROOT / "F3_intents"
 F2_DIR = DATA_ROOT / "F2_anchored"
+F4_DIR = DATA_ROOT / "F4_policy_mapped"
 F5_DIR = DATA_ROOT / "F5_executed"
 
 
@@ -197,10 +198,12 @@ async def drive(execute: bool) -> None:
     trace_status_dist: Counter = Counter()
     rejected_reasons: Counter = Counter()
     written_files: List[str] = []
+    f4_written = 0
     indexed = 0
     total_actions = 0
 
     F5_DIR.mkdir(parents=True, exist_ok=True)
+    F4_DIR.mkdir(parents=True, exist_ok=True)
 
     for eid, group in sorted(per_env.items()):
         env_path, env = envs[eid]
@@ -210,6 +213,14 @@ async def drive(execute: bool) -> None:
         batch = mapper.map_batch(group)
         for m in batch.mappings:
             action_hint_dist[m.action_hint] += 1
+
+        # C7: persist each F4 PolicyMappingResult so /audit can resolve the
+        # policy segment (audit_assembler reads F4_policy_mapped/{policy_id}.json).
+        for pmr in batch.mappings:
+            f4_path = F4_DIR / f"{pmr.policy_id}.json"
+            with open(f4_path, "w", encoding="utf-8") as f:
+                json.dump(pmr.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
+            f4_written += 1
 
         # F5 — canonical entry
         result = await run_canonical_from_artifacts(
@@ -265,6 +276,7 @@ async def drive(execute: bool) -> None:
     print(f"files written: {len(written_files)}")
     for p in written_files:
         print(f"  {p}")
+    print(f"F4 PolicyMappingResults persisted: {f4_written}")
     print(f"indexed actions: {indexed}")
 
 

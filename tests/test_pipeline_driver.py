@@ -162,6 +162,18 @@ def _stage_rows(db_path: Path, content_id: str) -> dict[str, str]:
     return {r["stage"]: r["status"] for r in rows}
 
 
+@pytest.fixture(autouse=True)
+def _broker_volume_mounted(monkeypatch):
+    """Default every driver test to a MOUNTED broker volume.
+
+    The C6 guard skips broker F1 when the external volume is unmounted; without
+    this, channel/stage tests that drive broker items would flake depending on
+    whether /Volumes/NAMEZY happens to be mounted on the test machine. The C6
+    mount tests override this explicitly.
+    """
+    monkeypatch.setattr("finer.ops.mount_health.broker_volume_available", lambda: True)
+
+
 # =============================================================================
 # Tests
 # =============================================================================
@@ -682,7 +694,7 @@ def test_settle_gated_by_stage_whitelist(data_root, pm_db, monkeypatch):
 
 def test_broker_f1_skipped_when_volume_unmounted(data_root, pm_db, monkeypatch, tmp_path):
     """Unmounted broker volume → broker F1 skipped (counted), other channels flow."""
-    monkeypatch.setenv("FINER_BROKER_SOURCE_VOLUME", str(tmp_path / "not-mounted"))
+    monkeypatch.setattr("finer.ops.mount_health.broker_volume_available", lambda: False)
     _register_content(pm_db, data_root, "brk-1", source_platform="broker", source_channel="broker")
     _register_content(pm_db, data_root, "loc-1", source_platform="local", source_channel="local")
     rec = StageRecorder(data_root)
@@ -696,7 +708,7 @@ def test_broker_f1_skipped_when_volume_unmounted(data_root, pm_db, monkeypatch, 
 
 def test_broker_with_envelope_proceeds_when_volume_unmounted(data_root, pm_db, monkeypatch, tmp_path):
     """A broker item that already has F1 needs no volume → F2 still runs."""
-    monkeypatch.setenv("FINER_BROKER_SOURCE_VOLUME", str(tmp_path / "not-mounted"))
+    monkeypatch.setattr("finer.ops.mount_health.broker_volume_available", lambda: False)
     _register_content(pm_db, data_root, "brk-2", source_platform="broker", source_channel="broker")
     _touch_f1(data_root, "brk-2")
     rec = StageRecorder(data_root)
