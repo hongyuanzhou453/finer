@@ -149,6 +149,7 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 - **做法**：`scripts/audit_trace_integrity.py`：遍历全部 F5 action，验证 `intent_id`→F3 文件、`policy_id`→F4 文件、`evidence_span_ids`→F2 span 三向可解引用，输出完整率报告（JSON+人读）；包一个 `tests/test_audit_trace_integrity.py`（对完整率设门槛断言，初始门槛按 C7 完成后的真实值设定，C9 完成后收紧到 100%）。**只读，不修数据**。
 - **owning**: 上述两文件；**禁改**: 一切数据与业务代码
 - **验收**：脚本对当前数据出报告并列出每一条断链的 action_id 与断链类型；pytest 绿。
+- ✅ **2026-07-18 完成**（详见 `docs/specs/2026-07-18-c8-trace-integrity-audit.md`；已推 main）：`scripts/audit_trace_integrity.py`（只读遍历 1,899 F5 action，验 `intent_id→F3 / policy_id→F4 / evidence→F2` 三向可解引用，6 型断链分类，逐条列 action_id + 类型 + missing/total，人读 + JSON 报告）+ `tests/test_audit_trace_integrity.py`（tmp fixture 逻辑 4 + 真实数据门槛 1，无数据 skip）。**实测**：intent **100%** / policy **100%**（C7 之功）/ evidence **6.6%**（126/1899；1,773 条 bri `f2_evidence_missing` = C9 缺口）。门槛：intent/policy=100% 硬回归门，evidence=5% 底（C9 后提 1.0）。JSON 报告 `data/run_state/audit_trace_integrity.json`。full suite **3694 passed / 22 skipped**。**只读零数据变更。**
 
 ### C9 · AUD-4 F2 收口 + 全量重锚 + 重驱动（D4-① 已授权）
 
