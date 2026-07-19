@@ -46,11 +46,14 @@
 3. **前向代码与存量回填分离**：代码对 19 或 1,773 一样；回填是对 scorecard 会话 1,773 产物 + 其 1,099 结算结果的批量变更，规模与影响远超卡假设，**必须用户拍板**（见 §5 决策项）。
 4. **test 独立于外置盘挂载态**：C6 挂载 guard 让「驱动 broker 项」的测试隐性依赖 `/Volumes/NAMEZY` 是否挂载（本会话中途该盘掉线，直接暴露此隐患）。autouse fixture 默认「已挂载」，使全套测试确定性 —— 这是 C6 该带的 test-hygiene，C7 顺手补上。
 
-## 5. 存量 1,773 条回填 —— 待用户决策（未执行）
+## 5. 存量 1,773 条回填 —— 方案 A 已执行（用户拍板）
 
-driver 幂等跳过存量，故回填需专用路径：①给 1,773 条 F5 action 补 `signal_class="broker_recommendation"`（全部 actionability=recommendation）；②按每条 action 已有的 `policy_id` 重建 `PolicyMappingResult` 落盘 F4（PolicyMapper 重跑会生成**新** UUID，故须强制沿用 action 存量 policy_id）。
+用户选方案 A（就地回填、沿用现有 id），dry-run 过目后执行。`scripts/backfill_bri_signal_class_f4.py`（dry-run 默认，`--execute` 先备份）：
 
-风险点：变更的是 scorecard 会话的 1,773 产物，其 1,099 条已结算结果引用这些 action_id/policy_id。与 **C9**（F2 重锚 + 重驱动）存在关系 —— 若 C9 重驱动会以**新** id 再生这批，则本回填被覆盖且旧 id 的结算结果被孤立。**故回填方式需与 C9 计划一并定**。备份 `data/F5_executed` 先行是硬前提。
+- ①给 1,773 条 F5 action 补 `signal_class="broker_recommendation"`（全部 actionability=recommendation）；②按每条 action 已有 `policy_id` 重跑 PolicyMapper（1:1、确定性、无 LLM）重建 `PolicyMappingResult`，**强制沿用 action 存量 policy_id** 落盘 F4。
+- **执行结果**：备份 `data/F5_executed.bak-20260719-034713-bri-backfill-674d69ce`（named/protected 快照）；1,773 signal_class_set + 1,773 f4_written，**0 intent_missing / 0 failed**；F4 覆盖 **1773/1773=100%**；抽验一条 bri action `/audit` `get_trace_bundle` 的 intent/policy/trade_action 三段全非空、action.policy_id == F4 文件 policy_id。
+- **id 保真**：`trade_action_id`/`policy_id`/`intent_id` 全部保留 → scorecard 的 1,099 条结算结果不孤立。幂等（re-run 无写）、可逆（备份在）。
+- **与 C9 的关系**：本回填保住了现有 id；若 C9 重驱动选择以新 id 再生，需显式决定是否覆盖本批（届时旧 id 结算结果的迁移策略另议）。当前 C9 未动，本批为现役。
 
 ## 6. 验证结果（Verification，前向代码）
 
@@ -61,6 +64,7 @@ driver 幂等跳过存量，故回填需专用路径：①给 1,773 条 F5 actio
 
 ## 7. 未解决项（Open Issues）
 
-- **存量 1,773 回填未执行**（§5）—— 待用户决策回填方式（与 C9 关系）+ 备份后执行。
-- **验收口径修正**：卡的 `grep bri` 不适用（F4 按 UUID policy_id 命名）；正确口径 = bri action 的 policy_id 有对应 F4 文件 + `/audit` 三段非空。
+- ~~存量 1,773 回填未执行~~ **✅ 已执行（方案 A，§5）**——F4 覆盖 100%，/audit 三段解引。
+- **验收口径修正**：卡的 `grep bri` 不适用（F4 按 UUID policy_id 命名）；正确口径 = bri action 的 policy_id 有对应 F4 文件 + `/audit` 三段非空（已达成）。
 - **1,835 no_anchor_match intent**：evidence 缺口，C9 F2 重锚后可出 action —— 不在 C7 范围。
+- **F4 保真依赖 policy 代码未变**：回填重跑 PolicyMapper 假设 policy 代码与原始 compose 时一致（本批 2026-07-19 产出，晚于 C0 merge，成立）。若日后 policy 规则变更再回填，重建的 F4 会反映**新**规则而非原始——届时应以「重驱动」而非「回填」处理。
