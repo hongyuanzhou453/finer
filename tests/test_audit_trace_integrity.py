@@ -18,11 +18,12 @@ import pytest
 import scripts.audit_trace_integrity as ati
 from finer.paths import DATA_ROOT
 
-# Thresholds — set to the post-C7 reality. C9 (F2 re-anchor + re-drive) raises
-# EVIDENCE_MIN to 1.0 once every action's evidence spans resolve.
+# Thresholds. C9 (F2 re-anchor + grounded evidence in place) brought every bri
+# action's evidence spans to resolvable, so all three are now a hard 100% —
+# a drop is a real regression (a new action written without evidence sidecars).
 INTENT_MIN = 1.0
 POLICY_MIN = 1.0
-EVIDENCE_MIN = 0.05  # current ~6.6%; C9 → 1.0
+EVIDENCE_MIN = 1.0  # C9 closed the broker evidence gap (was 6.6% pre-C9)
 
 
 # ---------------------------------------------------------------------------

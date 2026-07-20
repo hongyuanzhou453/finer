@@ -157,6 +157,9 @@ C0 git合流 ─┬─→ C1 broker索引注册 ─┐
 - **做法**：①注册表收口：`enrichment/ticker_normalization.py` 补 `.PA/.FP/.B/NSDQ` 等后缀；裸 EW 撞 MSCI OW/EW/UW 评级术语修复（进 `entity_stoplist` 上下文门）；②**备份 `data/F2_anchored/`（broker 部分）**后对已 F1 的 broker envelope 全量重跑 F2（用 C3 batch_runner）；③重跑 A3 适配器（content-derived intent_id 幂等覆盖写，敢跑）→ 重驱动 F4/F5（`drive_broker_recommendations.py --execute`）；④出 evidence 覆盖率前后对比报告。
 - **owning**: `enrichment/ticker_normalization.py`、`entity_stoplist.py`、`entity_registry_broker.yaml`（再生成）、执行脚本调用；**禁改**: KOL 策展注册表语义（策展优先原则不动）
 - **验收**：bri intent 的 evidence_span_ids 覆盖 10/28 → ≥80%（新批次口径）；C8 审计脚本对 bri action 完整率 100%；假阳性抽检 ≤5%（沿用毒词战役抽检法）；pytest 绿。
+- ✅ **2026-07-20 完成（收 A+C+D，混合方案，用户拍板）**（详见 `docs/specs/2026-07-18-c9-f2-reanchor-redrive.md`；已推 main）：**Phase① 代码**（`e727407c`）ticker 国际后缀 + MSCI 评级词 context-gate。**Phase②③ 执行**：`scripts/c9_evidence_reanchor.py` 备份后重锚 **1,773** existing-action envelope + **grounded** evidence 就地更新（保 trade_action_id/policy_id → 1,099 结算不孤立）→ **63,600 sidecar、0 失败、0 空**。**C8 evidence 6.6%→100%**（1,899/1,899 三向全解引，span 级 64,105/64,105）；假阳性 1.41%（且多为真票 NOW/HE/SE/KEY/EW/MP，实际«5%）；C8 门槛 0.05→1.0。7 条 EW/MP 核对**均真票**(Edwards/MP Materials，有上下文仍锚)，无需隔离。full suite **3716 passed / 22 skipped**。
+  - ⚠️ **打脸修正**：intent 侧估计新增 1,341，真实重锚只 13%→**~238(全 TW/JP)**；国际解锁≈0（锚定不检测国际提及）。**additive(~238)+ 国际解锁转独立 follow-up**（additive 需先补 `drive_broker_recommendations` 的 persist_dir——那是 evidence 全断的根因）。
+  - **备份**：`F5_executed.bak-…-d73b25ff`(C9 前干净) + `…-c19b1971`(全量前)；可逆。entity_registry_broker.yaml 未重生(stoplist/ticker 运行期已生效，不阻塞)。
 
 ### C10 · 金丝雀放量（1,000 份）+ 吞吐/成本校准报告
 

@@ -17,9 +17,11 @@
 
 | 阶段 | 内容 | 安全边界 |
 |------|------|---------|
-| **① ticker/stoplist 修复** | `ticker_normalization` 补 NSDQ + 国际交易所后缀；`entity_stoplist` 把 MSCI OW/EW/UW/MP context-gate | **代码 + 单测，零数据变更**（✅ 已完成） |
-| **② 重锚 dry-run** | 用①的代码对 broker envelope 重锚 dry-run，测真实 delta（实际解锁多少无锚、实际几条现有 target 变、evidence 覆盖预测） | **只读**，出报告给用户过目 |
-| **③ 执行** | 备份 F2_anchored(broker) → 重锚写 evidence sidecar → 现有 1,773 就地更新 evidence(保 id) + 无锚 1,835 纯新增驱动 → 7 条 review | **数据变更**，备份 + dry-run 过目后 |
+| **① ticker/stoplist 修复** | `ticker_normalization` 补 NSDQ + 国际交易所后缀；`entity_stoplist` 把 MSCI OW/EW/UW/MP context-gate | **代码 + 单测，零数据变更**（✅ 已完成 `e727407c`） |
+| **② 重锚 dry-run** | 用①的代码对 broker envelope 重锚 dry-run，测真实 delta | ✅ 已完成（打脸修正：见 §6） |
+| **③ 执行（收 A+C+D，B 转 follow-up）** | 备份 → 重锚 1,773 existing-action envelope + **grounded** evidence 就地更新(保 id) → 7 条评级词核对 → C8 复审+门槛收紧 | ✅ 已完成（数据变更，备份先行、小样本验证过） |
+
+**② dry-run 的打脸修正（重要）**：intent 侧估计新增 1,341 条，但真实重锚后**只 13% 匹配 → ~238 条，且全是 TW/JP**。根因：**entity 锚定不「检测」PDF 正文的国际 ticker 提及**——①的 `normalize_broker_ticker` 只帮 intent 侧 bridge，envelope 侧不产出国际锚点。故国际解锁 ≈0（要 realize 得单独扩锚定检测）。**用户拍板 C9 收在 evidence（A+C+D），additive(~238 TW/JP)+ 国际解锁列独立 follow-up。**
 
 **关键：C9 全程不需要外置盘。** 重锚读 F1 envelope（内置盘）+ broker registry（内置盘），不碰 raw PDF（那是 F1，已完成）。stoplist 在 `broker_entity_registry.py` 加载期以 `is_ambiguous_broker_alias` 并集应用（防御式，defense-in-depth）→ 改 stoplist **无需重生 yaml**（重生 yaml 才需盘上的 reports.db）。
 
@@ -45,8 +47,19 @@
 - 全量：`pytest -q` → **3716 passed, 22 skipped**。
 - 手验：`MC.FP`/`MC.PA`→`MC.PA`(FR)、`BP.L`(UK)、`005930.KS`(KR)、`AAPL.NSDQ`(US)、`600519.L`→None；`is_ambiguous('EW'/'OW'/'UW'/'MP')`=True、`('AAPL')`=False。
 
-## 5. 未解决项 / 下阶段
+## 5. Phase ③ 执行结果（A+C+D）
 
-- **Phase ②③ 未执行**（数据变更，待 dry-run 过目 + 用户 go）。
-- **entity_registry_broker.yaml 未重生**：卡列其为 owning（再生成），但重生需盘上 reports.db（现未挂载）；stoplist 已运行期生效，ticker 后缀亦运行期生效，故 Phase ②③ 不阻塞。若要把新后缀/词表固化进 yaml，待盘挂载后单独重生（非 C9 主线阻塞项）。
-- **国际后缀集可扩**：当前 16 交易所覆盖测得的高频后缀；Phase ② dry-run 会暴露还差哪些，按需补行。
+新增工具 `scripts/c9_evidence_reanchor.py`（dry-run 默认，--execute 先备份 F2_anchored + F5_executed；ThreadPool 并发重锚；per-envelope 文件写不重叠）：
+
+- **A · 就地 evidence 修复**：重锚 1,773 existing-action envelope（`build_f2_deterministic_envelope`，用①的修复）→ 每条 action 的 evidence_span_ids **换成 grounded 子集**（只留提到 target 的 span，替代原「整包 envelope span」的过宽做法，修 C8 质量注记）→ 写 sidecar。**1,773 更新、0 失败、0 空 evidence、63,600 grounded sidecar（35.9/env）**；trade_action_id/policy_id **全保留** → 1,099 结算不孤立。备份 `F5_executed.bak-20260720-131259-c9-reanchor-c19b1971`（C9 前干净 F5 = 更早的 `-d73b25ff` 小样本备份）。
+- **C · 7 条评级词核对**：MP/EW **都是真票**（MP Materials / Edwards Lifesciences）。重锚后 7 条**全部仍锚**（有 ticker 上下文，EW 组共锚 ABT/BSX = 心脏/医疗器械同业 = 真 Edwards）→ **均合法，无需隔离**。stoplist 的价值是防**未来**裸 EW/MP 误匹配 + gate 无上下文者。
+- **D · C8 复审 + 门槛收紧**：`audit_trace_integrity` → **evidence 6.6%→100%**（fully-intact 136→**1,899/1,899**，span-level 64,105/64,105）；假阳性抽检：1,773 条里 25 条(1.41%)target 撞停用词，但 NOW/HE/SE/KEY/IQ/COO/EW/MP 皆真票，实际 FP «5%。C8 测试门槛 `EVIDENCE_MIN` 0.05→**1.0**（硬回归门）。
+
+**C9 验收全达成**：evidence 覆盖 100%（≥80%）/ C8 bri 完整率 100% / 假阳性 ≤5% / pytest 绿。
+
+## 6. 未解决项 / follow-up
+
+- **additive（~238 TW/JP）转独立 follow-up**：需先补 `drive_broker_recommendations` 的 `persist_dir`（现不写 sidecar = 当初 evidence 全断的根因）+ 重锚 no_anchor envelope，否则新 action 无 sidecar 会破 C8 100%。这本身值一张小卡（根治 sidecar 根因 + 出 238 新 action）。
+- **国际解锁 follow-up**：需扩 entity 锚定去**检测** PDF 正文的国际 ticker 提及（我的①后缀正确但 envelope 侧不产出国际锚点）。~1,000 条上行在此。
+- **entity_registry_broker.yaml 未重生**：stoplist/ticker 已运行期生效，不阻塞；固化进 yaml 待外置盘挂载后单独做。
+- **63,600 sidecar 文件量**：grounded 已比整包（~192k）少 3×；仍是大量小文件（data/ gitignore）。
