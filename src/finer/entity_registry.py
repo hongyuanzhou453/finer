@@ -8,7 +8,6 @@ Consolidates:
 
 from __future__ import annotations
 
-import re
 from typing import Dict, Tuple, Optional
 
 # (normalized_ticker, market, entity_type)
@@ -331,11 +330,6 @@ def get_market(name: str) -> Optional[str]:
 
 # ── Tradable-symbol validation (F5 pseudo-ticker gate) ──────────────────────
 
-# Strict ticker shapes: CN/HK numeric-with-suffix, or 1-5 uppercase letters
-# (US tickers, index codes like SOX, crypto codes like BTC). Kept in sync with
-# enrichment.llm_entity_proposal's validator regexes.
-_TRADABLE_SYMBOL_RE = re.compile(r"^\d{4,6}\.(HK|SH|SZ)$|^[A-Z]{1,5}$")
-
 # Registry symbols that denote real instruments. Sector placeholders
 # (储能→ENERGY_STORAGE) are registry values but NOT tradable — they must go
 # through the sector-proxy mapping, never through this set.
@@ -349,8 +343,27 @@ def matches_tradable_format(symbol: Optional[str]) -> bool:
 
     Single truth for the tradable-symbol shape — also used by
     ``enrichment.sector_proxy`` to validate configured proxy instruments.
+
+    A symbol is tradable-shaped iff it is a **fixed point** of
+    ``enrichment.ticker_normalization.normalize_broker_ticker`` — i.e. already in
+    canonical form (``AAPL``, ``600519.SH``, ``0700.HK``, and — since this
+    follow-up — the international shapes ``2330.TW`` / ``9202.T`` / ``BP.L`` /
+    ``MC.PA`` / ``000660.KS``). Deriving the shape from the normalization tables
+    keeps ONE source of truth: adding an exchange row there widens this gate
+    automatically, with no second suffix list to drift. Non-canonical dialects
+    (``AAPL.JP`` Bloomberg, ``7203.SA``), mismatched code+exchange
+    (``600519.L``), sector placeholders, Chinese names and free-form LLM
+    inventions all normalize to ``None`` (or to a *different* canonical symbol,
+    e.g. lowercase ``aapl``→``AAPL``) and are correctly rejected.
+
+    Lazy import avoids an ``enrichment`` package import cycle at module load.
     """
-    return bool(symbol) and bool(_TRADABLE_SYMBOL_RE.match(symbol))
+    if not symbol:
+        return False
+    from finer.enrichment.ticker_normalization import normalize_broker_ticker
+
+    result = normalize_broker_ticker(symbol)
+    return result is not None and result.symbol == symbol
 
 
 def is_plausible_tradable_symbol(symbol: Optional[str]) -> bool:

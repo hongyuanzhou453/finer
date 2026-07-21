@@ -37,11 +37,25 @@ import yaml
 
 from finer.entity_registry import ENTITY_REGISTRY, EntityEntry
 from finer.enrichment.entity_stoplist import is_ambiguous_broker_alias
+from finer.enrichment.ticker_normalization import (
+    INTERNATIONAL_SUFFIX_TABLE,
+    SUFFIX_NORMALIZATION_TABLE,
+)
 from finer.paths import REPO_ROOT
 
 DEFAULT_BROKER_REGISTRY_PATH: Path = REPO_ROOT / "configs" / "entity_registry_broker.yaml"
 
-_VALID_MARKETS = frozenset({"US", "CN", "HK", "TW", "JP"})
+# Markets an entry may declare. Derived from the SAME normalization tables the
+# builder feeds every ``stock_code`` through, so the loader never silently drops
+# an entry the builder legitimately emitted: previously this was a hardcoded
+# ``{US, CN, HK, TW, JP}`` that discarded every international entry (``UK``/``FR``/
+# ``KR``/… from the international suffix table) at load, so ``.L``/``.PA``/``.KS``
+# tickers could never anchor even after a registry rebuild. One source of truth —
+# adding an exchange row to ticker_normalization widens this automatically.
+_VALID_MARKETS = frozenset(
+    {market for _suffix, market in SUFFIX_NORMALIZATION_TABLE.values()}
+    | {market for _suffix, market, _kind in INTERNATIONAL_SUFFIX_TABLE.values()}
+)
 
 
 class _BrokerRegistrySnapshot:

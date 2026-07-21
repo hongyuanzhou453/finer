@@ -191,6 +191,54 @@ class TestNumericContextGate:
             clear_alias_table_cache()
 
 
+class TestLoaderValidMarkets:
+    """The loader must honor every market the builder can emit — the union of the
+    ticker_normalization tables — not a hardcoded US/CN/HK/TW/JP set that silently
+    dropped international entries (.L/.PA/.KS) at load."""
+
+    def test_international_market_entry_loads(self, tmp_path, monkeypatch):
+        yaml_path = tmp_path / "broker.yaml"
+        yaml_path.write_text(
+            yaml.safe_dump(
+                {
+                    "entries": {
+                        "SJP.L": {"symbol": "SJP.L", "market": "UK"},
+                        "St. James's Place": {"symbol": "SJP.L", "market": "UK"},
+                        "000660.KS": {"symbol": "000660.KS", "market": "KR"},
+                        # An unknown market must still be rejected.
+                        "BOGUS": {"symbol": "BOGUS", "market": "XX"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(breg, "DEFAULT_BROKER_REGISTRY_PATH", yaml_path)
+        breg.clear_cache()
+        try:
+            entries = breg.load_broker_entries()
+            assert entries.get("SJP.L") == ("SJP.L", "UK", "ticker")
+            assert entries.get("St. James's Place") == ("SJP.L", "UK", "ticker")
+            assert entries.get("000660.KS") == ("000660.KS", "KR", "ticker")
+            assert "BOGUS" not in entries  # market not in any normalization table
+        finally:
+            breg.clear_cache()
+
+    def test_valid_markets_derives_from_normalization_tables(self):
+        # Single source of truth: no drift between the loader's accepted markets
+        # and the tables the builder feeds every code through.
+        from finer.enrichment.ticker_normalization import (
+            INTERNATIONAL_SUFFIX_TABLE,
+            SUFFIX_NORMALIZATION_TABLE,
+        )
+
+        expected = {m for _s, m in SUFFIX_NORMALIZATION_TABLE.values()} | {
+            m for _s, m, _k in INTERNATIONAL_SUFFIX_TABLE.values()
+        }
+        assert breg._VALID_MARKETS == expected
+        # the previously-dropped international markets are now honored
+        assert {"UK", "FR", "KR"} <= breg._VALID_MARKETS
+
+
 # ── 2b. ambiguous bare-alias context gate ────────────────────────────────────
 
 
@@ -582,7 +630,9 @@ class TestIdempotence:
             assert alias not in ENTITY_REGISTRY
         for alias, (symbol, market, etype) in loaded.items():
             assert etype == "ticker"
-            assert market in {"US", "CN", "HK", "TW", "JP"}
+            # Every entry declares a market the normalization tables can produce
+            # (domestic + international after the C9 international-anchor unlock).
+            assert market in breg._VALID_MARKETS
         # The 8 confirmed acceptance-run poison words must be context-gated
         # if present in the committed registry.
         gated = breg.load_context_required_aliases(path)
