@@ -218,7 +218,12 @@ async def drive(execute: bool) -> None:
     # Lazy import so dry-run never touches SQLite
     from finer.services.repository import TradeActionRepository
 
-    repo = TradeActionRepository()
+    # Bind the index + action dir to the selected data root (so --data-root runs
+    # from a worktree still index into the canonical data root, not the worktree).
+    repo = TradeActionRepository(
+        db_path=DATA_ROOT / "cache" / "trade_actions.db",
+        action_dir=F5_DIR,
+    )
     action_hint_dist: Counter = Counter()
     trace_status_dist: Counter = Counter()
     rejected_reasons: Counter = Counter()
@@ -247,7 +252,10 @@ async def drive(execute: bool) -> None:
                 json.dump(pmr.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
             f4_written += 1
 
-        # F5 — canonical entry
+        # F5 — canonical entry. persist_dir makes the runner write the F2
+        # evidence sidecars each emitted action references (the root-cause fix:
+        # this driver previously wrote F5 + F4 but never the evidence sidecars,
+        # so broker evidence resolvability collapsed to 6.6% — C8).
         result = await run_canonical_from_artifacts(
             intents=group,
             policy_batch=batch,
@@ -255,6 +263,7 @@ async def drive(execute: bool) -> None:
             envelope=env,
             temporal_anchors=env.temporal_anchors,
             strategy="programmatic",
+            persist_dir=DATA_ROOT,
         )
 
         for r in result.rejected_intents:
@@ -311,7 +320,23 @@ def main() -> None:
         "--execute", action="store_true",
         help="Run F4/F5 and write outputs (default: dry-run plan only)",
     )
+    parser.add_argument(
+        "--data-root", type=Path, default=None,
+        help="Data root to read/write F2/F3/F4/F5 (default: <repo>/data). Point "
+             "at the canonical data root when running this script from a git "
+             "worktree, whose own data/ is gitignored and absent.",
+    )
     args = parser.parse_args()
+
+    if args.data_root is not None:
+        global DATA_ROOT, F3_DIR, F2_DIR, F4_DIR, F5_DIR
+        DATA_ROOT = args.data_root.resolve()
+        F3_DIR = DATA_ROOT / "F3_intents"
+        F2_DIR = DATA_ROOT / "F2_anchored"
+        F4_DIR = DATA_ROOT / "F4_policy_mapped"
+        F5_DIR = DATA_ROOT / "F5_executed"
+
+    print(f"data root: {DATA_ROOT}")
     asyncio.run(drive(execute=args.execute))
 
 

@@ -169,6 +169,7 @@ async def run_canonical_from_artifacts(
     temporal_anchors: Optional[List[Any]] = None,
     strategy: str = "programmatic",
     extractor_version: Optional[str] = None,
+    persist_dir: Optional[Path] = None,
 ) -> CanonicalRunnerResult:
     """Canonical F3 → F4 → F5 pipeline consuming upstream artifacts.
 
@@ -182,6 +183,17 @@ async def run_canonical_from_artifacts(
         envelope: F1 ContentEnvelope (provides published_at, creator_id, etc.).
         temporal_anchors: F2 TemporalAnchor list (optional, for timing resolution).
         strategy: F5 construction strategy — "programmatic" or "llm_guided".
+        persist_dir: When set, the F2 evidence spans **referenced by the emitted
+            actions** are written as per-id sidecars under
+            ``persist_dir/F2_evidence/{evidence_span_id}.json`` so the three-way
+            trace audit (``scripts/audit_trace_integrity.py``) and the /audit
+            Evidence panel resolve. This closes the root cause of the broker
+            evidence gap: artifact-path callers previously wrote F5 + F4 but never
+            the evidence sidecars. Grounded-only — the ids come from each action's
+            already-grounded ``evidence_span_ids`` (symbol-first F2 resolution),
+            not the whole envelope's span set. None (default) skips persistence.
+            F3 intents and F4 mappings are upstream inputs the caller owns and are
+            NOT written here.
 
     Returns:
         CanonicalRunnerResult with trade_actions and rejected_intents.
@@ -232,6 +244,19 @@ async def run_canonical_from_artifacts(
     result.total_intents = len(intents)
     result.total_policy_mappings = len(policy_batch.mapped_intents)
     result.strategy = strategy
+
+    # Persist the F2 evidence sidecars the emitted actions reference. Without
+    # this, an artifact-path driver writes F5 (+ F4) but leaves every action's
+    # evidence_span_ids dangling — the exact gap that dropped broker evidence
+    # resolvability to 6.6% (C8). ``action.evidence_span_ids`` are already the
+    # grounded subset (symbol-first F2 resolution), so this writes only spans
+    # that actually ground an action, not the whole envelope.
+    if persist_dir is not None and result.trade_actions:
+        used_ids = {
+            eid for action in result.trade_actions for eid in action.evidence_span_ids
+        }
+        used_spans = [f2_span_by_id[eid] for eid in used_ids if eid in f2_span_by_id]
+        _persist_evidence_sidecars(used_spans, persist_dir)
 
     logger.info(
         "Canonical extraction complete: %d intents → %d policy mappings → "
@@ -1441,6 +1466,30 @@ def _build_action_rationale(
     first = (evidence_text or "").split(" | ")[0]
     snippet = " ".join(first.split())[:160]
     return f"{decision}｜依据：{snippet}" if snippet else decision
+
+
+def _persist_evidence_sidecars(
+    evidence_spans: List[EvidenceSpan],
+    persist_dir: Path,
+) -> None:
+    """Write F2 evidence spans as per-id sidecars under ``persist_dir/F2_evidence``.
+
+    The three-way trace audit resolves each action's ``evidence_span_ids`` to
+    ``{persist_dir}/F2_evidence/{evidence_span_id}.json``; the artifact-path
+    driver produced actions without ever writing these, so their evidence leg was
+    unresolvable. Idempotent (deterministic F2 span ids → same filenames /
+    content on re-run). Failures degrade to a warning rather than aborting the
+    run — the actions are already built and returned.
+    """
+    evidence_dir = Path(persist_dir) / "F2_evidence"
+    try:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        for span in evidence_spans:
+            (evidence_dir / f"{span.evidence_span_id}.json").write_text(
+                span.model_dump_json(indent=2), encoding="utf-8"
+            )
+    except OSError as exc:
+        logger.warning("Failed to persist F2 evidence sidecars to %s: %s", persist_dir, exc)
 
 
 def _persist_canonical_artifacts(
