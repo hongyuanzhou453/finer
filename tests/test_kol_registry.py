@@ -30,6 +30,21 @@ class TestRealRepoRoot:
         assert profile.trading_style is not None
         assert profile.trading_style.entry_style == "right_side"
 
+    def test_loads_c6_broker_backfill_profiles(self):
+        """C6 backfill：19 家券商 creator YAML 必须全部可加载（文件名 stem = creator_id 真值）。"""
+        stems = [
+            "BMO", "德银", "野村", "Cantor Fitzgerald", "汇丰", "美银", "巴克莱",
+            "Piper Sandler", "里昂", "Evercore ISI", "富国银行", "Truist",
+            "KeyBanc", "Citizens", "奥本海默", "CMB International", "TD Cowen",
+            "Stifel", "Wolfe Research",
+        ]
+        reg = get_registry()
+        for stem in stems:
+            profile = reg.get(stem)
+            assert profile is not None, f"missing broker profile: {stem}"
+            assert reg.display_name(stem), f"empty display_name for: {stem}"
+            assert "broker" in profile.platforms, f"missing broker platform: {stem}"
+
 
 class TestLoading:
     def test_list_and_get(self, tmp_path):
