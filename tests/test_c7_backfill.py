@@ -12,7 +12,9 @@ from pathlib import Path
 
 import pytest
 
-import scripts.backfill_bri_signal_class_f4 as bf
+# C5: the one-off backfill is retired to scripts/archive/ (run complete, kept
+# for provenance); the tests stay as executable documentation of its contract.
+import scripts.archive.backfill_bri_signal_class_f4 as bf
 from finer.schemas.investment_intent import NormalizedInvestmentIntent
 
 
