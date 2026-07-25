@@ -215,9 +215,10 @@ def test_ticker_slash_split_falls_back_to_first_segment():
     ("MC.PA", "FR"),
     ("RIO.AX", "AU"),
     ("005930.KS", "KR"),
+    # Post international-unlock merge .OL resolves canonically (Oslo).
+    ("EQNR.OL", "NO"),
     # Not confidently mappable → honest None, never a fabricated "US".
-    # (.OL / Oslo has no canonical suffix row yet — enrichment-owned table.)
-    ("EQNR.OL", None),
+    ("EQNR.QQ", None),
     ("UNKNOWNLONG", None),
     (None, None),
 ])
@@ -258,8 +259,10 @@ def test_target_price_passthrough_when_currency_declared():
     ("MC.PA", "EUR"),
     ("RIO.AX", "AUD"),
     ("005930.KS", "KRW"),
+    # Post international-unlock merge .OL resolves to Oslo → NOK.
+    ("EQNR.OL", "NOK"),
     # Unknown market keeps the documented USD default
-    ("EQNR.OL", "USD"),
+    ("EQNR.QQ", "USD"),
 ])
 def test_currency_inference_from_suffix(symbol, currency):
     assert infer_currency(symbol) == currency

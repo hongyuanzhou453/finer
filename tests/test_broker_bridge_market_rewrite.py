@@ -115,16 +115,28 @@ def test_l3_rewrites_market_from_normalizable_anchor() -> None:
     assert intent.market == "JP"
 
 
-def test_l3_keeps_market_when_anchor_not_normalizable() -> None:
-    """EQNR ↔ EQNR.OL: .OL has no canonical suffix row → market unchanged.
+def test_l3_adopts_market_when_anchor_normalizes() -> None:
+    """EQNR ↔ EQNR.OL: post international-unlock merge .OL is canonical (NO).
 
-    normalize_broker_ticker returns None for the anchor form, so the bridge
-    must not fabricate a market — the stale value stays as-is.
+    The L3 bridge normalizes the matched anchor and adopts its market — the
+    stale F3-era "US" must be corrected, not preserved.
     """
     intent = make_intent("EQNR", market="US")
     matched = driver.bridge_target_symbol(intent, make_env("EQNR.OL"))
     assert matched == "EQNR.OL"
     assert intent.target_symbol == "EQNR.OL"
+    assert intent.market == "NO"
+
+
+def test_l3_keeps_market_when_anchor_not_normalizable() -> None:
+    """EQNR ↔ EQNR.QQ: unknown suffix → normalize returns None → market unchanged.
+
+    The bridge must not fabricate a market — the stale value stays as-is.
+    """
+    intent = make_intent("EQNR", market="US")
+    matched = driver.bridge_target_symbol(intent, make_env("EQNR.QQ"))
+    assert matched == "EQNR.QQ"
+    assert intent.target_symbol == "EQNR.QQ"
     assert intent.market == "US"  # untouched, honest no-op
 
 

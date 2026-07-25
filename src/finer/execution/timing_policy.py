@@ -183,6 +183,12 @@ MARKET_SESSIONS: Dict[str, MarketConfig] = {
         _mk("NL", "Europe/Amsterdam",  # Euronext Amsterdam
             [(dt_time(9, 0), dt_time(17, 30))],
             dt_time(7, 15)),
+        _mk("BE", "Europe/Brussels",  # Euronext Brussels (.BR Reuters / .BB Bloomberg)
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(7, 15)),
+        _mk("PL", "Europe/Warsaw",  # GPW Warsaw (.WA)
+            [(dt_time(9, 0), dt_time(17, 0))],
+            dt_time(8, 30)),
         _mk("DE", "Europe/Berlin",  # XETRA
             [(dt_time(9, 0), dt_time(17, 30))],
             dt_time(8, 0)),
