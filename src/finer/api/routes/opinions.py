@@ -17,6 +17,7 @@ from finer.paths import DATA_ROOT
 from finer.errors.codes import ErrorCode
 from finer.errors.exceptions import FinerError
 from finer.schemas.trade_action import (
+    SIGNAL_CLASS_LITERAL,
     ActionStep as TradeActionStep,
     TradeAction,
     ValidationStatus,
@@ -77,6 +78,10 @@ class TimelineOpinion(BaseModel):
     market: Optional[str] = None  # target market, e.g. "CN"
     traceStatus: Optional[str] = None  # canonical_trace_status of the F5 action
     instrumentType: Optional[str] = None  # stock/etf/index_future/…/unspecified — lets the UI downgrade non-tradable concepts
+    # kol_statement vs broker_recommendation (schemas SIGNAL_CLASS_LITERAL;
+    # mirrored by contracts.ts SignalClass). Passed through so the frontend can
+    # badge declarative broker ratings; None = legacy/unclassified action.
+    signalClass: Optional[SIGNAL_CLASS_LITERAL] = None
     # Canonical execution clock (execution_timing.action_executable_at) — the
     # real signal time. `timestamp` is the pipeline extraction moment, which
     # collapses a whole batch onto one instant; consumers that need the true
@@ -233,6 +238,12 @@ def trade_action_to_opinion(action: TradeAction) -> TimelineOpinion:
         trace_status.value if hasattr(trace_status, "value") else trace_status
     )
 
+    # Signal-class passthrough (top-level field with metadata fallback); only
+    # the two contract values survive — junk metadata degrades to None (= KOL).
+    signal_class = _signal_class_of(action)
+    if signal_class not in ("kol_statement", "broker_recommendation"):
+        signal_class = None
+
     return TimelineOpinion(
         id=action.trade_action_id,
         timestamp=action.timestamp.isoformat(),
@@ -251,11 +262,58 @@ def trade_action_to_opinion(action: TradeAction) -> TimelineOpinion:
         market=action.target.market,
         traceStatus=trace_status_value,
         instrumentType=action.target.instrument_type,
+        signalClass=signal_class,  # type: ignore[arg-type]
         executableAt=executable_at,
         actionChain=action_chain,
         rlhfStatus=rlhf_status,  # type: ignore[arg-type]
         rlhfRating=rlhf_rating,
     )
+
+
+# ============================================
+# 信号分类（R6 隔离门）
+# ============================================
+
+# data/F5_executed mixes KOL statements ({content_id}_actions.json) with broker
+# declarative recommendations (bri_*_actions.json). Rule R6: derived_lookup-
+# conviction broker recommendations must NOT feed KOL credibility scoring, the
+# settled record, or the leaderboard. Timeline/detail keep them (badged via
+# signalClass). These helpers are the single classification point — O(1) per
+# action, no extra pass over pure-KOL directories.
+
+_BROKER_SIGNAL_CLASS = "broker_recommendation"
+
+
+def _signal_class_of(action: TradeAction) -> Optional[str]:
+    """Signal class of an action: top-level field, metadata fallback.
+
+    None on legacy KOL actions written before the field existed — None means
+    KOL, never broker.
+    """
+    sc = getattr(action, "signal_class", None)
+    if sc is None:
+        metadata = action.metadata or {}
+        sc = metadata.get("signal_class")
+    return sc
+
+
+def _is_broker_signal(action: TradeAction) -> bool:
+    """True when the action is a declarative broker recommendation."""
+    return _signal_class_of(action) == _BROKER_SIGNAL_CLASS
+
+
+def _is_superseded(action: TradeAction) -> bool:
+    """True when a dedup pass marked this action as a duplicate.
+
+    Superseded duplicates stay visible in timeline/detail, but must never be
+    double-counted in stats/credibility/leaderboard aggregation.
+    """
+    return bool((action.metadata or {}).get("superseded_by"))
+
+
+def _is_credibility_scoreable(action: TradeAction) -> bool:
+    """R6 gate: may this action feed KOL stats/credibility/leaderboard?"""
+    return not _is_broker_signal(action) and not _is_superseded(action)
 
 
 # ============================================
@@ -432,12 +490,19 @@ def _credibility_score(settled: int, wins: int) -> int:
 
 
 def _attributed_actions() -> List[TradeAction]:
-    """All actions with a real KOL attribution."""
+    """All credibility-scoreable actions with a real KOL attribution.
+
+    This is the universe for /changes (snapshots, flip/stop-loss events) and
+    the credibility map — broker recommendations and superseded duplicates are
+    excluded here (R6): a broker rating must not open a KOL stance, flip one,
+    or move a credibility score.
+    """
     return [
         a
         for a in _load_all_actions()
         if a.source.creator_id
         and a.source.creator_id.strip().lower() not in ("unknown", "none", "")
+        and _is_credibility_scoreable(a)
     ]
 
 
@@ -467,13 +532,25 @@ def _kol_settled_record(
     """
     from finer.timeline.stance_episodes import build_stance_episodes
 
+    # R6 gate at the single settled-record source: broker recommendations and
+    # superseded duplicates never enter the record — not as scored episodes,
+    # not as zero-record leaderboard entries, and not as episode anchors in
+    # the universe (a superseded duplicate must not steal an anchor from the
+    # surviving copy).
+    actions = [a for a in actions if _is_credibility_scoreable(a)]
+    universe_actions = (
+        [a for a in universe if _is_credibility_scoreable(a)]
+        if universe is not None
+        else actions
+    )
+
     record: Dict[str, list[int]] = {}
     for a in actions:  # every attributed KOL appears, even with nothing settled
         k = (a.source.creator_id or "").strip()
         if k and k.lower() not in ("unknown", "none"):
             record.setdefault(k, [0, 0])
     in_scope = {a.trade_action_id for a in actions}
-    for ep in build_stance_episodes(universe if universe is not None else actions):
+    for ep in build_stance_episodes(universe_actions):
         if ep.anchor.trade_action_id not in in_scope:
             continue
         bt = ep.backtest_result  # the FIRST statement's outcome
@@ -566,12 +643,17 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
     }
     start_time = now - time_range_map.get(time_range, timedelta(days=30))
 
-    # Filter by time range and ticker
+    # Filter by time range and ticker. Superseded duplicates (dedup markers in
+    # metadata.superseded_by) are dropped from ALL stats aggregation here —
+    # they'd double-count the surviving copy. They stay visible in
+    # timeline/detail only.
     filtered: List[TradeAction] = []
     for action in all_actions:
         if action.timestamp < start_time:
             continue
         if ticker and (action.target.ticker_normalized or action.target.ticker).upper() != ticker.upper():
+            continue
+        if _is_superseded(action):
             continue
         filtered.append(action)
 
@@ -638,9 +720,15 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
         # episodes, so restatements of one standing view count as one call.
         # Key exactly like _kol_settled_record (stripped, unknown/none dropped)
         # or a padded/pseudo creator occupies a topKols slot with a zeroed
-        # record and a fabricated neutral-prior credibility.
+        # record and a fabricated neutral-prior credibility. Broker
+        # recommendations are excluded (R6): a broker must never occupy a KOL
+        # leaderboard slot.
         kol = (action.source.creator_id or "").strip()
-        if kol and kol.lower() not in ("unknown", "none"):
+        if (
+            kol
+            and kol.lower() not in ("unknown", "none")
+            and not _is_broker_signal(action)
+        ):
             kol_counts[kol] = kol_counts.get(kol, 0) + 1
 
     avg_confidence = round(sum(confidences) / len(confidences), 2) if confidences else 0.0
