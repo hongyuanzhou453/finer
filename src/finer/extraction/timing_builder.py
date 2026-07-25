@@ -29,13 +29,22 @@ def build_execution_timing(
         temporal_anchors: Temporal anchors from F2. Only ``effective_trade_at``
             populates ``intent_effective_at``; ``mentioned_at`` dates are
             contextual references and are ignored for timing.
-        market: Market code — CN, HK, or US.
+        market: Market code from the shared session table
+            (``execution/timing_policy.py:MARKET_SESSIONS`` — HK/CN/US plus
+            the international set derivable from the F2 ticker suffix
+            tables). An unknown code does NOT silently fall back to a default
+            exchange calendar: it flows through the policy's explicit
+            unknown-market path (``market_session_at_publish == UNKNOWN``,
+            default reaction delay, timezone ``UTC``).
         intent_id: Associated intent ID (for logging; unused in timing logic).
 
     Returns:
         ExecutionTiming with all fields populated.
     """
-    from finer.execution.timing_policy import MarketCalendarTimingPolicy
+    from finer.execution.timing_policy import (
+        MarketCalendarTimingPolicy,
+        get_market_config,
+    )
 
     if envelope.published_at is None:
         raise ValueError(
@@ -47,13 +56,12 @@ def build_execution_timing(
     # Determine intent_effective_at from temporal anchors
     intent_effective_at = _resolve_intent_effective_at(temporal_anchors)
 
-    # Determine timezone from market
-    timezone_map = {
-        "CN": "Asia/Shanghai",
-        "HK": "Asia/Hong_Kong",
-        "US": "America/New_York",
-    }
-    tz = timezone_map.get(market, "Asia/Shanghai")
+    # Timezone from the single shared market table (no fork, no duplicate map).
+    # Unknown market → explicit degradation, mirroring the policy's
+    # _unknown_market_result pattern: a neutral UTC clock plus the UNKNOWN
+    # session marker downstream — NEVER a silent Asia/Shanghai assumption.
+    config = get_market_config(market)
+    tz = config.timezone if config is not None else "UTC"
 
     # Use MarketCalendarTimingPolicy for deterministic timing
     policy = MarketCalendarTimingPolicy()
