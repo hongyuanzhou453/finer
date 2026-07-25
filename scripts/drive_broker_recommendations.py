@@ -113,6 +113,13 @@ def bridge_target_symbol(
          disambiguates. The matched anchor's resolved_symbol is what F2 grounding
          is keyed on, so target_symbol is rewritten to the anchor form.
 
+    B1: a successful tier-2/tier-3 bridge also refreshes ``intent.market``
+    from the bridged symbol — the intent otherwise keeps its stale F3-era
+    market (often a wrong "US"), which would put the action on the wrong
+    trading calendar. When normalization cannot name a market (tier-3 anchor
+    with a suffix outside the canonical tables), the market is left unchanged
+    — no fabrication.
+
     Only mutates the in-memory intent; pipeline code untouched.
     """
     anchor_symbols = [
@@ -129,6 +136,8 @@ def bridge_target_symbol(
     normalized = normalize_broker_ticker(raw) if raw else None
     if normalized and normalized.symbol in anchor_set:
         intent.target_symbol = normalized.symbol
+        if normalized.market is not None:
+            intent.market = normalized.market
         return normalized.symbol
 
     if raw:
@@ -140,6 +149,11 @@ def bridge_target_symbol(
         if len(set(loose_hits)) == 1:
             matched = loose_hits[0]
             intent.target_symbol = matched
+            # The anchor form decides the market too (e.g. EQNR → EQNR.OL is
+            # not a US instrument). None → keep the intent's market as-is.
+            anchor_normalized = normalize_broker_ticker(matched)
+            if anchor_normalized is not None:
+                intent.market = anchor_normalized.market
             return matched
     return None
 
