@@ -29,20 +29,30 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from finer.enrichment.entity_anchoring import build_f2_deterministic_envelope  # noqa: E402
-from finer.enrichment.ticker_normalization import normalize_broker_ticker  # noqa: E402
+from finer.enrichment.ticker_normalization import (  # noqa: E402
+    bridge_symbol_equivalent,
+    normalize_broker_ticker,
+)
 from finer.schemas.content import ContentRecord  # noqa: E402
 
 DATA = REPO_ROOT / "data"
 
 
 def _bridge_matches(target_symbol: Optional[str], anchor_symbols: Set[str]) -> bool:
-    """Mirror drive_broker_recommendations.bridge_target_symbol (no fabrication)."""
+    """Same tiering as enrichment.anchor_bridge.bridge_target_symbol (C1 home),
+    reduced to a boolean over a bare symbol set (this measurement script has no
+    intent object to mutate). The previous hand copy had drifted to 2 of the 3
+    tiers — the loose within-envelope bridge (single-anchor only) is tier 3.
+    """
     if not target_symbol:
         return False
     if target_symbol in anchor_symbols:
         return True
     nt = normalize_broker_ticker(target_symbol)
-    return bool(nt and nt.symbol in anchor_symbols)
+    if nt and nt.symbol in anchor_symbols:
+        return True
+    loose_hits = {s for s in anchor_symbols if bridge_symbol_equivalent(target_symbol, s)}
+    return len(loose_hits) == 1
 
 
 def _load_f0_record(cid: str) -> Optional[ContentRecord]:

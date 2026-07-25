@@ -38,6 +38,7 @@ def make_action(
     ticker: str = "TEST",
     validation_status: ValidationStatus = ValidationStatus.PENDING,
     backtest_result: Optional[BacktestResult] = None,
+    time_horizon: Optional[str] = None,
 ) -> TradeAction:
     return TradeAction(
         trade_action_id=action_id,
@@ -45,6 +46,7 @@ def make_action(
         source=SourceInfo(content_id="c-1", evidence_text="test", creator_id="k1"),
         target=TargetInfo(ticker=ticker, market="CN"),
         direction=direction,
+        time_horizon=time_horizon,
         action_chain=[
             ActionStep(
                 sequence=1,
@@ -202,6 +204,26 @@ def test_no_price_data_skipped_stays_pending(repo):
     assert report.skipped_no_data == 1
     assert report.errors == []
     action = reload(repo, "ta-nodata")
+    assert action.validation_status == ValidationStatus.PENDING
+    assert action.backtest_result is None
+
+
+def test_review_required_horizon_refused_stays_pending(repo):
+    """B2: review_required actions are refused (own counter), never settled.
+
+    They must NOT land in skipped_no_data (that bucket means "retry when
+    prices appear") — a human resolving the horizon is the only unblock.
+    """
+    repo.save(make_action("ta-revreq", time_horizon="review_required"))
+    fetch = fake_fetcher({"TEST": series(D0, [100, 101, 102])})
+
+    report = settle_actions(repo=repo, fetch_closes=fetch, dry_run=False)
+
+    assert report.skipped_review_required == 1
+    assert report.skipped_no_data == 0
+    assert report.verified == 0 and report.failed == 0
+    assert report.errors == []
+    action = reload(repo, "ta-revreq")
     assert action.validation_status == ValidationStatus.PENDING
     assert action.backtest_result is None
 

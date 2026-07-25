@@ -475,6 +475,14 @@ AMBIGUOUS_BARE_UPPER_TOKENS: frozenset[str] = frozenset(
         "EW",
         "UW",
         "MP",
+        # --- ambiguous bare aliases from the C9 international unlock. The
+        #     suffixed forms (ASX.AX, 034730.KS) and full names still anchor;
+        #     the bare tokens must not, because they dominate as non-ticker
+        #     prose: "ASX" = the exchange / "ASX 200" index (false-anchored on
+        #     UK/IN reports), "SK" = SK Group prefix / a common 2-letter token.
+        #     Context-gate — the .AX/.KS twins carry the real mentions. ---
+        "ASX",
+        "SK",
     }
 )
 

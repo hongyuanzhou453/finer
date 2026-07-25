@@ -22,6 +22,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
 from finer.schemas.lineage import DataLineage, VersionInfo
+from finer.schemas.policy import HOLDING_PERIOD_HINT_LITERAL
 
 
 # =============================================================================
@@ -488,7 +489,31 @@ class BacktestResult(BaseModel):
     )
     backtest_period: Optional[str] = Field(
         None,
-        description="Backtest period (e.g., '2023-01-01 to 2023-12-31')"
+        description=(
+            "Backtest period (e.g., '2023-01-01 to 2023-12-31'). Legacy runs "
+            "also carry a '[window=Nd( truncated)?]' suffix — superseded by "
+            "the structured fields below (B4); the suffix stays double-written "
+            "for one compatibility round."
+        )
+    )
+    evaluation_window_days: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Horizon-tiered evaluation window in calendar days used by the "
+            "per-action backtest (short 30 / medium 90 / long 180, possibly "
+            "extended by a policy max_holding_days hint). None = result "
+            "predates the structured field (read the backtest_period suffix)."
+        ),
+    )
+    window_truncated: Optional[bool] = Field(
+        None,
+        description=(
+            "True when the price series ran out before the evaluation window "
+            "completed (END_OF_PERIOD before deadline) — the result under-"
+            "observes the claim's horizon (right-censoring marker). None = "
+            "result predates the structured field."
+        ),
     )
 
 
@@ -782,9 +807,15 @@ class TradeAction(BaseModel):
     # Additional Context
     # =========================================================================
 
-    time_horizon: Optional[str] = Field(
+    time_horizon: Optional[HOLDING_PERIOD_HINT_LITERAL] = Field(
         None,
-        description="Expected holding period (e.g., '1 week', 'long term')"
+        description=(
+            "Expected holding period tier, copied verbatim from the F4 "
+            "holding_period_hint at the composer. 'review_required' means a "
+            "human must resolve the horizon — settlement refuses such actions "
+            "(B2); live census 2026-07-25 confirmed every stored value is "
+            "already in this Literal set."
+        ),
     )
 
     signal_class: Optional[SIGNAL_CLASS_LITERAL] = Field(
@@ -829,6 +860,23 @@ class TradeAction(BaseModel):
     # =========================================================================
     # Validators
     # =========================================================================
+
+    @field_validator('time_horizon', mode='before')
+    @classmethod
+    def normalize_time_horizon(cls, v: Any) -> Optional[str]:
+        """Coerce legacy free-text horizons to None instead of rejecting (B2).
+
+        The canonical producers (composer via F4 holding_period_hint) only emit
+        HOLDING_PERIOD_HINT_LITERAL values — live census 2026-07-25 confirmed
+        the entire store is already canonical. The deprecated direct-extraction
+        path, however, forwards raw LLM strings ('2 weeks', '1 week'); those
+        carry no tier semantics, so they normalize to None (settled as long by
+        resolve_horizon_tier's default) rather than crashing legacy loads.
+        """
+        allowed = {"intraday", "short_term", "medium_term", "long_term", "review_required"}
+        if v is None or v in allowed:
+            return v
+        return None
 
     @field_validator('timestamp', mode='before')
     @classmethod

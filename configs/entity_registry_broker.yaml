@@ -12,6 +12,8 @@
 #   .venv/bin/python scripts/build_broker_entity_registry.py
 #
 # build_stats: {"alias_conflicts_dropped": 72, "aliases_context_gated": 14, "aliases_skipped_kol_priority": 67, "bare_alpha_rejected": 156, "pairs_code_rejected": 831, "pairs_in": 3074, "pairs_kr_guard_rejected": 6}
+# int'l-append: +821 international-market aliases (329 tickers) via scripts/append_international_registry_entries.py (20260721-083733)
+# int'l-append: +291 international-market aliases (113 tickers) via scripts/append_international_registry_entries.py (20260721-112101)
 entries:
   '000001':
     market: CN
@@ -106,6 +108,12 @@ entries:
   000651.SZ:
     market: CN
     symbol: 000651.SZ
+  '000660':
+    market: KR
+    symbol: 000660.KS
+  000660.KS:
+    market: KR
+    symbol: 000660.KS
   '000725':
     market: CN
     symbol: 000725.SZ
@@ -619,18 +627,42 @@ entries:
   003032.SZ:
     market: CN
     symbol: 003032.SZ
+  '003670':
+    market: KR
+    symbol: 003670.KS
+  003670.KS:
+    market: KR
+    symbol: 003670.KS
   0038:
     market: HK
     symbol: 0038.HK
   0038.HK:
     market: HK
     symbol: 0038.HK
+  005930:
+    market: KR
+    symbol: 005930.KS
+  005930.KS:
+    market: KR
+    symbol: 005930.KS
+  '006400':
+    market: KR
+    symbol: 006400.KS
+  006400.KS:
+    market: KR
+    symbol: 006400.KS
   '00700':
     market: HK
     symbol: 00700.HK
   00700.HK:
     market: HK
     symbol: 00700.HK
+  009150:
+    market: KR
+    symbol: 009150.KS
+  009150.KS:
+    market: KR
+    symbol: 009150.KS
   '0100':
     market: HK
     symbol: 0100.HK
@@ -643,12 +675,24 @@ entries:
   0101.HK:
     market: HK
     symbol: 0101.HK
+  '010120':
+    market: KR
+    symbol: 010120.KS
+  010120.KS:
+    market: KR
+    symbol: 010120.KS
   '0123':
     market: HK
     symbol: 0123.HK
   0123.HK:
     market: HK
     symbol: 0123.HK
+  '012450':
+    market: KR
+    symbol: 012450.KS
+  012450.KS:
+    market: KR
+    symbol: 012450.KS
   '01347':
     market: HK
     symbol: 01347.HK
@@ -679,6 +723,12 @@ entries:
   01810.HK:
     market: HK
     symbol: 01810.HK
+  018260:
+    market: KR
+    symbol: 018260.KS
+  018260.KS:
+    market: KR
+    symbol: 018260.KS
   '0241':
     market: HK
     symbol: 0241.HK
@@ -691,6 +741,12 @@ entries:
   0268.HK:
     market: HK
     symbol: 0268.HK
+  028050:
+    market: KR
+    symbol: 028050.KS
+  028050.KS:
+    market: KR
+    symbol: 028050.KS
   02812:
     market: HK
     symbol: 02812.HK
@@ -733,18 +789,42 @@ entries:
   0325.HK:
     market: HK
     symbol: 0325.HK
+  '034020':
+    market: KR
+    symbol: 034020.KS
+  034020.KS:
+    market: KR
+    symbol: 034020.KS
+  '034220':
+    market: KR
+    symbol: 034220.KS
+  034220.KS:
+    market: KR
+    symbol: 034220.KS
   '0347':
     market: HK
     symbol: 0347.HK
   0347.HK:
     market: HK
     symbol: 0347.HK
+  '034730':
+    market: KR
+    symbol: 034730.KS
+  034730.KS:
+    market: KR
+    symbol: 034730.KS
   '0354':
     market: HK
     symbol: 0354.HK
   0354.HK:
     market: HK
     symbol: 0354.HK
+  '035420':
+    market: KR
+    symbol: 035420.KS
+  035420.KS:
+    market: KR
+    symbol: 035420.KS
   0358:
     market: HK
     symbol: 0358.HK
@@ -775,6 +855,12 @@ entries:
   0425.HK:
     market: HK
     symbol: 0425.HK
+  051910:
+    market: KR
+    symbol: 051910.KS
+  051910.KS:
+    market: KR
+    symbol: 051910.KS
   '0522':
     market: HK
     symbol: 0522.HK
@@ -793,12 +879,24 @@ entries:
   0656.HK:
     market: HK
     symbol: 0656.HK
+  '066570':
+    market: KR
+    symbol: 066570.KS
+  066570.KS:
+    market: KR
+    symbol: 066570.KS
   0669:
     market: HK
     symbol: 0669.HK
   0669.HK:
     market: HK
     symbol: 0669.HK
+  066970:
+    market: KR
+    symbol: 066970.KS
+  066970.KS:
+    market: KR
+    symbol: 066970.KS
   06869:
     market: HK
     symbol: 06869.HK
@@ -874,6 +972,12 @@ entries:
   0839.HK:
     market: HK
     symbol: 0839.HK
+  084370:
+    market: KR
+    symbol: 084370.KQ
+  084370.KQ:
+    market: KR
+    symbol: 084370.KQ
   0857:
     market: HK
     symbol: 0857.HK
@@ -898,6 +1002,12 @@ entries:
   09633.HK:
     market: HK
     symbol: 09633.HK
+  096770:
+    market: KR
+    symbol: 096770.KS
+  096770.KS:
+    market: KR
+    symbol: 096770.KS
   0981:
     market: HK
     symbol: 0981.HK
@@ -1075,6 +1185,12 @@ entries:
   1385.HK:
     market: HK
     symbol: 1385.HK
+  '139480':
+    market: KR
+    symbol: 139480.KS
+  139480.KS:
+    market: KR
+    symbol: 139480.KS
   '1519':
     market: HK
     symbol: 1519.HK
@@ -1150,6 +1266,12 @@ entries:
   1929.HK:
     market: HK
     symbol: 1929.HK
+  '196170':
+    market: KR
+    symbol: 196170.KQ
+  196170.KQ:
+    market: KR
+    symbol: 196170.KQ
   1972.HK:
     market: HK
     symbol: 1972.HK
@@ -1177,6 +1299,12 @@ entries:
   2059.TW:
     market: TW
     symbol: 2059.TW
+  '207940':
+    market: KR
+    symbol: 207940.KS
+  207940.KS:
+    market: KR
+    symbol: 207940.KS
   2097.HK:
     market: HK
     symbol: 2097.HK
@@ -1435,6 +1563,12 @@ entries:
   2455.TW:
     market: TW
     symbol: 2455.TW
+  '247540':
+    market: KR
+    symbol: 247540.KQ
+  247540.KQ:
+    market: KR
+    symbol: 247540.KQ
   2498.TW:
     market: TW
     symbol: 2498.TW
@@ -1504,6 +1638,12 @@ entries:
   2628.HK:
     market: HK
     symbol: 2628.HK
+  '263750':
+    market: KR
+    symbol: 263750.KQ
+  263750.KQ:
+    market: KR
+    symbol: 263750.KQ
   '2643':
     market: HK
     symbol: 2643.HK
@@ -1534,6 +1674,12 @@ entries:
   2698.HK:
     market: HK
     symbol: 2698.HK
+  '271560':
+    market: KR
+    symbol: 271560.KS
+  271560.KS:
+    market: KR
+    symbol: 271560.KS
   '2802':
     market: JP
     symbol: 2802.T
@@ -2059,6 +2205,12 @@ entries:
   3726.HK:
     market: HK
     symbol: 3726.HK
+  '373220':
+    market: KR
+    symbol: 373220.KS
+  373220.KS:
+    market: KR
+    symbol: 373220.KS
   '3750':
     market: HK
     symbol: 3750.HK
@@ -4276,6 +4428,21 @@ entries:
   AAC:
     market: HK
     symbol: 2018.HK
+  AAK:
+    market: SE
+    symbol: AAK.ST
+  AAK.ST:
+    market: SE
+    symbol: AAK.ST
+  AAL.L:
+    market: UK
+    symbol: AAL.L
+  AALB.AS:
+    market: NL
+    symbol: AALB.AS
+  AALB.NA:
+    market: NL
+    symbol: AALB.AS
   AAPL.OQ:
     market: US
     symbol: AAPL
@@ -4288,6 +4455,15 @@ entries:
   AAR Corp.:
     market: US
     symbol: AIR
+  ABB:
+    market: CH
+    symbol: ABBN.SW
+  ABB Ltd.:
+    market: CH
+    symbol: ABBN.SW
+  ABBN.SW:
+    market: CH
+    symbol: ABBN.SW
   ABM:
     market: US
     symbol: ABM
@@ -4312,6 +4488,24 @@ entries:
   ABT.US:
     market: US
     symbol: ABT
+  ABUJ.BO:
+    market: IN
+    symbol: ABUJ.BO
+  AC.FP:
+    market: FR
+    symbol: AC.PA
+  AC.PA:
+    market: FR
+    symbol: AC.PA
+  ACCP.PA:
+    market: FR
+    symbol: ACCP.PA
+  ACEM.IN:
+    market: IN
+    symbol: ACEM.NS
+  ACEM.NS:
+    market: IN
+    symbol: ACEM.NS
   ACM Research:
     market: US
     symbol: ACMR
@@ -4327,21 +4521,75 @@ entries:
   ACN.US:
     market: US
     symbol: ACN
+  ACS:
+    market: ES
+    symbol: ACS.MC
+  ACS.MC:
+    market: ES
+    symbol: ACS.MC
+  ACS.SM:
+    market: ES
+    symbol: ACS.MC
+  AD.AS:
+    market: NL
+    symbol: AD.AS
+  AD.NA:
+    market: NL
+    symbol: AD.AS
+  ADANI.IN:
+    market: IN
+    symbol: ADANI.NS
+  ADANI.NS:
+    market: IN
+    symbol: ADANI.NS
   ADBE:
     market: US
     symbol: ADBE
   ADBE.US:
     market: US
     symbol: ADBE
+  ADML.L:
+    market: UK
+    symbol: ADML.L
   ADP:
     market: US
     symbol: ADP
+  ADP.FP:
+    market: FR
+    symbol: ADP.PA
+  ADP.PA:
+    market: FR
+    symbol: ADP.PA
   ADP.US:
     market: US
     symbol: ADP
+  ADRO.JK:
+    market: ID
+    symbol: ADRO.JK
+  ADSEZ.IN:
+    market: IN
+    symbol: ADSEZ.NS
+  ADSEZ.NS:
+    market: IN
+    symbol: ADSEZ.NS
+  ADTB.NS:
+    market: IN
+    symbol: ADTB.NS
+  ADYEN.AS:
+    market: NL
+    symbol: ADYEN.AS
+  AED.BB:
+    market: BE
+    symbol: AED.BR
+  AED.BR:
+    market: BE
+    symbol: AED.BR
   AEGN:
     market: US
     symbol: AEGN
+  AEGN.AS:
+    market: NL
+    symbol: AEGN.AS
   AEIS:
     market: US
     symbol: AEIS
@@ -4384,12 +4632,27 @@ entries:
   AGIO.US:
     market: US
     symbol: AGIO
+  AHT.L:
+    market: UK
+    symbol: AHT.L
+  AHT.LN:
+    market: UK
+    symbol: AHT.L
   AIR:
     market: US
     symbol: AIR
+  AIR.FP:
+    market: FR
+    symbol: AIR.PA
+  AIR.PA:
+    market: FR
+    symbol: AIR.PA
   AIR.US:
     market: US
     symbol: AIR
+  AIRP.PA:
+    market: FR
+    symbol: AIRP.PA
   AJG:
     market: US
     symbol: AJG
@@ -4402,6 +4665,9 @@ entries:
   AKBA.US:
     market: US
     symbol: AKBA
+  AKE.PA:
+    market: FR
+    symbol: AKE.PA
   ALAB:
     market: US
     symbol: ALAB
@@ -4420,6 +4686,9 @@ entries:
   ALGT.US:
     market: US
     symbol: ALGT
+  ALLFG.AS:
+    market: NL
+    symbol: ALLFG.AS
   ALNY:
     market: US
     symbol: ALNY
@@ -4429,18 +4698,33 @@ entries:
   ALNY.US:
     market: US
     symbol: ALNY
+  ALSO.PA:
+    market: FR
+    symbol: ALSO.PA
   ALT:
     market: US
     symbol: ALT
   ALT.US:
     market: US
     symbol: ALT
+  AM.FP:
+    market: FR
+    symbol: AM.PA
+  AM.PA:
+    market: FR
+    symbol: AM.PA
   AMAT:
     market: US
     symbol: AMAT
   AMAT.US:
     market: US
     symbol: AMAT
+  AMBER.IN:
+    market: IN
+    symbol: AMBER.NS
+  AMBER.NS:
+    market: IN
+    symbol: AMBER.NS
   AMD.US:
     market: US
     symbol: AMD
@@ -4507,6 +4791,21 @@ entries:
   APP.US:
     market: US
     symbol: APP
+  APSE.NS:
+    market: IN
+    symbol: APSE.NS
+  APTS.BO:
+    market: IN
+    symbol: APTS.BO
+  APTS.NS:
+    market: IN
+    symbol: APTS.NS
+  ARCAD.AS:
+    market: NL
+    symbol: ARCAD.AS
+  ARCAD.NA:
+    market: NL
+    symbol: ARCAD.AS
   ARCB:
     market: US
     symbol: ARCB
@@ -4522,9 +4821,18 @@ entries:
   ARGX:
     market: US
     symbol: ARGX
+  ARGX.BB:
+    market: BE
+    symbol: ARGX.BR
+  ARGX.BR:
+    market: BE
+    symbol: ARGX.BR
   ARGX.US:
     market: US
     symbol: ARGX
+  ARIS.MI:
+    market: IT
+    symbol: ARIS.MI
   ARM:
     market: US
     symbol: ARM
@@ -4555,21 +4863,54 @@ entries:
   ASICS:
     market: JP
     symbol: 7936.T
+  ASM International:
+    market: NL
+    symbol: ASMI.AS
   ASMB:
     market: US
     symbol: ASMB
   ASMB.US:
     market: US
     symbol: ASMB
+  ASMI.AS:
+    market: NL
+    symbol: ASMI.AS
   ASML:
     market: US
     symbol: ASML
+  ASML.AS:
+    market: NL
+    symbol: ASML.AS
+  ASML.NA:
+    market: NL
+    symbol: ASML.AS
   ASML.US:
     market: US
     symbol: ASML
   ASMPT:
     market: HK
     symbol: 0522.HK
+  ASM国际:
+    market: NL
+    symbol: ASMI.AS
+  ASOK.BO:
+    market: IN
+    symbol: ASOK.BO
+  ASPN.BO:
+    market: IN
+    symbol: ASPN.BO
+  ASUR Airports:
+    market: MX
+    symbol: ASURB.MX
+  ASURB.MX:
+    market: MX
+    symbol: ASURB.MX
+  ASX:
+    market: AU
+    symbol: ASX.AX
+  ASX.AX:
+    market: AU
+    symbol: ASX.AX
   AT&T:
     market: US
     symbol: T
@@ -4591,21 +4932,48 @@ entries:
   ATGE.US:
     market: US
     symbol: ATGE
+  ATO.FP:
+    market: FR
+    symbol: ATO.PA
+  ATO.PA:
+    market: FR
+    symbol: ATO.PA
+  AU Small Finance Bank:
+    market: IN
+    symbol: AUFI.BO
+  AUFI.BO:
+    market: IN
+    symbol: AUFI.BO
+  AVAS.NS:
+    market: IN
+    symbol: AVAS.NS
   AVC:
     market: TW
     symbol: 3017.TW
+  AVEU.BO:
+    market: IN
+    symbol: AVEU.BO
+  AVEU.NS:
+    market: IN
+    symbol: AVEU.NS
   AVGO:
     market: US
     symbol: AVGO
   AVGO.US:
     market: US
     symbol: AVGO
+  AVOL.SW:
+    market: CH
+    symbol: AVOL.SW
   AWK:
     market: US
     symbol: AWK
   AWK.US:
     market: US
     symbol: AWK
+  AXBK.BO:
+    market: IN
+    symbol: AXBK.BO
   AXON:
     market: US
     symbol: AXON
@@ -4624,18 +4992,66 @@ entries:
   AXSM.US:
     market: US
     symbol: AXSM
+  AZJ.AU:
+    market: AU
+    symbol: AZJ.AX
+  AZJ.AX:
+    market: AU
+    symbol: AZJ.AX
+  AZN.L:
+    market: UK
+    symbol: AZN.L
   AZTA:
     market: US
     symbol: AZTA
   AZTA.US:
     market: US
     symbol: AZTA
+  Aalberts:
+    market: NL
+    symbol: AALB.AS
+  Aavas Financiers:
+    market: IN
+    symbol: AVAS.NS
+  Aavas Financiers Ltd:
+    market: IN
+    symbol: AVAS.NS
   Abbott Laboratories:
     market: US
     symbol: ABT
   Accenture:
     market: US
     symbol: ACN
+  Accor:
+    market: FR
+    symbol: ACCP.PA
+  Accor SA:
+    market: FR
+    symbol: AC.PA
+  Adani Port & SEZ:
+    market: IN
+    symbol: APSE.NS
+  Adani Ports and SEZ:
+    market: IN
+    symbol: ADSEZ.NS
+  Adani Power:
+    market: IN
+    symbol: ADANI.NS
+  Adani Power Ltd.:
+    market: IN
+    symbol: ADANI.NS
+  Aditya Birla Capital:
+    market: IN
+    symbol: ADTB.NS
+  Aditya Birla Capital Ltd:
+    market: IN
+    symbol: ADTB.NS
+  Admiral:
+    market: UK
+    symbol: ADML.L
+  Admiral Group:
+    market: UK
+    symbol: ADML.L
   Adobe:
     market: US
     symbol: ADBE
@@ -4663,6 +5079,12 @@ entries:
   Advantest:
     market: JP
     symbol: 6857.T
+  Adyen N.V.:
+    market: NL
+    symbol: ADYEN.AS
+  Aedifica:
+    market: BE
+    symbol: AED.BR
   Aegon:
     market: US
     symbol: AEGN
@@ -4696,6 +5118,12 @@ entries:
   Airbnb Inc:
     market: US
     symbol: ABNB
+  Airbus:
+    market: FR
+    symbol: AIR.PA
+  Airbus Group:
+    market: FR
+    symbol: AIR.PA
   Aisin:
     market: JP
     symbol: 7259.T
@@ -4705,6 +5133,9 @@ entries:
   Akeso:
     market: HK
     symbol: 9926.HK
+  Alamtri Resources:
+    market: ID
+    symbol: ADRO.JK
   Albemarle:
     market: US
     symbol: ALB
@@ -4729,6 +5160,12 @@ entries:
   Allegiant Travel Company:
     market: US
     symbol: ALGT
+  Allfunds Group:
+    market: NL
+    symbol: ALLFG.AS
+  Allfunds Group PLC:
+    market: NL
+    symbol: ALLFG.AS
   Alnylam Pharmaceuticals:
     market: US
     symbol: ALNY
@@ -4741,6 +5178,12 @@ entries:
   Alphabet公司:
     market: US
     symbol: GOOGL
+  Alstom:
+    market: FR
+    symbol: ALSO.PA
+  Alteogen:
+    market: KR
+    symbol: 196170.KQ
   Altimmune:
     market: US
     symbol: ALT
@@ -4753,6 +5196,15 @@ entries:
   Altria Group:
     market: US
     symbol: MO
+  Amber Enterprises:
+    market: IN
+    symbol: AMBER.NS
+  Ambuja Cements:
+    market: IN
+    symbol: ABUJ.BO
+  Ambuja Cements Ltd:
+    market: IN
+    symbol: ACEM.NS
   America's Car Mart:
     market: US
     symbol: CRMT
@@ -4792,6 +5244,9 @@ entries:
   Angel Yeast:
     market: CN
     symbol: 600298.SH
+  Anglo American:
+    market: UK
+    symbol: AAL.L
   Anji Micro:
     market: CN
     symbol: 688019.SH
@@ -4822,12 +5277,27 @@ entries:
   Applovin:
     market: US
     symbol: APP
+  Aptus Value Housing Finance:
+    market: IN
+    symbol: APTS.BO
+  Aptus Value Housing Finance India:
+    market: IN
+    symbol: APTS.NS
+  Aptus Value Housing Finance India Ltd:
+    market: IN
+    symbol: APTS.NS
   ArcBest:
     market: US
     symbol: ARCB
   ArcBest Corp:
     market: US
     symbol: ARCB
+  Arcadis:
+    market: NL
+    symbol: ARCAD.AS
+  Arcadis NV:
+    market: NL
+    symbol: ARCAD.AS
   Arcsoft:
     market: CN
     symbol: 688088.SH
@@ -4846,6 +5316,15 @@ entries:
   Arista Networks Inc.:
     market: US
     symbol: ANET
+  Ariston:
+    market: IT
+    symbol: ARIS.MI
+  Ariston Holding:
+    market: IT
+    symbol: ARIS.MI
+  Arkema:
+    market: FR
+    symbol: AKE.PA
   Arm:
     market: US
     symbol: ARM
@@ -4877,9 +5356,21 @@ entries:
   Asahi Group:
     market: JP
     symbol: 2502.T
+  Ashok Leyland:
+    market: IN
+    symbol: ASOK.BO
+  Ashtead Group plc:
+    market: UK
+    symbol: AHT.L
   Asia Vital Components:
     market: TW
     symbol: 3017.TW
+  Asian Paints:
+    market: IN
+    symbol: ASPN.BO
+  Asian Paints Ltd.:
+    market: IN
+    symbol: ASPN.BO
   Assembly Biosciences:
     market: US
     symbol: ASMB
@@ -4889,24 +5380,45 @@ entries:
   Astera Labs:
     market: US
     symbol: ALAB
+  AstraZeneca:
+    market: UK
+    symbol: AZN.L
   Asus:
     market: TW
     symbol: 2357.TW
   Atlas Energy Solutions:
     market: US
     symbol: AESI
+  Atos:
+    market: FR
+    symbol: ATO.PA
   Atour Lifestyle:
     market: US
     symbol: ATAT
   Atour Lifestyle Holdings:
     market: US
     symbol: ATAT
+  Aurizon:
+    market: AU
+    symbol: AZJ.AX
   Automatic Data Processing:
     market: US
     symbol: ADP
   Automatic Data Processing Inc:
     market: US
     symbol: ADP
+  Autos & Auto Parts:
+    market: FR
+    symbol: ML.PA
+  Avenue Supermarts Ltd.:
+    market: IN
+    symbol: AVEU.BO
+  Avolta:
+    market: CH
+    symbol: AVOL.SW
+  Axis Bank:
+    market: IN
+    symbol: AXBK.BO
   Axon Enterprise:
     market: US
     symbol: AXON
@@ -4919,6 +5431,9 @@ entries:
   Axsome Therapeutics Inc.:
     market: US
     symbol: AXSM
+  B&M Retail:
+    market: UK
+    symbol: BME.L
   BA:
     market: US
     symbol: BA
@@ -4934,12 +5449,48 @@ entries:
   BABA.US:
     market: US
     symbol: BABA
+  BAES.L:
+    market: UK
+    symbol: BAES.L
+  BAE系统:
+    market: UK
+    symbol: BAES.L
   BAH:
     market: US
     symbol: BAH
   BAH.US:
     market: US
     symbol: BAH
+  BAJE.BO:
+    market: IN
+    symbol: BAJE.BO
+  BAJO.NS:
+    market: IN
+    symbol: BAJO.NS
+  BANB.SW:
+    market: CH
+    symbol: BANB.SW
+  BARN.SW:
+    market: CH
+    symbol: BARN.SW
+  BAYN.DE:
+    market: DE
+    symbol: BAYN.DE
+  BAYN.GR:
+    market: DE
+    symbol: BAYN.DE
+  BBCA.JK:
+    market: ID
+    symbol: BBCA.JK
+  BBRI.JK:
+    market: ID
+    symbol: BBRI.JK
+  BBVA:
+    market: ES
+    symbol: BBVA.MC
+  BBVA.MC:
+    market: ES
+    symbol: BBVA.MC
   BBWI:
     market: US
     symbol: BBWI
@@ -4949,12 +5500,33 @@ entries:
   BCAX:
     market: US
     symbol: BCAX
+  BE Semiconductor Industries:
+    market: NL
+    symbol: BESI.AS
+  BEI.DE:
+    market: DE
+    symbol: BEI.DE
+  BEI.GR:
+    market: DE
+    symbol: BEI.DE
+  BEIG.DE:
+    market: DE
+    symbol: BEIG.DE
   BEKE:
     market: US
     symbol: BEKE
   BEKE.US:
     market: US
     symbol: BEKE
+  BEN.AU:
+    market: AU
+    symbol: BEN.AX
+  BEN.AX:
+    market: AU
+    symbol: BEN.AX
+  BESI.AS:
+    market: NL
+    symbol: BESI.AS
   BFB:
     market: US
     symbol: BFB
@@ -4967,6 +5539,9 @@ entries:
   BG.US:
     market: US
     symbol: BG
+  BHP.AX:
+    market: AU
+    symbol: BHP.AX
   BHVN:
     market: US
     symbol: BHVN
@@ -5021,6 +5596,9 @@ entries:
   BIRK.US:
     market: US
     symbol: BIRK
+  BJFN.NS:
+    market: IN
+    symbol: BJFN.NS
   BKNG:
     market: US
     symbol: BKNG
@@ -5048,12 +5626,21 @@ entries:
   BLOKS:
     market: HK
     symbol: 0325.HK
+  BME.L:
+    market: UK
+    symbol: BME.L
+  BME.LN:
+    market: UK
+    symbol: BME.L
   BMRN:
     market: US
     symbol: BMRN
   BMRN.US:
     market: US
     symbol: BMRN
+  BMWG.DE:
+    market: DE
+    symbol: BMWG.DE
   BMY:
     market: US
     symbol: BMY
@@ -5075,13 +5662,46 @@ entries:
   BNZL:
     market: US
     symbol: BNZL
+  BNZL.L:
+    market: UK
+    symbol: BNZL.L
+  BNZL.LN:
+    market: UK
+    symbol: BNZL.L
   BNZL.US:
     market: US
     symbol: BNZL
+  BOB.BO:
+    market: IN
+    symbol: BOB.BO
   BOE:
     market: CN
     requires_context: true
     symbol: 000725.SZ
+  BOE.AU:
+    market: AU
+    symbol: BOE.AX
+  BOE.AX:
+    market: AU
+    symbol: BOE.AX
+  BP Plc:
+    market: UK
+    symbol: BP.L
+  BP.L:
+    market: UK
+    symbol: BP.L
+  BPT.L:
+    market: UK
+    symbol: BPT.L
+  BPT.LN:
+    market: UK
+    symbol: BPT.L
+  BRBY.L:
+    market: UK
+    symbol: BRBY.L
+  BRBY.LN:
+    market: UK
+    symbol: BRBY.L
   BROS:
     market: US
     symbol: BROS
@@ -5094,9 +5714,21 @@ entries:
   BSX.US:
     market: US
     symbol: BSX
+  BT Group:
+    market: UK
+    symbol: BT.L
+  BT.L:
+    market: UK
+    symbol: BT.L
   BTG Hotels:
     market: CN
     symbol: 600258.SH
+  BTPN Syariah:
+    market: ID
+    symbol: BTPS.JK
+  BTPS.JK:
+    market: ID
+    symbol: BTPS.JK
   BWIN:
     market: US
     symbol: BWIN
@@ -5139,21 +5771,51 @@ entries:
   BZ.US:
     market: US
     symbol: BZ
+  Bachem Holding AG:
+    market: CH
+    symbol: BANB.SW
+  Bajaj Finance:
+    market: IN
+    symbol: BJFN.NS
+  Bajaj Finance Limited:
+    market: IN
+    symbol: BJFN.NS
+  Bajaj Housing Finance:
+    market: IN
+    symbol: BAJO.NS
   Baker Hughes:
     market: US
     symbol: BKR
   Baker Hughes Company:
     market: US
     symbol: BKR
+  Banco Bilbao Vizcaya Argentaria SA:
+    market: ES
+    symbol: BBVA.MC
+  Bank Central Asia:
+    market: ID
+    symbol: BBCA.JK
+  Bank Rakyat Indonesia:
+    market: ID
+    symbol: BBRI.JK
+  Bank of Baroda:
+    market: IN
+    symbol: BOB.BO
   Baoshan Iron & Steel:
     market: CN
     symbol: 600019.SH
+  Barry Callebaut:
+    market: CH
+    symbol: BARN.SW
   Bath & Body Works:
     market: US
     symbol: BBWI
   Bath & Body Works Inc:
     market: US
     symbol: BBWI
+  Beiersdorf:
+    market: DE
+    symbol: BEIG.DE
   Beijing Capital International Airport:
     market: HK
     symbol: 0694.HK
@@ -5172,9 +5834,21 @@ entries:
   Beijing Tongrentang Chinese Medicine:
     market: HK
     symbol: 3613.HK
+  Bendigo and Adelaide Bank:
+    market: AU
+    symbol: BEN.AX
+  Bendigo and Adelaide Bank Limited:
+    market: AU
+    symbol: BEN.AX
+  Benfica Test company:
+    market: PT
+    symbol: SLBEN.LS
   Bestechnic:
     market: CN
     symbol: 688608.SH
+  Bharat Electronics:
+    market: IN
+    symbol: BAJE.BO
   Bicara Therapeutics:
     market: US
     symbol: BCAX
@@ -5281,12 +5955,24 @@ entries:
   Bosideng International:
     market: HK
     symbol: 3998.HK
+  Boss Energy:
+    market: AU
+    symbol: BOE.AX
+  Boss Energy Limited:
+    market: AU
+    symbol: BOE.AX
+  Boss Energy Ltd:
+    market: AU
+    symbol: BOE.AX
   Boston Scientific:
     market: US
     symbol: BSX
   Boston Scientific Corp:
     market: US
     symbol: BSX
+  Bridgepoint:
+    market: UK
+    symbol: BPT.L
   Broadcom Inc.:
     market: US
     symbol: AVGO
@@ -5311,6 +5997,9 @@ entries:
   C.US:
     market: US
     symbol: C
+  CABK.MC:
+    market: ES
+    symbol: CABK.MC
   CACI:
     market: US
     symbol: CACI
@@ -5338,6 +6027,21 @@ entries:
   CAI.US:
     market: US
     symbol: CAI
+  CAN.L:
+    market: UK
+    symbol: CAN.L
+  CAN.LN:
+    market: UK
+    symbol: CAN.L
+  CAP.FP:
+    market: FR
+    symbol: CAP.PA
+  CAP.PA:
+    market: FR
+    symbol: CAP.PA
+  CAPP.PA:
+    market: FR
+    symbol: CAPP.PA
   CAT:
     market: US
     symbol: CAT
@@ -5353,12 +6057,21 @@ entries:
   CBOE.US:
     market: US
     symbol: CBOE
+  CCL.L:
+    market: UK
+    symbol: CCL.L
+  CCL.LN:
+    market: UK
+    symbol: CCL.L
   CCL.N:
     market: US
     symbol: CCL
   CCL.US:
     market: US
     symbol: CCL
+  CCP.AX:
+    market: AU
+    symbol: CCP.AX
   CCRN:
     market: US
     symbol: CCRN
@@ -5395,12 +6108,21 @@ entries:
   CG Oncology, Inc.:
     market: US
     symbol: CGON
+  CG Power & Industrial Solutions:
+    market: IN
+    symbol: CGPO.NS
+  CGF.AX:
+    market: AU
+    symbol: CGF.AX
   CGON:
     market: US
     symbol: CGON
   CGON.US:
     market: US
     symbol: CGON
+  CGPO.NS:
+    market: IN
+    symbol: CGPO.NS
   CHA:
     market: US
     symbol: CHA
@@ -5419,6 +6141,9 @@ entries:
   CHE.US:
     market: US
     symbol: CHE
+  CHLA.NS:
+    market: IN
+    symbol: CHLA.NS
   CHPT:
     market: US
     symbol: CHPT
@@ -5446,6 +6171,9 @@ entries:
   CKD:
     market: JP
     symbol: 6407.T
+  CKF.AX:
+    market: AU
+    symbol: CKF.AX
   CLMT:
     market: US
     symbol: CLMT
@@ -5503,6 +6231,12 @@ entries:
   CMPS:
     market: US
     symbol: CMPS
+  CNA.L:
+    market: UK
+    symbol: CNA.L
+  CNFH.NS:
+    market: IN
+    symbol: CNFH.NS
   COAG:
     market: US
     symbol: COAG
@@ -5515,6 +6249,18 @@ entries:
   COF.US:
     market: US
     symbol: COF
+  COFB.BB:
+    market: BE
+    symbol: COFB.BR
+  COFB.BR:
+    market: BE
+    symbol: COFB.BR
+  COFO.NS:
+    market: IN
+    symbol: COFO.NS
+  COH.AX:
+    market: AU
+    symbol: COH.AX
   COIN:
     market: US
     symbol: COIN
@@ -5533,9 +6279,18 @@ entries:
   COLL.US:
     market: US
     symbol: COLL
+  COLR.BR:
+    market: BE
+    symbol: COLR.BR
   COMPASS Pathways:
     market: US
     symbol: CMPS
+  CON.DE:
+    market: DE
+    symbol: CON.DE
+  CON.GR:
+    market: DE
+    symbol: CON.DE
   COO:
     market: US
     requires_context: true
@@ -5591,6 +6346,12 @@ entries:
   COUR.US:
     market: US
     symbol: COUR
+  CPG.L:
+    market: UK
+    symbol: CPG.L
+  CPG.LN:
+    market: UK
+    symbol: CPG.L
   CPNG:
     market: US
     symbol: CPNG
@@ -5609,6 +6370,12 @@ entries:
   CR Micro:
     market: CN
     symbol: 688396.SH
+  CRC.BK:
+    market: TH
+    symbol: CRC.BK
+  CRDA.L:
+    market: UK
+    symbol: CRDA.L
   CRDO:
     market: US
     symbol: CRDO
@@ -5681,9 +6448,18 @@ entries:
   CTAS.US:
     market: US
     symbol: CTAS
+  CTEC.L:
+    market: UK
+    symbol: CTEC.L
   CTGDF:
     market: CN
     symbol: 601888.SH
+  CVC Capital Partners plc:
+    market: NL
+    symbol: CVC.AS
+  CVC.AS:
+    market: NL
+    symbol: CVC.AS
   CVI:
     market: US
     symbol: CVI
@@ -5738,15 +6514,27 @@ entries:
   CYTK.US:
     market: US
     symbol: CYTK
+  CaixaBank SA:
+    market: ES
+    symbol: CABK.MC
   Calumet:
     market: US
     symbol: CLMT
   Calumet Inc.:
     market: US
     symbol: CLMT
+  Can Fin Homes:
+    market: IN
+    symbol: CNFH.NS
+  Can Fin Homes Ltd:
+    market: IN
+    symbol: CNFH.NS
   CaoCao:
     market: HK
     symbol: 2643.HK
+  Capgemini:
+    market: FR
+    symbol: CAP.PA
   Capital One Financial:
     market: US
     symbol: COF
@@ -5786,12 +6574,30 @@ entries:
   Central Japan Railway:
     market: JP
     symbol: 9022.T
+  Central Retail:
+    market: TH
+    symbol: CRC.BK
+  Central Retail Corporation:
+    market: TH
+    symbol: CRC.BK
+  Centrica:
+    market: UK
+    symbol: CNA.L
   Centrus Energy:
     market: US
     symbol: LEU
   Centrus Energy Corp:
     market: US
     symbol: LEU
+  Challenger:
+    market: AU
+    symbol: CGF.AX
+  Challenger Ltd:
+    market: AU
+    symbol: CGF.AX
+  Challenger Ltd.:
+    market: AU
+    symbol: CGF.AX
   Chaozhou Three Circle:
     market: CN
     symbol: 300408.SZ
@@ -5894,6 +6700,12 @@ entries:
   Chipotle Mexican Grill Inc:
     market: US
     symbol: CMG
+  Cholamandalam Investment and Fin Co:
+    market: IN
+    symbol: CHLA.NS
+  Cholamandalam Investment and Fin Co Ltd:
+    market: IN
+    symbol: CHLA.NS
   Chongqing Changan Automobile:
     market: CN
     symbol: 000625.SZ
@@ -5963,6 +6775,12 @@ entries:
   Coca Cola Bottlers Japan:
     market: JP
     symbol: 2579.T
+  Cofinimmo:
+    market: BE
+    symbol: COFB.BR
+  Coforge:
+    market: IN
+    symbol: COFO.NS
   Coinbase Global:
     market: US
     symbol: COIN
@@ -5972,6 +6790,15 @@ entries:
   Collegium:
     market: US
     symbol: COLL
+  Collins Food:
+    market: AU
+    symbol: CKF.AX
+  Collins Food Ltd.:
+    market: AU
+    symbol: CKF.AX
+  Colruyt Group N.V:
+    market: BE
+    symbol: COLR.BR
   Comcast:
     market: US
     symbol: CMCSA
@@ -5996,6 +6823,12 @@ entries:
   Compal:
     market: TW
     symbol: 2324.TW
+  Compass Group:
+    market: UK
+    symbol: CPG.L
+  Compass Group PLC:
+    market: UK
+    symbol: CPG.L
   Comstock Resources:
     market: US
     symbol: CRK
@@ -6026,6 +6859,12 @@ entries:
   Constellation Energy Corp:
     market: US
     symbol: CEG
+  ConvaTec Group:
+    market: UK
+    symbol: CTEC.L
+  ConvaTec Group Plc:
+    market: UK
+    symbol: CTEC.L
   Cooper Companies:
     market: US
     symbol: COO
@@ -6071,9 +6910,18 @@ entries:
   Coursera, Inc.:
     market: US
     symbol: COUR
+  Credit Corp:
+    market: AU
+    symbol: CCP.AX
+  Credit Corp Limited:
+    market: AU
+    symbol: CCP.AX
   Credo Technology:
     market: US
     symbol: CRDO
+  Croda International:
+    market: UK
+    symbol: CRDA.L
   Cross Country Healthcare:
     market: US
     symbol: CCRN
@@ -6092,12 +6940,27 @@ entries:
   D2L:
     market: US
     symbol: DTOL
+  DABU.NS:
+    market: IN
+    symbol: DABU.NS
   DAL:
     market: US
     symbol: DAL
   DAL.US:
     market: US
     symbol: DAL
+  DALB.BO:
+    market: IN
+    symbol: DALB.BO
+  DANO.PA:
+    market: FR
+    symbol: DANO.PA
+  DANSKE.CO:
+    market: DK
+    symbol: DANSKE.CO
+  DANSKE.DC:
+    market: DK
+    symbol: DANSKE.CO
   DAR:
     market: US
     symbol: DAR
@@ -6116,12 +6979,21 @@ entries:
   DAVE.US:
     market: US
     symbol: DAVE
+  DBI.AX:
+    market: AU
+    symbol: DBI.AX
   DBRG:
     market: US
     symbol: DBRG
   DBRG.US:
     market: US
     symbol: DBRG
+  DBV Technologies SA:
+    market: FR
+    symbol: DBV.PA
+  DBV.PA:
+    market: FR
+    symbol: DBV.PA
   DCI:
     market: US
     symbol: DCI
@@ -6146,15 +7018,54 @@ entries:
   DELL.US:
     market: US
     symbol: DELL
+  DEMANT.CO:
+    market: DK
+    symbol: DEMANT.CO
+  DEMANT.DC:
+    market: DK
+    symbol: DEMANT.CO
+  DFI Retail:
+    market: SG
+    symbol: DFIR.SI
+  DFIR.SI:
+    market: SG
+    symbol: DFIR.SI
   DG:
     market: US
     symbol: DG
+  DG.FP:
+    market: FR
+    symbol: DG.PA
+  DG.PA:
+    market: FR
+    symbol: DG.PA
   DG.US:
     market: US
     symbol: DG
   DGE:
     market: US
     symbol: DGE
+  DGE.L:
+    market: UK
+    symbol: DGE.L
+  DGE.LN:
+    market: UK
+    symbol: DGE.L
+  DHER.DE:
+    market: DE
+    symbol: DHER.DE
+  DHER.GR:
+    market: DE
+    symbol: DHER.DE
+  DIA.IM:
+    market: IT
+    symbol: DIA.MI
+  DIA.MI:
+    market: IT
+    symbol: DIA.MI
+  DIAS.MI:
+    market: IT
+    symbol: DIAS.MI
   DIDIY:
     market: US
     symbol: DIDIY
@@ -6224,6 +7135,27 @@ entries:
   DRI.US:
     market: US
     symbol: DRI
+  DSFIR.AS:
+    market: NL
+    symbol: DSFIR.AS
+  DSM Firmenich:
+    market: NL
+    symbol: DSFIR.AS
+  DSM Firmenich AG:
+    market: NL
+    symbol: DSFIR.AS
+  DSV:
+    market: DK
+    symbol: DSV.CO
+  DSV.CO:
+    market: DK
+    symbol: DSV.CO
+  DSY.FP:
+    market: FR
+    symbol: DSY.PA
+  DSY.PA:
+    market: FR
+    symbol: DSY.PA
   DTE:
     market: US
     symbol: DTE
@@ -6239,6 +7171,12 @@ entries:
   DTOL:
     market: US
     symbol: DTOL
+  DTOL.TO:
+    market: CA
+    symbol: DTOL.TO
+  DTOL.TSX:
+    market: CA
+    symbol: DTOL.TO
   DUOL:
     market: US
     symbol: DUOL
@@ -6269,6 +7207,12 @@ entries:
   DaVita Inc:
     market: US
     symbol: DVA
+  Dabur India:
+    market: IN
+    symbol: DABU.NS
+  Dabur India Ltd:
+    market: IN
+    symbol: DABU.NS
   Daifuku:
     market: JP
     symbol: 6383.T
@@ -6278,6 +7222,21 @@ entries:
   Daiichi Sankyo:
     market: JP
     symbol: 4568.T
+  Dalmia Bharat:
+    market: IN
+    symbol: DALB.BO
+  Dalmia Bharat Ltd:
+    market: IN
+    symbol: DALB.BO
+  Dalrymple Bay Infrastructure:
+    market: AU
+    symbol: DBI.AX
+  Dalrymple Bay Infrastructure Limited:
+    market: AU
+    symbol: DBI.AX
+  Danske Bank:
+    market: DK
+    symbol: DANSKE.CO
   Daqin Railway:
     market: CN
     symbol: 601006.SH
@@ -6296,6 +7255,9 @@ entries:
   Dashenlin:
     market: CN
     symbol: 603233.SH
+  Dassault Aviation SA:
+    market: FR
+    symbol: AM.PA
   Datadog:
     market: US
     symbol: DDOG
@@ -6317,6 +7279,12 @@ entries:
   Deckers Outdoor Corp:
     market: US
     symbol: DECK
+  Delivery Hero:
+    market: DE
+    symbol: DHER.DE
+  Delivery Hero SE:
+    market: DE
+    symbol: DHER.DE
   Dell Technologies:
     market: US
     symbol: DELL
@@ -6329,6 +7297,9 @@ entries:
   Delton:
     market: CN
     symbol: 001389.SZ
+  Demant:
+    market: DK
+    symbol: DEMANT.CO
   Denali Therapeutics:
     market: US
     symbol: DNLI
@@ -6350,6 +7321,9 @@ entries:
   DiDi Global Inc.:
     market: US
     symbol: DIDIY
+  DiaSorin SpA:
+    market: IT
+    symbol: DIAS.MI
   Diageo:
     market: US
     symbol: DGE
@@ -6383,6 +7357,9 @@ entries:
   DoorDash:
     market: US
     symbol: DASH
+  Doosan Enerbility:
+    market: KR
+    symbol: 034020.KS
   Dow:
     market: US
     symbol: DOW
@@ -6410,12 +7387,21 @@ entries:
   Dynavax Technologies:
     market: US
     symbol: DVAX
+  E mart Emart:
+    market: KR
+    symbol: 139480.KS
   EA:
     market: US
     symbol: EA
   EA.US:
     market: US
     symbol: EA
+  EAPI.FP:
+    market: FR
+    symbol: EAPI.PA
+  EAPI.PA:
+    market: FR
+    symbol: EAPI.PA
   EBAY:
     market: US
     symbol: EBAY
@@ -6428,6 +7414,24 @@ entries:
   ECL.US:
     market: US
     symbol: ECL
+  EDEN.FP:
+    market: FR
+    symbol: EDEN.PA
+  EDEN.PA:
+    market: FR
+    symbol: EDEN.PA
+  EDP:
+    market: PT
+    symbol: EDP.LS
+  EDP Renovaveis:
+    market: PT
+    symbol: EDPR.LS
+  EDP.LS:
+    market: PT
+    symbol: EDP.LS
+  EDPR.LS:
+    market: PT
+    symbol: EDPR.LS
   EDU:
     market: US
     symbol: EDU
@@ -6449,27 +7453,60 @@ entries:
   EL:
     market: US
     symbol: EL
+  EL.FP:
+    market: FR
+    symbol: EL.PA
+  EL.PA:
+    market: FR
+    symbol: EL.PA
   EL.US:
     market: US
     symbol: EL
+  ELISA.HE:
+    market: FI
+    symbol: ELISA.HE
   EMN:
     market: US
     symbol: EMN
   EMN.US:
     market: US
     symbol: EMN
+  ENAG.MC:
+    market: ES
+    symbol: ENAG.MC
+  ENB.TO:
+    market: CA
+    symbol: ENB.TO
+  ENEI.MI:
+    market: IT
+    symbol: ENEI.MI
+  ENGH.TO:
+    market: CA
+    symbol: ENGH.TO
   ENLT:
     market: US
     symbol: ENLT
   ENLT.US:
     market: US
     symbol: ENLT
+  ENQ.L:
+    market: UK
+    symbol: ENQ.L
+  ENQ.LN:
+    market: UK
+    symbol: ENQ.L
   ENR:
     market: US
     symbol: ENR
   ENR.US:
     market: US
     symbol: ENR
+  ENX.FP:
+    market: FR
+    symbol: ENX.PA
+  ENX.PA:
+    market: FR
+    symbol: ENX.PA
   EOG:
     market: US
     symbol: EOG
@@ -6506,6 +7543,21 @@ entries:
   EQIX.US:
     market: US
     symbol: EQIX
+  EQNR.NO:
+    market: 'NO'
+    symbol: EQNR.OL
+  EQNR.OL:
+    market: 'NO'
+    symbol: EQNR.OL
+  ERAA.JK:
+    market: ID
+    symbol: ERAA.JK
+  ERF.FP:
+    market: FR
+    symbol: ERF.PA
+  ERF.PA:
+    market: FR
+    symbol: ERF.PA
   ERJ:
     market: US
     symbol: ERJ
@@ -6518,6 +7570,15 @@ entries:
   ES.US:
     market: US
     symbol: ES
+  ESLX.PA:
+    market: FR
+    symbol: ESLX.PA
+  ESNT.L:
+    market: UK
+    symbol: ESNT.L
+  ESNT.LN:
+    market: UK
+    symbol: ESNT.L
   ESS:
     market: US
     symbol: ESS
@@ -6549,6 +7610,12 @@ entries:
   EVEX.US:
     market: US
     symbol: EVEX
+  EVK.DE:
+    market: DE
+    symbol: EVK.DE
+  EVK.GR:
+    market: DE
+    symbol: EVK.DE
   EW:
     market: US
     symbol: EW
@@ -6573,6 +7640,9 @@ entries:
   EXPO.US:
     market: US
     symbol: EXPO
+  EZJ.L:
+    market: UK
+    symbol: EZJ.L
   East Japan Railway:
     market: JP
     symbol: 9020.T
@@ -6588,9 +7658,15 @@ entries:
   EchoStar Corporation:
     market: US
     symbol: SATS
+  EcoPro BM:
+    market: KR
+    symbol: 247540.KQ
   Ecolab:
     market: US
     symbol: ECL
+  Edenred:
+    market: FR
+    symbol: EDEN.PA
   Edgewise Therapeutics:
     market: US
     symbol: EWTX
@@ -6603,6 +7679,9 @@ entries:
   Edwards Lifesciences Corporation:
     market: US
     symbol: EW
+  Eiffage:
+    market: FR
+    symbol: FGR.PA
   Electronic Arts:
     market: US
     symbol: EA
@@ -6621,12 +7700,27 @@ entries:
   Eli Lilly & Company:
     market: US
     symbol: LLY
+  Elisa OYJ:
+    market: FI
+    symbol: ELISA.HE
   Embraer S.A.:
     market: US
     symbol: ERJ
   Empyrean:
     market: CN
     symbol: 301269.SZ
+  Enagas:
+    market: ES
+    symbol: ENAG.MC
+  Enbridge:
+    market: CA
+    symbol: ENB.TO
+  Enbridge Inc:
+    market: CA
+    symbol: ENB.TO
+  Ene:
+    market: IT
+    symbol: ENEI.MI
   Energizer Holdings:
     market: US
     symbol: ENR
@@ -6636,6 +7730,12 @@ entries:
   Energy Transfer:
     market: US
     symbol: ET
+  Enghouse Systems:
+    market: CA
+    symbol: ENGH.TO
+  Enghouse Systems Ltd:
+    market: CA
+    symbol: ENGH.TO
   Enlight Renewable Energy:
     market: US
     symbol: ENLT
@@ -6654,6 +7754,12 @@ entries:
   Equinix Inc:
     market: US
     symbol: EQIX
+  Equinor ASA:
+    market: 'NO'
+    symbol: EQNR.OL
+  Erajaya Swasembada:
+    market: ID
+    symbol: ERAA.JK
   Ermenegildo Zegna:
     market: US
     symbol: ZGN
@@ -6663,9 +7769,30 @@ entries:
   Ermenegildo Zegna NV:
     market: US
     symbol: ZGN
+  Essentra:
+    market: UK
+    symbol: ESNT.L
+  Essentra Plc:
+    market: UK
+    symbol: ESNT.L
+  Eugene Technology:
+    market: KR
+    symbol: 084370.KQ
+  EuroAPI:
+    market: FR
+    symbol: EAPI.PA
+  Eurofins Scientific SE:
+    market: FR
+    symbol: ERF.PA
+  Euronext:
+    market: FR
+    symbol: ENX.PA
   Eversource Energy:
     market: US
     symbol: ES
+  Evonik Industries:
+    market: DE
+    symbol: EVK.DE
   Expedia Group:
     market: US
     symbol: EXPE
@@ -6723,6 +7850,18 @@ entries:
   FERGR:
     market: US
     symbol: FERGR
+  FERGR.AS:
+    market: NL
+    symbol: FERGR.AS
+  FEVR.L:
+    market: UK
+    symbol: FEVR.L
+  FGR.FP:
+    market: FR
+    symbol: FGR.PA
+  FGR.PA:
+    market: FR
+    symbol: FGR.PA
   FICO:
     market: US
     symbol: FICO
@@ -6777,6 +7916,18 @@ entries:
   FLOC.US:
     market: US
     symbol: FLOC
+  FLS.CO:
+    market: DK
+    symbol: FLS.CO
+  FLS.DC:
+    market: DK
+    symbol: FLS.CO
+  FLSmidth:
+    market: DK
+    symbol: FLS.CO
+  FLTRF.L:
+    market: UK
+    symbol: FLTRF.L
   FMC:
     market: US
     symbol: FMC
@@ -6786,6 +7937,15 @@ entries:
   FMC.US:
     market: US
     symbol: FMC
+  FMG.AU:
+    market: AU
+    symbol: FMG.AX
+  FMG.AX:
+    market: AU
+    symbol: FMG.AX
+  FOHE.BO:
+    market: IN
+    symbol: FOHE.BO
   FOLD:
     market: US
     symbol: FOLD
@@ -6798,6 +7958,18 @@ entries:
   FOXA.US:
     market: US
     symbol: FOXA
+  FRE.DE:
+    market: DE
+    symbol: FRE.DE
+  FRE.GR:
+    market: DE
+    symbol: FRE.DE
+  FREG.DE:
+    market: DE
+    symbol: FREG.DE
+  FRES.L:
+    market: UK
+    symbol: FRES.L
   FRMI:
     market: US
     symbol: FRMI
@@ -6816,6 +7988,12 @@ entries:
   FRVO.US:
     market: US
     symbol: FRVO
+  FSFL.L:
+    market: UK
+    symbol: FSFL.L
+  FSFL.LN:
+    market: UK
+    symbol: FSFL.L
   FTAI:
     market: US
     symbol: FTAI
@@ -6873,6 +8051,12 @@ entries:
   Ferrovial:
     market: US
     symbol: FERGR
+  FeverTree Drinks:
+    market: UK
+    symbol: FEVR.L
+  FeverTree Drinks Plc:
+    market: UK
+    symbol: FEVR.L
   Fidelity National Information Svcs:
     market: US
     symbol: FIS
@@ -6897,12 +8081,33 @@ entries:
   Flowco Holdings:
     market: US
     symbol: FLOC
+  Flutter Entertainment:
+    market: UK
+    symbol: FLTRF.L
+  Flutter Entertainment PLC:
+    market: UK
+    symbol: FLTRF.L
   Ford Motor:
     market: US
     symbol: F
   Ford Motor Co.:
     market: US
     symbol: F
+  Foresight Solar Fund:
+    market: UK
+    symbol: FSFL.L
+  Fortescue Metals:
+    market: AU
+    symbol: FMG.AX
+  Fortescue Metals Group:
+    market: AU
+    symbol: FMG.AX
+  Fortis Healthcare:
+    market: IN
+    symbol: FOHE.BO
+  Fortis Healthcare Ltd.:
+    market: IN
+    symbol: FOHE.BO
   Foshan Haitian Flavouring & Food:
     market: CN
     symbol: 603288.SH
@@ -6918,6 +8123,18 @@ entries:
   Foxconn Industrial Internet:
     market: CN
     symbol: 601138.SH
+  Fresenius SE:
+    market: DE
+    symbol: FRE.DE
+  Fresenius SE & Co KGaA:
+    market: DE
+    symbol: FREG.DE
+  Fresnillo:
+    market: UK
+    symbol: FRES.L
+  Fresnillo Plc:
+    market: UK
+    symbol: FRES.L
   Frontier Group Holdings:
     market: US
     symbol: ULCC
@@ -6954,6 +8171,24 @@ entries:
   G III Apparel Group Ltd:
     market: US
     symbol: GIII
+  GAMU.KL:
+    market: MY
+    symbol: GAMU.KL
+  GAP Airports:
+    market: MX
+    symbol: GAPB.MX
+  GAPB.MX:
+    market: MX
+    symbol: GAPB.MX
+  GASI.MI:
+    market: IT
+    symbol: GASI.MI
+  GAW.L:
+    market: UK
+    symbol: GAW.L
+  GAW.LN:
+    market: UK
+    symbol: GAW.L
   GBX:
     market: US
     symbol: GBX
@@ -6972,6 +8207,9 @@ entries:
   GE Vernova:
     market: US
     symbol: GEV
+  GE Vernova T&D India:
+    market: IN
+    symbol: GETD.BO
   GE.US:
     market: US
     symbol: GE
@@ -6981,6 +8219,21 @@ entries:
   GEN.US:
     market: US
     symbol: GEN
+  GENM.KL:
+    market: MY
+    symbol: GENM.KL
+  GET.FP:
+    market: FR
+    symbol: GET.PA
+  GET.PA:
+    market: FR
+    symbol: GET.PA
+  GETD.BO:
+    market: IN
+    symbol: GETD.BO
+  GETP.PA:
+    market: FR
+    symbol: GETP.PA
   GEV:
     market: US
     symbol: GEV
@@ -7026,6 +8279,15 @@ entries:
   GIS.US:
     market: US
     symbol: GIS
+  GLE.FP:
+    market: FR
+    symbol: GLE.PA
+  GLE.PA:
+    market: FR
+    symbol: GLE.PA
+  GLEN.L:
+    market: UK
+    symbol: GLEN.L
   GLOB:
     market: US
     symbol: GLOB
@@ -7044,6 +8306,18 @@ entries:
   GM.US:
     market: US
     symbol: GM
+  GMAB.CO:
+    market: DK
+    symbol: GMAB.CO
+  GMAB.DC:
+    market: DK
+    symbol: GMAB.CO
+  GMD.AX:
+    market: AU
+    symbol: GMD.AX
+  GMG.AX:
+    market: AU
+    symbol: GMG.AX
   GMR Solutions:
     market: US
     symbol: GMRS
@@ -7053,6 +8327,12 @@ entries:
   GMRS.US:
     market: US
     symbol: GMRS
+  GNC.AU:
+    market: AU
+    symbol: GNC.AX
+  GNC.AX:
+    market: AU
+    symbol: GNC.AX
   GO:
     market: US
     requires_context: true
@@ -7072,6 +8352,9 @@ entries:
   GOOS:
     market: US
     symbol: GOOS
+  GOOS.TO:
+    market: CA
+    symbol: GOOS.TO
   GOOS.US:
     market: US
     symbol: GOOS
@@ -7096,9 +8379,36 @@ entries:
   GRAB.US:
     market: US
     symbol: GRAB
+  GRE.MC:
+    market: ES
+    symbol: GRE.MC
+  GRE.SM:
+    market: ES
+    symbol: GRE.MC
+  GREA.KL:
+    market: MY
+    symbol: GREA.KL
+  GROWW.IN:
+    market: IN
+    symbol: GROWW.NS
+  GROWW.NS:
+    market: IN
+    symbol: GROWW.NS
   GS Yuasa:
     market: JP
     symbol: 6674.T
+  GSF.L:
+    market: UK
+    symbol: GSF.L
+  GSF.LN:
+    market: UK
+    symbol: GSF.L
+  GSK:
+    market: UK
+    symbol: GSK.L
+  GSK.L:
+    market: UK
+    symbol: GSK.L
   GTLB:
     market: US
     symbol: GTLB
@@ -7111,6 +8421,21 @@ entries:
   GTM.US:
     market: US
     symbol: GTM
+  GTT:
+    market: FR
+    symbol: GTT.PA
+  GTT.FP:
+    market: FR
+    symbol: GTT.PA
+  GTT.PA:
+    market: FR
+    symbol: GTT.PA
+  GXI.DE:
+    market: DE
+    symbol: GXI.DE
+  GXI.GR:
+    market: DE
+    symbol: GXI.DE
   GXO:
     market: US
     symbol: GXO
@@ -7120,6 +8445,18 @@ entries:
   GXO物流:
     market: US
     symbol: GXO
+  GYG.AX:
+    market: AU
+    symbol: GYG.AX
+  Games Workshop:
+    market: UK
+    symbol: GAW.L
+  Gamuda:
+    market: MY
+    symbol: GAMU.KL
+  Gaztransport & Technigaz:
+    market: FR
+    symbol: GTT.PA
   Gen Digital:
     market: US
     symbol: GEN
@@ -7132,6 +8469,21 @@ entries:
   General Motors Company:
     market: US
     symbol: GM
+  Generali:
+    market: IT
+    symbol: GASI.MI
+  Genesis Minerals:
+    market: AU
+    symbol: GMD.AX
+  Genmab:
+    market: DK
+    symbol: GMAB.CO
+  Genting Malaysia:
+    market: MY
+    symbol: GENM.KL
+  Gerresheimer AG:
+    market: DE
+    symbol: GXI.DE
   Giant Biogene:
     market: HK
     symbol: 2367.HK
@@ -7165,9 +8517,21 @@ entries:
   GoPro:
     market: US
     symbol: GPRO
+  Goodman:
+    market: AU
+    symbol: GMG.AX
+  Goodman Group:
+    market: AU
+    symbol: GMG.AX
+  Gore Street Energy Storage Fund:
+    market: UK
+    symbol: GSF.L
   Grab:
     market: US
     symbol: GRAB
+  GrainCorp:
+    market: AU
+    symbol: GNC.AX
   Graphic Packaging Hldg:
     market: US
     symbol: GPK
@@ -7189,12 +8553,21 @@ entries:
   Greentown China Holdings:
     market: HK
     symbol: 3900.HK
+  Grenergy:
+    market: ES
+    symbol: GRE.MC
   Grocery Outlet Holding:
     market: US
     symbol: GO
   Grocery Outlet Holding Corp:
     market: US
     symbol: GO
+  Groww:
+    market: IN
+    symbol: GROWW.NS
+  Grupo Aeroportuario del Pacifico:
+    market: MX
+    symbol: GAPB.MX
   Grupo Cibest:
     market: US
     symbol: CIB
@@ -7213,24 +8586,66 @@ entries:
   Gushengtang Holdings:
     market: HK
     symbol: 2273.HK
+  Guzman Y Gomez:
+    market: AU
+    symbol: GYG.AX
+  Guzman Y Gomez Ltd:
+    market: AU
+    symbol: GYG.AX
   HAL:
     market: US
     symbol: HAL
   HAL.US:
     market: US
     symbol: HAL
+  HANA.BK:
+    market: TH
+    symbol: HANA.BK
+  HAVAS.AS:
+    market: NL
+    symbol: HAVAS.AS
+  HAVAS.NA:
+    market: NL
+    symbol: HAVAS.AS
   HAWK:
     market: US
     symbol: HAWK
   HAWK.US:
     market: US
     symbol: HAWK
+  HBR.L:
+    market: UK
+    symbol: HBR.L
+  HBR.LN:
+    market: UK
+    symbol: HBR.L
   HD:
     market: US
     symbol: HD
   HD.US:
     market: US
     symbol: HD
+  HDBK.BO:
+    market: IN
+    symbol: HDBK.BO
+  HDFC Bank:
+    market: IN
+    symbol: HDBK.BO
+  HDFC Bank Ltd:
+    market: IN
+    symbol: HDFCB.NS
+  HDFC Life Insurance Company:
+    market: IN
+    symbol: HDFL.BO
+  HDFCB.IN:
+    market: IN
+    symbol: HDFCB.NS
+  HDFCB.NS:
+    market: IN
+    symbol: HDFCB.NS
+  HDFL.BO:
+    market: IN
+    symbol: HDFL.BO
   HE:
     market: US
     requires_context: true
@@ -7241,24 +8656,72 @@ entries:
   HEI:
     market: US
     symbol: HEI
+  HEI.DE:
+    market: DE
+    symbol: HEI.DE
+  HEI.GY:
+    market: DE
+    symbol: HEI.DE
   HEI.US:
     market: US
     symbol: HEI
+  HEIA.AS:
+    market: NL
+    symbol: HEIA.AS
+  HEIA.NA:
+    market: NL
+    symbol: HEIA.AS
   HEICO:
     market: US
     symbol: HEI
   HEICO Corporation:
     market: US
     symbol: HEI
+  HEIN.AS:
+    market: NL
+    symbol: HEIN.AS
+  HEIO.AS:
+    market: NL
+    symbol: HEIO.AS
+  HEIO.NA:
+    market: NL
+    symbol: HEIO.AS
+  HEM.ST:
+    market: SE
+    symbol: HEM.ST
+  HIK.L:
+    market: UK
+    symbol: HIK.L
+  HIK.LN:
+    market: UK
+    symbol: HIK.L
+  HITN.BO:
+    market: IN
+    symbol: HITN.BO
   HK Exchanges & Clearing:
     market: HK
     symbol: 0388.HK
+  HLMA.L:
+    market: UK
+    symbol: HLMA.L
+  HMCL.IN:
+    market: IN
+    symbol: HMCL.NS
+  HMCL.NS:
+    market: IN
+    symbol: HMCL.NS
   HNHPF:
     market: US
     symbol: HNHPF
   HNHPF.US:
     market: US
     symbol: HNHPF
+  HOCM.L:
+    market: UK
+    symbol: HOCM.L
+  HOME.NS:
+    market: IN
+    symbol: HOME.NS
   HON:
     market: US
     symbol: HON
@@ -7295,6 +8758,9 @@ entries:
   HSAI.US:
     market: US
     symbol: HSAI
+  HSBA.L:
+    market: UK
+    symbol: HSBA.L
   HST:
     market: US
     symbol: HST
@@ -7325,6 +8791,9 @@ entries:
   HUM.US:
     market: US
     symbol: HUM
+  HVEL.BO:
+    market: IN
+    symbol: HVEL.BO
   HWM:
     market: US
     symbol: HWM
@@ -7337,6 +8806,12 @@ entries:
   HXL.US:
     market: US
     symbol: HXL
+  HZ.IN:
+    market: IN
+    symbol: HZ.NS
+  HZ.NS:
+    market: IN
+    symbol: HZ.NS
   Haier Smart Home Co:
     market: CN
     symbol: 600690.SH
@@ -7349,9 +8824,18 @@ entries:
   Halliburton:
     market: US
     symbol: HAL
+  Halma:
+    market: UK
+    symbol: HLMA.L
+  Halma Plc:
+    market: UK
+    symbol: HLMA.L
   Han's CNC Technology:
     market: CN
     symbol: 301200.SZ
+  Hana微电子:
+    market: TH
+    symbol: HANA.BK
   Hang Lung Properties:
     market: HK
     symbol: 0101.HK
@@ -7361,15 +8845,27 @@ entries:
   Hangzhou Oxygen Plant:
     market: CN
     symbol: 002430.SZ
+  Hanwha Aerospace:
+    market: KR
+    symbol: 012450.KS
   Harbin Electric Company:
     market: HK
     symbol: 1133.HK
+  Harbour Energy:
+    market: UK
+    symbol: HBR.L
   Harmonic Drive Systems:
     market: JP
     symbol: 6324.T
   HashKey:
     market: HK
     symbol: 3887.HK
+  Havas:
+    market: NL
+    symbol: HAVAS.AS
+  Havells India:
+    market: IN
+    symbol: HVEL.BO
   Hawaiian Electric Industries:
     market: US
     symbol: HE
@@ -7385,15 +8881,33 @@ entries:
   Heico Corporation:
     market: US
     symbol: HEI
+  Heidelberg Materials:
+    market: DE
+    symbol: HEI.DE
+  Heineken:
+    market: NL
+    symbol: HEIN.AS
+  Heineken Holding NV:
+    market: NL
+    symbol: HEIO.AS
+  Heineken NV:
+    market: NL
+    symbol: HEIA.AS
   Hemab Therapeutics:
     market: US
     symbol: COAG
+  Hemnet Group AB:
+    market: SE
+    symbol: HEM.ST
   Hengli Petrochemical:
     market: CN
     symbol: 600346.SH
   Hengrui:
     market: HK
     symbol: 1276.HK
+  Hero MotoCorp:
+    market: IN
+    symbol: HMCL.NS
   Hewlett Packard Enterprise:
     market: US
     symbol: HPE
@@ -7406,6 +8920,12 @@ entries:
   Hexcel Corporation:
     market: US
     symbol: HXL
+  Hikma Pharmaceuticals:
+    market: UK
+    symbol: HIK.L
+  Hindustan Zinc:
+    market: IN
+    symbol: HZ.NS
   Hino Motors:
     market: JP
     symbol: 7205.T
@@ -7415,12 +8935,30 @@ entries:
   Hitachi:
     market: JP
     symbol: 6501.T
+  Hitachi Energy India:
+    market: IN
+    symbol: HITN.BO
+  Hitachi Energy India Ltd.:
+    market: IN
+    symbol: HITN.BO
+  Hochschild Mining:
+    market: UK
+    symbol: HOCM.L
+  Hochschild Mining PLC:
+    market: UK
+    symbol: HOCM.L
   Home Depot:
     market: US
     symbol: HD
   Home Depot Inc.:
     market: US
     symbol: HD
+  Home First Finance Co:
+    market: IN
+    symbol: HOME.NS
+  Home First Finance Co Ltd:
+    market: IN
+    symbol: HOME.NS
   Hon Hai Precision:
     market: US
     symbol: HNHPF
@@ -7472,21 +9010,42 @@ entries:
   Hwatsing:
     market: CN
     symbol: 688120.SH
+  IBE.MC:
+    market: ES
+    symbol: IBE.MC
   IBM:
     market: US
     symbol: IBM
   IBM.US:
     market: US
     symbol: IBM
+  ICAD.FP:
+    market: FR
+    symbol: ICAD.PA
+  ICAD.PA:
+    market: FR
+    symbol: ICAD.PA
   ICBC:
     market: CN
     symbol: 601398.SH
+  ICBK.BO:
+    market: IN
+    symbol: ICBK.BO
   ICE:
     market: US
     symbol: ICE
   ICE.US:
     market: US
     symbol: ICE
+  ICICI Bank:
+    market: IN
+    symbol: ICBK.BO
+  ICIR.BO:
+    market: IN
+    symbol: ICIR.BO
+  ICIR.NS:
+    market: IN
+    symbol: ICIR.NS
   IDA:
     market: US
     symbol: IDA
@@ -7499,24 +9058,84 @@ entries:
   IDACORP Inc:
     market: US
     symbol: IDA
+  IDNI.NS:
+    market: IN
+    symbol: IDNI.NS
+  IDP Education:
+    market: AU
+    symbol: IEL.AX
+  IEL.AU:
+    market: AU
+    symbol: IEL.AX
+  IEL.AX:
+    market: AU
+    symbol: IEL.AX
   IFF:
     market: US
     symbol: IFF
   IFF.US:
     market: US
     symbol: IFF
+  IFX.DE:
+    market: DE
+    symbol: IFX.DE
+  IFX.GR:
+    market: DE
+    symbol: IFX.DE
+  IFX.GY:
+    market: DE
+    symbol: IFX.DE
+  IG Group:
+    market: UK
+    symbol: IGG.L
+  IG Group PLC:
+    market: UK
+    symbol: IGG.L
+  IGAS.NS:
+    market: IN
+    symbol: IGAS.NS
+  IGG.L:
+    market: UK
+    symbol: IGG.L
+  IHP.L:
+    market: UK
+    symbol: IHP.L
+  IHP.LN:
+    market: UK
+    symbol: IHP.L
+  III.L:
+    market: UK
+    symbol: III.L
+  III.LN:
+    market: UK
+    symbol: III.L
   IKT:
     market: US
     symbol: IKT
   IKT.US:
     market: US
     symbol: IKT
+  IMB.L:
+    market: UK
+    symbol: IMB.L
+  IMO.TO:
+    market: CA
+    symbol: IMO.TO
   INDV:
     market: US
     symbol: INDV
   INDV.US:
     market: US
     symbol: INDV
+  INFY.BO:
+    market: IN
+    symbol: INFY.BO
+  INFY.NS:
+    market: IN
+    symbol: INFY.NS
+  INGL.BO:
+    market: IN
+    symbol: INGL.BO
   INO:
     market: US
     symbol: INO
@@ -7532,12 +9151,21 @@ entries:
   INTC.US:
     market: US
     symbol: INTC
+  INTRUM.ST:
+    market: SE
+    symbol: INTRUM.ST
   INTU:
     market: US
     symbol: INTU
+  INWT.MI:
+    market: IT
+    symbol: INWT.MI
   IPN:
     market: US
     symbol: IPN
+  IPN.PA:
+    market: FR
+    symbol: IPN.PA
   IQ:
     market: US
     requires_context: true
@@ -7566,12 +9194,18 @@ entries:
   IRON.US:
     market: US
     symbol: IRON
+  ISAT.JK:
+    market: ID
+    symbol: ISAT.JK
   ISRG:
     market: US
     symbol: ISRG
   ISRG.US:
     market: US
     symbol: ISRG
+  ITRK.L:
+    market: UK
+    symbol: ITRK.L
   ITT:
     market: US
     symbol: ITT
@@ -7587,15 +9221,69 @@ entries:
   ITUB.US:
     market: US
     symbol: ITUB
+  ITV:
+    market: UK
+    symbol: ITV.L
+  ITV PLC:
+    market: UK
+    symbol: ITV.L
+  ITV.L:
+    market: UK
+    symbol: ITV.L
+  ITV.LN:
+    market: UK
+    symbol: ITV.L
+  IWG:
+    market: UK
+    symbol: IWG.L
+  IWG.L:
+    market: UK
+    symbol: IWG.L
+  IWG.LN:
+    market: UK
+    symbol: IWG.L
+  Iberdrola:
+    market: ES
+    symbol: IBE.MC
   Ibiden:
     market: JP
     symbol: 4062.T
+  Icade:
+    market: FR
+    symbol: ICAD.PA
+  Imperial Brands:
+    market: UK
+    symbol: IMB.L
+  Imperial Oil:
+    market: CA
+    symbol: IMO.TO
+  Imperial Oil Ltd:
+    market: CA
+    symbol: IMO.TO
+  India Shelter Finance Corporation:
+    market: IN
+    symbol: IDNI.NS
+  India Shelter Finance Corporation Ltd:
+    market: IN
+    symbol: IDNI.NS
   Indivior:
     market: US
     symbol: INDV
   Indivior PLC:
     market: US
     symbol: INDV
+  Indosat:
+    market: ID
+    symbol: ISAT.JK
+  Indraprastha Gas:
+    market: IN
+    symbol: IGAS.NS
+  Infineon Technologies AG:
+    market: DE
+    symbol: IFX.DE
+  Infrastrutture Wireless SpA:
+    market: IT
+    symbol: INWT.MI
   Inhibikase Therapeutics:
     market: US
     symbol: IKT
@@ -7635,12 +9323,27 @@ entries:
   Insta360影石:
     market: CN
     symbol: 688775.SH
+  IntegraFin:
+    market: UK
+    symbol: IHP.L
   Intel:
     market: US
     symbol: INTC
   Intel Corp:
     market: US
     symbol: INTC
+  InterGlobe Aviation:
+    market: IN
+    symbol: INGL.BO
+  Intertek Group:
+    market: UK
+    symbol: ITRK.L
+  Intertek Group PLC:
+    market: UK
+    symbol: ITRK.L
+  Intrum AB:
+    market: SE
+    symbol: INTRUM.ST
   Intuit:
     market: US
     symbol: INTU
@@ -7671,6 +9374,9 @@ entries:
   J.B. Hunt Transport Services:
     market: US
     symbol: JBHT
+  JARD.SI:
+    market: SG
+    symbol: JARD.SI
   JBHT:
     market: US
     symbol: JBHT
@@ -7689,6 +9395,9 @@ entries:
   JCAP.US:
     market: US
     symbol: JCAP
+  JCYC.SI:
+    market: SG
+    symbol: JCYC.SI
   JD Health:
     market: HK
     symbol: 6618.HK
@@ -7707,6 +9416,9 @@ entries:
   JD.com Inc.:
     market: US
     symbol: JD
+  JDO.AX:
+    market: AU
+    symbol: JDO.AX
   JEF:
     market: US
     symbol: JEF
@@ -7722,6 +9434,9 @@ entries:
   JFE Holdings:
     market: JP
     symbol: 5411.T
+  JHX.AX:
+    market: AU
+    symbol: JHX.AX
   JMDC:
     market: JP
     symbol: 4483.T
@@ -7743,6 +9458,9 @@ entries:
   Jacobio Pharma:
     market: HK
     symbol: 1167.HK
+  James Hardie Industries:
+    market: AU
+    symbol: JHX.AX
   Japan Airlines:
     market: JP
     symbol: 9201.T
@@ -7752,6 +9470,15 @@ entries:
   Japan Post Bank:
     market: JP
     symbol: 7182.T
+  Jardine Cycle & Carriage:
+    market: SG
+    symbol: JCYC.SI
+  Jardine Cycle & Carriage Ltd:
+    market: SG
+    symbol: JCYC.SI
+  Jardine Matheson:
+    market: SG
+    symbol: JARD.SI
   Jefferies Financial:
     market: US
     symbol: JEF
@@ -7791,6 +9518,9 @@ entries:
   KALV.OQ:
     market: US
     symbol: KALV
+  KAR.AX:
+    market: AU
+    symbol: KAR.AX
   KB Home:
     market: US
     symbol: KBH
@@ -7822,6 +9552,18 @@ entries:
   KEY.US:
     market: US
     symbol: KEY
+  KGF.L:
+    market: UK
+    symbol: KGF.L
+  KGH.WA:
+    market: PL
+    symbol: KGH.WA
+  KGHM Polska Miedz SA:
+    market: PL
+    symbol: KGH.WA
+  KGX.DE:
+    market: DE
+    symbol: KGX.DE
   KHC:
     market: US
     symbol: KHC
@@ -7831,6 +9573,12 @@ entries:
   KINGMED:
     market: CN
     symbol: 603882.SH
+  KION:
+    market: DE
+    symbol: KGX.DE
+  KION Group:
+    market: DE
+    symbol: KGX.DE
   KKR:
     market: US
     symbol: KKR
@@ -7843,6 +9591,12 @@ entries:
   KKR.US:
     market: US
     symbol: KKR
+  KMD Brands:
+    market: NZ
+    symbol: KMD.NZ
+  KMD.NZ:
+    market: NZ
+    symbol: KMD.NZ
   KMI:
     market: US
     symbol: KMI
@@ -7855,12 +9609,21 @@ entries:
   KMX.US:
     market: US
     symbol: KMX
+  KNIN.SW:
+    market: CH
+    symbol: KNIN.SW
   KO:
     market: US
     symbol: KO
   KO.US:
     market: US
     symbol: KO
+  KPN:
+    market: NL
+    symbol: KPN.AS
+  KPN.AS:
+    market: NL
+    symbol: KPN.AS
   KR:
     market: US
     symbol: KR
@@ -7903,9 +9666,18 @@ entries:
   Kao:
     market: JP
     symbol: 4452.T
+  Karoon Energy:
+    market: AU
+    symbol: KAR.AX
+  Karoon Energy Ltd:
+    market: AU
+    symbol: KAR.AX
   Kematek:
     market: CN
     symbol: 301611.SZ
+  Kering:
+    market: FR
+    symbol: PRTP.PA
   Keurig Dr Pepper:
     market: US
     symbol: KDP
@@ -7945,6 +9717,9 @@ entries:
   Komatsu:
     market: JP
     symbol: 6301.T
+  Koninklijke Ahold Delhaize NV:
+    market: NL
+    symbol: AD.AS
   Kroger:
     market: US
     symbol: KR
@@ -7960,6 +9735,12 @@ entries:
   Kyverna Therapeutics:
     market: US
     symbol: KYTX
+  L&F Co:
+    market: KR
+    symbol: 066970.KS
+  L&F Co Ltd:
+    market: KR
+    symbol: 066970.KS
   L3Harris Technologies:
     market: US
     symbol: LHX
@@ -7999,6 +9780,9 @@ entries:
   LEA.US:
     market: US
     symbol: LEA
+  LEGD.PA:
+    market: FR
+    symbol: LEGD.PA
   LEN:
     market: US
     symbol: LEN
@@ -8011,6 +9795,21 @@ entries:
   LEU.US:
     market: US
     symbol: LEU
+  LG Energy Solution:
+    market: KR
+    symbol: 373220.KS
+  LG化学:
+    market: KR
+    symbol: 051910.KS
+  LG显示:
+    market: KR
+    symbol: 034220.KS
+  LG电子:
+    market: KR
+    symbol: 066570.KS
+  LG能源解决方案:
+    market: KR
+    symbol: 373220.KS
   LHX:
     market: US
     symbol: LHX
@@ -8038,6 +9837,15 @@ entries:
   LLY.US:
     market: US
     symbol: LLY
+  LMP.L:
+    market: UK
+    symbol: LMP.L
+  LMP.LN:
+    market: UK
+    symbol: LMP.L
+  LMPL.L:
+    market: UK
+    symbol: LMPL.L
   LOAR:
     market: US
     symbol: LOAR
@@ -8047,12 +9855,30 @@ entries:
   LONGi Green Energy Technology:
     market: CN
     symbol: 601012.SH
+  LONN.SW:
+    market: CH
+    symbol: LONN.SW
+  LR.FP:
+    market: FR
+    symbol: LR.PA
+  LR.PA:
+    market: FR
+    symbol: LR.PA
   LRCX:
     market: US
     symbol: LRCX
   LRCX.US:
     market: US
     symbol: LRCX
+  LS Electric:
+    market: KR
+    symbol: 010120.KS
+  LTFL.BO:
+    market: IN
+    symbol: LTFL.BO
+  LTFL.NS:
+    market: IN
+    symbol: LTFL.NS
   LUCK:
     market: US
     symbol: LUCK
@@ -8071,6 +9897,15 @@ entries:
   LUV.US:
     market: US
     symbol: LUV
+  LVMH:
+    market: FR
+    symbol: LVMH.PA
+  LVMH Moet Hennessy Louis Vuitton SA:
+    market: FR
+    symbol: LVMH.PA
+  LVMH.PA:
+    market: FR
+    symbol: LVMH.PA
   LW:
     market: US
     symbol: LW
@@ -8080,6 +9915,9 @@ entries:
   LW.US:
     market: US
     symbol: LW
+  LXSG.DE:
+    market: DE
+    symbol: LXSG.DE
   LYFT:
     market: US
     symbol: LYFT
@@ -8089,6 +9927,9 @@ entries:
   Lamb Weston:
     market: US
     symbol: LW
+  Lanxess AG:
+    market: DE
+    symbol: LXSG.DE
   Laopu Gold:
     market: HK
     symbol: 6181.HK
@@ -8107,6 +9948,12 @@ entries:
   Lear Corp:
     market: US
     symbol: LEA
+  Legrand:
+    market: FR
+    symbol: LEGD.PA
+  Legrand SA:
+    market: FR
+    symbol: LR.PA
   Leidos:
     market: US
     symbol: LDOS
@@ -8155,9 +10002,15 @@ entries:
   Loar Holdings:
     market: US
     symbol: LOAR
+  LondonMetric Property:
+    market: UK
+    symbol: LMP.L
   Longi Green Energy Technology:
     market: CN
     symbol: 601012.SH
+  Lonza Group AG:
+    market: CH
+    symbol: LONN.SW
   Lucky Strike:
     market: US
     symbol: LUCK
@@ -8194,6 +10047,12 @@ entries:
   Lyft Inc:
     market: US
     symbol: LYFT
+  M&G:
+    market: UK
+    symbol: MNG.L
+  M&G Plc:
+    market: UK
+    symbol: MNG.L
   M.US:
     market: US
     symbol: M
@@ -8203,12 +10062,24 @@ entries:
   MA.US:
     market: US
     symbol: MA
+  MAIRE.IM:
+    market: IT
+    symbol: MAIRE.MI
+  MAIRE.MI:
+    market: IT
+    symbol: MAIRE.MI
   MAN:
     market: US
     symbol: MAN
   MAN.US:
     market: US
     symbol: MAN
+  MAPA.JK:
+    market: ID
+    symbol: MAPA.JK
+  MAPI.JK:
+    market: ID
+    symbol: MAPI.JK
   MARUWA:
     market: JP
     symbol: 5344.T
@@ -8218,6 +10089,12 @@ entries:
   MAT.US:
     market: US
     symbol: MAT
+  MAXE.BO:
+    market: IN
+    symbol: MAXE.BO
+  MAXI.BO:
+    market: IN
+    symbol: MAXI.BO
   MBLY:
     market: US
     symbol: MBLY
@@ -8239,6 +10116,9 @@ entries:
   MCD.US:
     market: US
     symbol: MCD
+  MCEI.NS:
+    market: IN
+    symbol: MCEI.NS
   MCHP:
     market: US
     symbol: MCHP
@@ -8275,6 +10155,9 @@ entries:
   MDU.US:
     market: US
     symbol: MDU
+  MEES.BO:
+    market: IN
+    symbol: MEES.BO
   MELI:
     market: US
     symbol: MELI
@@ -8284,6 +10167,12 @@ entries:
   META.US:
     market: US
     symbol: META
+  MGAM.L:
+    market: UK
+    symbol: MGAM.L
+  MGAM.LN:
+    market: UK
+    symbol: MGAM.L
   MGM China:
     market: HK
     symbol: 2282.HK
@@ -8314,6 +10203,12 @@ entries:
   MKTX.US:
     market: US
     symbol: MKTX
+  ML.FP:
+    market: FR
+    symbol: ML.PA
+  ML.PA:
+    market: FR
+    symbol: ML.PA
   MMED:
     market: US
     symbol: MMED
@@ -8332,6 +10227,12 @@ entries:
   MNDY.US:
     market: US
     symbol: MNDY
+  MNFL.NS:
+    market: IN
+    symbol: MNFL.NS
+  MNG.L:
+    market: UK
+    symbol: MNG.L
   MNSO:
     market: US
     symbol: MNSO
@@ -8353,6 +10254,15 @@ entries:
   MODEC:
     market: JP
     symbol: 6269.T
+  MONY Group:
+    market: UK
+    symbol: MONY.L
+  MONY Group PLC:
+    market: UK
+    symbol: MONY.L
+  MONY.L:
+    market: UK
+    symbol: MONY.L
   MP:
     market: US
     symbol: MP
@@ -8368,6 +10278,15 @@ entries:
   MQ.US:
     market: US
     symbol: MQ
+  MRCG.DE:
+    market: DE
+    symbol: MRCG.DE
+  MRCO.BO:
+    market: IN
+    symbol: MRCO.BO
+  MRCO.NS:
+    market: IN
+    symbol: MRCO.NS
   MREO:
     market: US
     symbol: MREO
@@ -8416,6 +10335,9 @@ entries:
   MSGS.US:
     market: US
     symbol: MSGS
+  MTC.BK:
+    market: TH
+    symbol: MTC.BK
   MTDR:
     market: US
     symbol: MTDR
@@ -8440,6 +10362,9 @@ entries:
   MUR.US:
     market: US
     symbol: MUR
+  MUTT.NS:
+    market: IN
+    symbol: MUTT.NS
   Macy's:
     market: US
     symbol: M
@@ -8449,6 +10374,9 @@ entries:
   Madison Square Garden Sports Corp:
     market: US
     symbol: MSGS
+  Maire:
+    market: IT
+    symbol: MAIRE.MI
   MakeMyTrip:
     market: US
     symbol: MMYT
@@ -8467,12 +10395,24 @@ entries:
   Managed Care Organization:
     market: US
     symbol: MCO
+  Manappuram Finance:
+    market: IN
+    symbol: MNFL.NS
+  Manappuram Finance Ltd:
+    market: IN
+    symbol: MNFL.NS
   ManpowerGroup:
     market: US
     symbol: MAN
   ManpowerGroup Inc:
     market: US
     symbol: MAN
+  Map Aktif Adiperkasa:
+    market: ID
+    symbol: MAPA.JK
+  Marico Ltd:
+    market: IN
+    symbol: MRCO.NS
   MarketAxess Holdings:
     market: US
     symbol: MKTX
@@ -8509,6 +10449,12 @@ entries:
   Mattel Inc:
     market: US
     symbol: MAT
+  Max Financial Services:
+    market: IN
+    symbol: MAXI.BO
+  Max Healthcare:
+    market: IN
+    symbol: MAXE.BO
   McGraw Hill:
     market: US
     symbol: MH
@@ -8518,6 +10464,12 @@ entries:
   Medtide:
     market: HK
     symbol: 3880.HK
+  Meesho:
+    market: IN
+    symbol: MEES.BO
+  Meesho Limited:
+    market: IN
+    symbol: MEES.BO
   Meituan:
     market: HK
     symbol: 3690.HK
@@ -8527,6 +10479,9 @@ entries:
   MercadoLibre Inc.:
     market: US
     symbol: MELI
+  Merck KGaA:
+    market: DE
+    symbol: MRCG.DE
   Mereo:
     market: US
     symbol: MREO
@@ -8542,6 +10497,9 @@ entries:
   Meta Platforms Inc.:
     market: US
     symbol: META
+  Michelin:
+    market: FR
+    symbol: ML.PA
   MicroPort MedBot:
     market: HK
     symbol: 2252.HK
@@ -8602,6 +10560,9 @@ entries:
   Minth Group:
     market: HK
     symbol: 0425.HK
+  Mitra Adiperkasa:
+    market: ID
+    symbol: MAPI.JK
   Mitsubishi Chemical:
     market: JP
     symbol: 4188.T
@@ -8653,18 +10614,39 @@ entries:
   Moore Thread:
     market: CN
     symbol: 688795.SH
+  Morgan Advanced Materials:
+    market: UK
+    symbol: MGAM.L
   Morgan Stanley:
     market: US
     symbol: TCOM
+  Muang Thai Capital:
+    market: TH
+    symbol: MTC.BK
+  Multi Commodity Exchange of India:
+    market: IN
+    symbol: MCEI.NS
   Murphy Oil:
     market: US
     symbol: MUR
   Murphy Oil Corporation:
     market: US
     symbol: MUR
+  Muthoot Finance:
+    market: IN
+    symbol: MUTT.NS
+  Muthoot Finance Ltd:
+    market: IN
+    symbol: MUTT.NS
   NAURA:
     market: CN
     symbol: 002371.SZ
+  NAVER:
+    market: KR
+    symbol: 035420.KS
+  NAVER集团:
+    market: KR
+    symbol: 035420.KS
   NAVN:
     market: US
     symbol: NAVN
@@ -8686,12 +10668,21 @@ entries:
   NBIX.US:
     market: US
     symbol: NBIX
+  NCK.AU:
+    market: AU
+    symbol: NCK.AX
+  NCK.AX:
+    market: AU
+    symbol: NCK.AX
   NCNO:
     market: US
     symbol: NCNO
   NCNO.US:
     market: US
     symbol: NCNO
+  NDASE.ST:
+    market: SE
+    symbol: NDASE.ST
   NDLS:
     market: US
     symbol: NDLS
@@ -8707,12 +10698,21 @@ entries:
   NEE.US:
     market: US
     symbol: NEE
+  NESN.SW:
+    market: CH
+    symbol: NESN.SW
   NET:
     market: US
     symbol: NET
   NET.US:
     market: US
     symbol: NET
+  NEX.FP:
+    market: FR
+    symbol: NEX.PA
+  NEX.PA:
+    market: FR
+    symbol: NEX.PA
   NEXTracker:
     market: US
     symbol: NXT
@@ -8728,6 +10728,15 @@ entries:
   NH Foods Ltd.:
     market: JP
     symbol: 2282.T
+  NHF.AU:
+    market: AU
+    symbol: NHF.AX
+  NHF.AX:
+    market: AU
+    symbol: NHF.AX
+  NHY.OL:
+    market: 'NO'
+    symbol: NHY.OL
   NIO.US:
     market: US
     symbol: NIO
@@ -8752,6 +10761,21 @@ entries:
   NOAH.US:
     market: US
     symbol: NOAH
+  NOD.NO:
+    market: 'NO'
+    symbol: NOD.OL
+  NOD.OL:
+    market: 'NO'
+    symbol: NOD.OL
+  NOKIA.HE:
+    market: FI
+    symbol: NOKIA.HE
+  NOVOB.CO:
+    market: DK
+    symbol: NOVOB.CO
+  NOVOB.DC:
+    market: DK
+    symbol: NOVOB.CO
   NOW.N:
     market: US
     symbol: NOW
@@ -8767,6 +10791,9 @@ entries:
   NSIG:
     market: CN
     symbol: 688126.SH
+  NSR.AX:
+    market: AU
+    symbol: NSR.AX
   NTES.O:
     market: US
     symbol: NTES
@@ -8776,6 +10803,9 @@ entries:
   NTES.US:
     market: US
     symbol: NTES
+  NTGY.MC:
+    market: ES
+    symbol: NTGY.MC
   NTN:
     market: JP
     symbol: 6472.T
@@ -8794,6 +10824,9 @@ entries:
   NUE.US:
     market: US
     symbol: NUE
+  NUVA.NS:
+    market: IN
+    symbol: NUVA.NS
   NUVL:
     market: US
     symbol: NUVL
@@ -8821,6 +10854,15 @@ entries:
   NWC:
     market: US
     symbol: NWC
+  NWC.TO:
+    market: CA
+    symbol: NWC.TO
+  NWC.TSX:
+    market: CA
+    symbol: NWC.TO
+  NXG.AX:
+    market: AU
+    symbol: NXG.AX
   NXPI:
     market: US
     symbol: NXPI
@@ -8830,6 +10872,15 @@ entries:
   NXT:
     market: US
     symbol: NXT
+  NXT.AU:
+    market: AU
+    symbol: NXT.AX
+  NXT.AX:
+    market: AU
+    symbol: NXT.AX
+  NXT.L:
+    market: UK
+    symbol: NXT.L
   NXT.US:
     market: US
     symbol: NXT
@@ -8878,6 +10929,12 @@ entries:
   National Beverage Corp:
     market: US
     symbol: FIZZ
+  National Storage REIT:
+    market: AU
+    symbol: NSR.AX
+  Naturgy:
+    market: ES
+    symbol: NTGY.MC
   Navan:
     market: US
     symbol: NAVN
@@ -8887,6 +10944,12 @@ entries:
   Navan Inc.:
     market: US
     symbol: NAVN
+  Naver:
+    market: KR
+    symbol: 035420.KS
+  Naver Corp:
+    market: KR
+    symbol: 035420.KS
   Nebius:
     market: US
     symbol: NBIS
@@ -8911,12 +10974,21 @@ entries:
   Neurocrine Biosciences:
     market: US
     symbol: NBIX
+  Nexans:
+    market: FR
+    symbol: NEX.PA
   Nexchip:
     market: CN
     symbol: 688249.SH
   NextEra Energy:
     market: US
     symbol: NEE
+  Ngern Tid Lor:
+    market: TH
+    symbol: TIDLOR.BK
+  Nick Scali:
+    market: AU
+    symbol: NCK.AX
   Nidec:
     market: JP
     symbol: 6594.T
@@ -8968,6 +11040,18 @@ entries:
   Noodles & Company:
     market: US
     symbol: NDLS
+  Nordea:
+    market: SE
+    symbol: NDASE.ST
+  Nordic Semiconductor:
+    market: 'NO'
+    symbol: NOD.OL
+  Nordic Semiconductor ASA:
+    market: 'NO'
+    symbol: NOD.OL
+  Norsk Hydro:
+    market: 'NO'
+    symbol: NHY.OL
   North West Company:
     market: US
     symbol: NWC
@@ -8980,9 +11064,24 @@ entries:
   Nuvalent Inc Class:
     market: US
     symbol: NUVL
+  Nuvama Wealth Management:
+    market: IN
+    symbol: NUVA.NS
   Nvidia Corp.:
     market: US
     symbol: NVDA
+  OCDO.L:
+    market: UK
+    symbol: OCDO.L
+  OCDO.LN:
+    market: UK
+    symbol: OCDO.L
+  OMA Airports:
+    market: MX
+    symbol: OMAB.MX
+  OMAB.MX:
+    market: MX
+    symbol: OMAB.MX
   OMC:
     market: US
     symbol: OMC
@@ -9016,15 +11115,30 @@ entries:
   ONC.US:
     market: US
     symbol: ONC
+  ONEW.NS:
+    market: IN
+    symbol: ONEW.NS
   ONON:
     market: US
     symbol: ONON
   ONON.US:
     market: US
     symbol: ONON
+  ONTEX.BR:
+    market: BE
+    symbol: ONTEX.BR
+  OR.FP:
+    market: FR
+    symbol: OR.PA
+  OR.PA:
+    market: FR
+    symbol: OR.PA
   ORA:
     market: US
     symbol: ORA
+  ORA.AX:
+    market: AU
+    symbol: ORA.AX
   ORA.US:
     market: US
     symbol: ORA
@@ -9040,9 +11154,45 @@ entries:
   ORCL.US:
     market: US
     symbol: ORCL
+  OREP.PA:
+    market: FR
+    symbol: OREP.PA
+  ORG.AU:
+    market: AU
+    symbol: ORG.AX
+  ORG.AX:
+    market: AU
+    symbol: ORG.AX
   ORI:
     market: US
     symbol: ORI
+  ORI.AX:
+    market: AU
+    symbol: ORI.AX
+  ORIT.L:
+    market: UK
+    symbol: ORIT.L
+  ORIT.LN:
+    market: UK
+    symbol: ORIT.L
+  ORSTED.CO:
+    market: DK
+    symbol: ORSTED.CO
+  ORSTED.DC:
+    market: DK
+    symbol: ORSTED.CO
+  Ocado:
+    market: UK
+    symbol: OCDO.L
+  Ocado Group:
+    market: UK
+    symbol: OCDO.L
+  Ocado Group PLC:
+    market: UK
+    symbol: OCDO.L
+  Oil & Gas Exploration & Production:
+    market: UK
+    symbol: ENQ.L
   Old National Bancorp:
     market: US
     symbol: ONB
@@ -9067,15 +11217,45 @@ entries:
   OneMain Holdings:
     market: US
     symbol: OMF
+  Ontex Group NV:
+    market: BE
+    symbol: ONTEX.BR
   Oracle:
     market: US
     symbol: ORCL
   Orica:
     market: US
     symbol: ORI
+  Origin:
+    market: AU
+    symbol: ORG.AX
+  Origin Energy:
+    market: AU
+    symbol: ORG.AX
+  Origin Energy Limited:
+    market: AU
+    symbol: ORG.AX
+  Orion:
+    market: KR
+    symbol: 271560.KS
+  Orion Corp.:
+    market: KR
+    symbol: 271560.KS
   Ormat:
     market: US
     symbol: ORA
+  Orora:
+    market: AU
+    symbol: ORA.AX
+  Orora Ltd.:
+    market: AU
+    symbol: ORA.AX
+  Orsted:
+    market: DK
+    symbol: ORSTED.CO
+  Orsted AS:
+    market: DK
+    symbol: ORSTED.CO
   PAGS:
     market: US
     symbol: PAGS
@@ -9103,6 +11283,9 @@ entries:
   PAYX.US:
     market: US
     symbol: PAYX
+  PB Fintech:
+    market: IN
+    symbol: PBFI.NS
   PBF:
     market: US
     symbol: PBF
@@ -9115,6 +11298,12 @@ entries:
   PBF.US:
     market: US
     symbol: PBF
+  PBFI.NS:
+    market: IN
+    symbol: PBFI.NS
+  PCOP.WA:
+    market: PL
+    symbol: PCOP.WA
   PDD Holdings:
     market: US
     symbol: PDD
@@ -9136,6 +11325,21 @@ entries:
   PEP.US:
     market: US
     symbol: PEP
+  PERP.PA:
+    market: FR
+    symbol: PERP.PA
+  PETS.L:
+    market: UK
+    symbol: PETS.L
+  PETS.LN:
+    market: UK
+    symbol: PETS.L
+  PEXA:
+    market: AU
+    symbol: PXA.AX
+  PEXA Group:
+    market: AU
+    symbol: PXA.AX
   PFE:
     market: US
     symbol: PFE
@@ -9160,6 +11364,21 @@ entries:
   PGR.US:
     market: US
     symbol: PGR
+  PHIA.AS:
+    market: NL
+    symbol: PHIA.AS
+  PHIA.NA:
+    market: NL
+    symbol: PHIA.AS
+  PHNX.L:
+    market: UK
+    symbol: PHNX.L
+  PHNX.LN:
+    market: UK
+    symbol: PHNX.L
+  PHYS.BO:
+    market: IN
+    symbol: PHYS.BO
   PICC:
     market: HK
     symbol: 1339.HK
@@ -9169,6 +11388,15 @@ entries:
   PICC财产和意外伤害保险:
     market: HK
     symbol: 2328.HK
+  PIDI.NS:
+    market: IN
+    symbol: PIDI.NS
+  PINELABS.IN:
+    market: IN
+    symbol: PINELABS.NS
+  PINELABS.NS:
+    market: IN
+    symbol: PINELABS.NS
   PINS:
     market: US
     symbol: PINS
@@ -9181,9 +11409,39 @@ entries:
   PLTR.US:
     market: US
     symbol: PLTR
+  PLX.PA:
+    market: FR
+    symbol: PLX.PA
+  PMV.AX:
+    market: AU
+    symbol: PMV.AX
+  PNB Housing Finance:
+    market: IN
+    symbol: PNBH.NS
+  PNB Housing Finance Ltd:
+    market: IN
+    symbol: PNBH.NS
+  PNBH.NS:
+    market: IN
+    symbol: PNBH.NS
+  PNBK.BO:
+    market: IN
+    symbol: PNBK.BO
   PNC:
     market: CN
     symbol: 603690.SH
+  PNDORA.CO:
+    market: DK
+    symbol: PNDORA.CO
+  PNDORA.DC:
+    market: DK
+    symbol: PNDORA.CO
+  POLICYBZ.IN:
+    market: IN
+    symbol: POLICYBZ.NS
+  POLICYBZ.NS:
+    market: IN
+    symbol: POLICYBZ.NS
   PONY:
     market: US
     symbol: PONY
@@ -9196,12 +11454,21 @@ entries:
   POR.US:
     market: US
     symbol: POR
+  POSCO FUTURE M:
+    market: KR
+    symbol: 003670.KS
+  POSCO Future M:
+    market: KR
+    symbol: 003670.KS
   PPL:
     market: US
     symbol: PPL
   PPL Corp:
     market: US
     symbol: PPL
+  PPL.TO:
+    market: CA
+    symbol: PPL.TO
   PPL.US:
     market: US
     symbol: PPL
@@ -9211,18 +11478,33 @@ entries:
   PRAX.US:
     market: US
     symbol: PRAX
+  PRN.AX:
+    market: AU
+    symbol: PRN.AX
+  PRTP.PA:
+    market: FR
+    symbol: PRTP.PA
   PSIX:
     market: US
     symbol: PSIX
   PSIX.US:
     market: US
     symbol: PSIX
+  PST.MI:
+    market: IT
+    symbol: PST.MI
   PSX:
     market: US
     symbol: PSX
   PSX.US:
     market: US
     symbol: PSX
+  PTT Exploration & Production:
+    market: TH
+    symbol: PTTEP.BK
+  PTTEP.BK:
+    market: TH
+    symbol: PTTEP.BK
   PUMP:
     market: US
     symbol: PUMP
@@ -9238,6 +11520,12 @@ entries:
   PVH.US:
     market: US
     symbol: PVH
+  PXA.AU:
+    market: AU
+    symbol: PXA.AX
+  PXA.AX:
+    market: AU
+    symbol: PXA.AX
   PYPL:
     market: US
     symbol: PYPL
@@ -9259,6 +11547,12 @@ entries:
   Pan Pacific International Holdings:
     market: JP
     symbol: 7532.T
+  Pandora:
+    market: DK
+    symbol: PNDORA.CO
+  Pandora AS:
+    market: DK
+    symbol: PNDORA.CO
   Park24:
     market: JP
     symbol: 4666.T
@@ -9283,18 +11577,54 @@ entries:
   Payoneer Global Inc.:
     market: US
     symbol: PAYO
+  Pearl Abyss:
+    market: KR
+    symbol: 263750.KQ
+  Pearl Abyss Corp:
+    market: KR
+    symbol: 263750.KQ
   Pegatron:
     market: TW
     symbol: 4938.TW
+  Pembina Pipeline:
+    market: CA
+    symbol: PPL.TO
+  Pembina Pipeline Corporation:
+    market: CA
+    symbol: PPL.TO
+  Pepco:
+    market: PL
+    symbol: PCOP.WA
+  Pepco Group:
+    market: PL
+    symbol: PCOP.WA
+  Pepco Group NV:
+    market: PL
+    symbol: PCOP.WA
+  Perenti:
+    market: AU
+    symbol: PRN.AX
+  Perenti Ltd:
+    market: AU
+    symbol: PRN.AX
   Perfect World:
     market: CN
     symbol: 002624.SZ
+  Pernod Ricard SA:
+    market: FR
+    symbol: RI.PA
   PetroChina:
     market: HK
     symbol: 0857.HK
+  Pets at Home:
+    market: UK
+    symbol: PETS.L
   Pfizer:
     market: US
     symbol: PFE
+  Philips:
+    market: NL
+    symbol: PHIA.AS
   Phillips 66:
     market: US
     symbol: PSX
@@ -9304,6 +11634,24 @@ entries:
   Phillips Edison & Co Inc:
     market: US
     symbol: PECO
+  Phoenix Group:
+    market: UK
+    symbol: PHNX.L
+  Phoenix Group Plc:
+    market: UK
+    symbol: PHNX.L
+  PhysicsWallah:
+    market: IN
+    symbol: PHYS.BO
+  PhysicsWallah Ltd.:
+    market: IN
+    symbol: PHYS.BO
+  Pidilite Industries:
+    market: IN
+    symbol: PIDI.NS
+  Pine Labs:
+    market: IN
+    symbol: PINELABS.NS
   Pinterest:
     market: US
     symbol: PINS
@@ -9313,12 +11661,18 @@ entries:
   Piotech:
     market: CN
     symbol: 688072.SH
+  Pluxee:
+    market: FR
+    symbol: PLX.PA
   Pony AI Inc.:
     market: US
     symbol: PONY
   Portland General Electric Company:
     market: US
     symbol: POR
+  Poste Italiane SpA:
+    market: IT
+    symbol: PST.MI
   Power Solutions International:
     market: US
     symbol: PSIX
@@ -9328,6 +11682,12 @@ entries:
   Precigen:
     market: US
     symbol: PGEN
+  Premier Investments:
+    market: AU
+    symbol: PMV.AX
+  Premier Investments Ltd:
+    market: AU
+    symbol: PMV.AX
   ProPetro Holding:
     market: US
     symbol: PUMP
@@ -9346,18 +11706,48 @@ entries:
   Proya Cosmetics:
     market: CN
     symbol: 603605.SH
+  Punjab National Bank:
+    market: IN
+    symbol: PNBK.BO
+  QAN.AX:
+    market: AU
+    symbol: QAN.AX
+  QBE Insurance:
+    market: AU
+    symbol: QBE.AX
+  QBE Insurance Group:
+    market: AU
+    symbol: QBE.AX
+  QBE.AX:
+    market: AU
+    symbol: QBE.AX
+  QBE保险:
+    market: AU
+    symbol: QBE.AX
+  QBE保险集团:
+    market: AU
+    symbol: QBE.AX
   QCOM:
     market: US
     symbol: QCOM
   QCOM.US:
     market: US
     symbol: QCOM
+  QDT.FP:
+    market: FR
+    symbol: QDT.PA
+  QDT.PA:
+    market: FR
+    symbol: QDT.PA
   QRVO:
     market: US
     symbol: QRVO
   QRVO.US:
     market: US
     symbol: QRVO
+  QUB.AX:
+    market: AU
+    symbol: QUB.AX
   Qingdao Gaoce Technology:
     market: CN
     symbol: 688556.SH
@@ -9373,6 +11763,9 @@ entries:
   Qorvo Inc.:
     market: US
     symbol: QRVO
+  Quadient:
+    market: FR
+    symbol: QDT.PA
   Qualcomm:
     market: US
     symbol: QCOM
@@ -9382,12 +11775,27 @@ entries:
   Qualcomm Inc.:
     market: US
     symbol: QCOM
+  Qube:
+    market: AU
+    symbol: QUB.AX
+  Qube Holdings:
+    market: AU
+    symbol: QUB.AX
   RACE:
     market: US
     symbol: RACE
+  RACE.MI:
+    market: IT
+    symbol: RACE.MI
   RACE.US:
     market: US
     symbol: RACE
+  RAND.AS:
+    market: NL
+    symbol: RAND.AS
+  RAND.NA:
+    market: NL
+    symbol: RAND.AS
   RAPP:
     market: US
     symbol: RAPP
@@ -9400,6 +11808,12 @@ entries:
   RARE.US:
     market: US
     symbol: RARE
+  RATB.BO:
+    market: IN
+    symbol: RATB.BO
+  RBL Bank:
+    market: IN
+    symbol: RATB.BO
   RBLX:
     market: US
     symbol: RBLX
@@ -9418,6 +11832,18 @@ entries:
   RC.US:
     market: US
     symbol: RC
+  REA Group:
+    market: AU
+    symbol: REA.AX
+  REA Group Ltd:
+    market: AU
+    symbol: REA.AX
+  REA.AX:
+    market: AU
+    symbol: REA.AX
+  REH.AX:
+    market: AU
+    symbol: REH.AX
   RELY:
     market: US
     symbol: RELY
@@ -9433,6 +11859,36 @@ entries:
   RH.US:
     market: US
     symbol: RH
+  RHC.AU:
+    market: AU
+    symbol: RHC.AX
+  RHC.AX:
+    market: AU
+    symbol: RHC.AX
+  RHM.DE:
+    market: DE
+    symbol: RHM.DE
+  RHM.GR:
+    market: DE
+    symbol: RHM.DE
+  RI.FP:
+    market: FR
+    symbol: RI.PA
+  RI.PA:
+    market: FR
+    symbol: RI.PA
+  RIO.AU:
+    market: AU
+    symbol: RIO.AX
+  RIO.AX:
+    market: AU
+    symbol: RIO.AX
+  RIO.L:
+    market: UK
+    symbol: RIO.L
+  RIO.LN:
+    market: UK
+    symbol: RIO.L
   RIVN:
     market: US
     symbol: RIVN
@@ -9442,12 +11898,24 @@ entries:
   RKT:
     market: US
     symbol: RKT
+  RKT.L:
+    market: UK
+    symbol: RKT.L
+  RKT.LN:
+    market: UK
+    symbol: RKT.L
   RLMD:
     market: US
     symbol: RLMD
   RLMD.US:
     market: US
     symbol: RLMD
+  RMV.L:
+    market: UK
+    symbol: RMV.L
+  RMV.LN:
+    market: UK
+    symbol: RMV.L
   RNG:
     market: US
     symbol: RNG
@@ -9484,6 +11952,12 @@ entries:
   RZLT.US:
     market: US
     symbol: RZLT
+  Ramsay:
+    market: AU
+    symbol: RHC.AX
+  Randstad:
+    market: NL
+    symbol: RAND.AS
   Rapport Therapeutics:
     market: US
     symbol: RAPP
@@ -9505,6 +11979,12 @@ entries:
   Reckitt:
     market: US
     symbol: RKT
+  Reece:
+    market: AU
+    symbol: REH.AX
+  Reece Ltd.:
+    market: AU
+    symbol: REH.AX
   Relmada Therapeutics:
     market: US
     symbol: RLMD
@@ -9517,12 +11997,27 @@ entries:
   Rexford Industrial Realty:
     market: US
     symbol: REXR
+  Rheinmetall:
+    market: DE
+    symbol: RHM.DE
+  Rightmove:
+    market: UK
+    symbol: RMV.L
   RingCentral:
     market: US
     symbol: RNG
   RingCentral Inc:
     market: US
     symbol: RNG
+  Rio Tinto Ltd.:
+    market: AU
+    symbol: RIO.AX
+  Rio Tinto Plc:
+    market: UK
+    symbol: RIO.L
+  Rio Tinto plc:
+    market: UK
+    symbol: RIO.L
   Rivian Automotive:
     market: US
     symbol: RIVN
@@ -9556,24 +12051,63 @@ entries:
   S.US:
     market: US
     symbol: S
+  SAMD.NS:
+    market: IN
+    symbol: SAMD.NS
+  SAN.FP:
+    market: FR
+    symbol: SAN.PA
+  SAN.MC:
+    market: ES
+    symbol: SAN.MC
+  SAN.PA:
+    market: FR
+    symbol: SAN.PA
+  SAN.SM:
+    market: ES
+    symbol: SAN.MC
+  SAND.ST:
+    market: SE
+    symbol: SAND.ST
+  SAPG.DE:
+    market: DE
+    symbol: SAPG.DE
   SASY:
     market: US
     symbol: SASY
+  SASY.PA:
+    market: FR
+    symbol: SASY.PA
   SATS:
     market: US
     symbol: SATS
   SATS.US:
     market: US
     symbol: SATS
+  SBI Cards and Payment Services:
+    market: IN
+    symbol: SBIC.NS
+  SBI Cards and Payment Services Ltd:
+    market: IN
+    symbol: SBIC.NS
   SBI Life Insurance Company:
     market: US
     symbol: SBIL
   SBI Life Insurance Company Ltd:
     market: US
     symbol: SBIL
+  SBI.BO:
+    market: IN
+    symbol: SBI.BO
+  SBIC.NS:
+    market: IN
+    symbol: SBIC.NS
   SBIL:
     market: US
     symbol: SBIL
+  SBIL.NS:
+    market: IN
+    symbol: SBIL.NS
   SBIL.US:
     market: US
     symbol: SBIL
@@ -9583,6 +12117,18 @@ entries:
   SBUX.US:
     market: US
     symbol: SBUX
+  SCHN.PA:
+    market: FR
+    symbol: SCHN.PA
+  SCHN.SW:
+    market: CH
+    symbol: SCHN.SW
+  SCHP.SW:
+    market: CH
+    symbol: SCHP.SW
+  SCOG.KL:
+    market: MY
+    symbol: SCOG.KL
   SDNK:
     market: US
     symbol: SDNK
@@ -9602,6 +12148,9 @@ entries:
   SEDG.US:
     market: US
     symbol: SEDG
+  SEK.AX:
+    market: AU
+    symbol: SEK.AX
   SERA:
     market: US
     symbol: SERA
@@ -9614,6 +12163,12 @@ entries:
   SFIX.US:
     market: US
     symbol: SFIX
+  SFZN.SW:
+    market: CH
+    symbol: SFZN.SW
+  SGEF.PA:
+    market: FR
+    symbol: SGEF.PA
   SGHT:
     market: US
     symbol: SGHT
@@ -9626,9 +12181,30 @@ entries:
   SGMT.US:
     market: US
     symbol: SGMT
+  SGOB.PA:
+    market: FR
+    symbol: SGOB.PA
+  SHEL.L:
+    market: UK
+    symbol: SHEL.L
+  SHEL.LN:
+    market: UK
+    symbol: SHEL.L
+  SHFL.IN:
+    market: IN
+    symbol: SHFL.NS
+  SHFL.NS:
+    market: IN
+    symbol: SHFL.NS
   SHMF:
     market: US
     symbol: SHMF
+  SHMF.BO:
+    market: IN
+    symbol: SHMF.BO
+  SHMF.NS:
+    market: IN
+    symbol: SHMF.NS
   SHOP:
     market: US
     symbol: SHOP
@@ -9642,15 +12218,63 @@ entries:
   SI.US:
     market: US
     symbol: SI
+  SIAL.SI:
+    market: SG
+    symbol: SIAL.SI
+  SIE.DE:
+    market: DE
+    symbol: SIE.DE
+  SIE.GR:
+    market: DE
+    symbol: SIE.DE
+  SIEM.IN:
+    market: IN
+    symbol: SIEM.NS
+  SIEM.NS:
+    market: IN
+    symbol: SIEM.NS
   SIG:
     market: US
     symbol: SIG
+  SIG.AU:
+    market: AU
+    symbol: SIG.AX
+  SIG.AX:
+    market: AU
+    symbol: SIG.AX
   SIG.US:
     market: US
     symbol: SIG
+  SINCH.ST:
+    market: SE
+    symbol: SINCH.ST
+  SJP.L:
+    market: UK
+    symbol: SJP.L
+  SK:
+    market: KR
+    symbol: 034730.KS
+  SK Hynix:
+    market: KR
+    symbol: 000660.KS
+  SK Innovation:
+    market: KR
+    symbol: 096770.KS
+  SK hynix:
+    market: KR
+    symbol: 000660.KS
+  SK 创新:
+    market: KR
+    symbol: 096770.KS
   SKY Perfect JSAT:
     market: JP
     symbol: 9412.T
+  SK海力士:
+    market: KR
+    symbol: 000660.KS
+  SK集团:
+    market: KR
+    symbol: 034730.KS
   SL Green Realty:
     market: US
     symbol: SLG
@@ -9669,6 +12293,9 @@ entries:
   SLB.US:
     market: US
     symbol: SLB
+  SLBEN.LS:
+    market: PT
+    symbol: SLBEN.LS
   SLG:
     market: US
     symbol: SLG
@@ -9696,6 +12323,9 @@ entries:
   SMCI.US:
     market: US
     symbol: SMCI
+  SML.NZ:
+    market: NZ
+    symbol: SML.NZ
   SMMT:
     market: US
     symbol: SMMT
@@ -9717,6 +12347,12 @@ entries:
   SMTG:
     market: JP
     symbol: 8309.T
+  SMWH.L:
+    market: UK
+    symbol: SMWH.L
+  SMWH.LN:
+    market: UK
+    symbol: SMWH.L
   SNAP:
     market: US
     symbol: SNAP
@@ -9762,12 +12398,45 @@ entries:
   SOFI.US:
     market: US
     symbol: SOFI
+  SOI.FP:
+    market: FR
+    symbol: SOI.PA
+  SOI.PA:
+    market: FR
+    symbol: SOI.PA
+  SOIT.PA:
+    market: FR
+    symbol: SOIT.PA
+  SOITEC:
+    market: FR
+    symbol: SOI.PA
+  SOP.FP:
+    market: FR
+    symbol: SOP.PA
+  SOP.PA:
+    market: FR
+    symbol: SOP.PA
   SPGI:
     market: US
     symbol: SPGI
   SPGI.US:
     market: US
     symbol: SPGI
+  SPIE.FP:
+    market: FR
+    symbol: SPIE.PA
+  SPIE.PA:
+    market: FR
+    symbol: SPIE.PA
+  SPM.IM:
+    market: IT
+    symbol: SPM.MI
+  SPM.MI:
+    market: IT
+    symbol: SPM.MI
+  SPMI.MI:
+    market: IT
+    symbol: SPMI.MI
   SPNS:
     market: US
     symbol: SPNS
@@ -9780,6 +12449,21 @@ entries:
   SPOT.US:
     market: US
     symbol: SPOT
+  SREN.SW:
+    market: CH
+    symbol: SREN.SW
+  SRG.IM:
+    market: IT
+    symbol: SRG.MI
+  SRG.MI:
+    market: IT
+    symbol: SRG.MI
+  SRP.L:
+    market: UK
+    symbol: SRP.L
+  SRP.LN:
+    market: UK
+    symbol: SRP.L
   SRPT:
     market: US
     symbol: SRPT
@@ -9801,18 +12485,33 @@ entries:
   SSNC.US:
     market: US
     symbol: SSNC
+  STAN.L:
+    market: UK
+    symbol: STAN.L
+  STERV.HE:
+    market: FI
+    symbol: STERV.HE
+  STIK.KL:
+    market: MY
+    symbol: STIK.KL
   STLD:
     market: US
     symbol: STLD
   STLD.US:
     market: US
     symbol: STLD
+  STMN.SW:
+    market: CH
+    symbol: STMN.SW
   STNE:
     market: US
     symbol: STNE
   STNE.US:
     market: US
     symbol: STNE
+  STO.AX:
+    market: AU
+    symbol: STO.AX
   STX.O:
     market: US
     symbol: STX
@@ -9825,6 +12524,12 @@ entries:
   STZ.US:
     market: US
     symbol: STZ
+  SU.FP:
+    market: FR
+    symbol: SU.PA
+  SU.PA:
+    market: FR
+    symbol: SU.PA
   SUBC:
     market: US
     symbol: SUBC
@@ -9840,6 +12545,15 @@ entries:
   SUPCON Technology:
     market: CN
     symbol: 688777.SH
+  SUPR:
+    market: UK
+    symbol: SUPR.L
+  SUPR.L:
+    market: UK
+    symbol: SUPR.L
+  SUPR.LN:
+    market: UK
+    symbol: SUPR.L
   SVRA:
     market: US
     symbol: SVRA
@@ -9879,12 +12593,36 @@ entries:
   Sagimet Biosciences:
     market: US
     symbol: SGMT
+  Saint Gobain:
+    market: FR
+    symbol: SGOB.PA
+  Saipem:
+    market: IT
+    symbol: SPMI.MI
   Salesforce:
     market: US
     symbol: CRM
   Salesforce Inc:
     market: US
     symbol: CRM
+  Samsung Biologics:
+    market: KR
+    symbol: 207940.KS
+  Samsung Biologics Co.:
+    market: KR
+    symbol: 207940.KS
+  Samsung Electro-Mechanics:
+    market: KR
+    symbol: 009150.KS
+  Samsung Electronics:
+    market: KR
+    symbol: 005930.KS
+  Samsung SDS:
+    market: KR
+    symbol: 018260.KS
+  Samvardhana Motherson International:
+    market: IN
+    symbol: SAMD.NS
   SanDisk:
     market: US
     symbol: SNDK
@@ -9909,6 +12647,15 @@ entries:
   Sanofi:
     market: US
     symbol: SASY
+  Santander:
+    market: ES
+    symbol: SAN.MC
+  Santos:
+    market: AU
+    symbol: STO.AX
+  Santos Ltd:
+    market: AU
+    symbol: STO.AX
   Sany Heavy:
     market: CN
     symbol: 600031.SH
@@ -9930,9 +12677,18 @@ entries:
   Savara Inc.:
     market: US
     symbol: SVRA
+  Schindler:
+    market: CH
+    symbol: SCHP.SW
   Schlumberger:
     market: US
     symbol: SLB
+  Schneider Electric SA:
+    market: FR
+    symbol: SU.PA
+  Scientex:
+    market: MY
+    symbol: STIK.KL
   Sea:
     market: US
     symbol: SE
@@ -9951,6 +12707,12 @@ entries:
   Seazen Group Ltd:
     market: HK
     symbol: 1030.HK
+  Seek:
+    market: AU
+    symbol: SEK.AX
+  Seek Limited:
+    market: AU
+    symbol: SEK.AX
   Semtech:
     market: US
     symbol: SMTC
@@ -9969,6 +12731,12 @@ entries:
   Sera Prognostics:
     market: US
     symbol: SERA
+  Serco Group:
+    market: UK
+    symbol: SRP.L
+  Serco Group PLC:
+    market: UK
+    symbol: SRP.L
   ServiceNow:
     market: US
     symbol: NOW
@@ -9999,6 +12767,9 @@ entries:
   Shanghai United Imaging Healthcare:
     market: CN
     symbol: 688271.SH
+  Shell:
+    market: UK
+    symbol: SHEL.L
   Shengyi:
     market: CN
     symbol: 600183.SH
@@ -10062,6 +12833,18 @@ entries:
   Shriram Finance:
     market: US
     symbol: SHMF
+  Siegfried Holding AG:
+    market: CH
+    symbol: SFZN.SW
+  Siemens:
+    market: IN
+    symbol: SIEM.NS
+  Siemens India:
+    market: IN
+    symbol: SIEM.NS
+  Siemens Ltd:
+    market: IN
+    symbol: SIEM.NS
   Sieyuan Electric:
     market: CN
     symbol: 002028.SZ
@@ -10071,12 +12854,21 @@ entries:
   Sight Sciences Inc:
     market: US
     symbol: SGHT
+  Sigma:
+    market: AU
+    symbol: SIG.AX
   Signet Jewelers:
     market: US
     symbol: SIG
   Simply Good Foods CoThe:
     market: US
     symbol: SMPL
+  Sinch AB:
+    market: SE
+    symbol: SINCH.ST
+  Singapore Airlines:
+    market: SG
+    symbol: SIAL.SI
   Sinopec:
     market: HK
     symbol: 0386.HK
@@ -10095,6 +12887,9 @@ entries:
   Smurfit WestRock PLC:
     market: US
     symbol: SW
+  Snam:
+    market: IT
+    symbol: SRG.MI
   Snap:
     market: US
     symbol: SNAP
@@ -10131,6 +12926,9 @@ entries:
   Softcare Limited:
     market: HK
     symbol: 2698.HK
+  Soitec:
+    market: FR
+    symbol: SOI.PA
   SolarEdge:
     market: US
     symbol: SEDG
@@ -10140,9 +12938,18 @@ entries:
   Sonoscape Medical Corp:
     market: CN
     symbol: 300633.SZ
+  Sopra Steria:
+    market: FR
+    symbol: SOP.PA
+  Sopra Steria Group:
+    market: FR
+    symbol: SOP.PA
   Southwest Airlines:
     market: US
     symbol: LUV
+  Spie:
+    market: FR
+    symbol: SPIE.PA
   Spotify Technology S.A.:
     market: US
     symbol: SPOT
@@ -10158,12 +12965,18 @@ entries:
   Spyre Therapeutics Inc:
     market: US
     symbol: SYRE
+  St. James's Place:
+    market: UK
+    symbol: SJP.L
   Stanley Black & Decker:
     market: US
     symbol: SWK
   StarPower:
     market: CN
     symbol: 603290.SH
+  State Bank of India:
+    market: IN
+    symbol: SBI.BO
   Steel Dynamics:
     market: US
     symbol: STLD
@@ -10186,6 +12999,12 @@ entries:
   StoneCo:
     market: US
     symbol: STNE
+  Stora Enso:
+    market: FI
+    symbol: STERV.HE
+  Straumann Holding AG:
+    market: CH
+    symbol: STMN.SW
   Subaru:
     market: JP
     symbol: 7270.T
@@ -10219,6 +13038,9 @@ entries:
   Sunresin New Materials:
     market: CN
     symbol: 300487.SZ
+  Sunway Construction:
+    market: MY
+    symbol: SCOG.KL
   Super Micro Computer:
     market: US
     symbol: SMCI
@@ -10228,9 +13050,30 @@ entries:
   Suzuki Motor:
     market: JP
     symbol: 7269.T
+  Swiss Re:
+    market: CH
+    symbol: SREN.SW
+  Synlait Milk:
+    market: NZ
+    symbol: SML.NZ
   T.US:
     market: US
     symbol: T
+  TACN.BO:
+    market: IN
+    symbol: TACN.BO
+  TBEV.SI:
+    market: SG
+    symbol: TBEV.SI
+  TBO Tek:
+    market: IN
+    symbol: TBOTEK.NS
+  TBOTEK.IN:
+    market: IN
+    symbol: TBOTEK.NS
+  TBOTEK.NS:
+    market: IN
+    symbol: TBOTEK.NS
   TCL ZHONGHUAN:
     market: CN
     symbol: 002129.SZ
@@ -10243,6 +13086,15 @@ entries:
   TCOM.US:
     market: US
     symbol: TCOM
+  TCS.IN:
+    market: IN
+    symbol: TCS.NS
+  TCS.NS:
+    market: IN
+    symbol: TCS.NS
+  TD.TO:
+    market: CA
+    symbol: TD.TO
   TDG:
     market: US
     symbol: TDG
@@ -10252,6 +13104,27 @@ entries:
   TDK:
     market: JP
     symbol: 6762.T
+  TE.FP:
+    market: FR
+    symbol: TE.PA
+  TE.PA:
+    market: FR
+    symbol: TE.PA
+  TECN.SW:
+    market: CH
+    symbol: TECN.SW
+  TEF.MC:
+    market: ES
+    symbol: TEF.MC
+  TEF.SM:
+    market: ES
+    symbol: TEF.MC
+  TEL.OL:
+    market: 'NO'
+    symbol: TEL.OL
+  TELIA.ST:
+    market: SE
+    symbol: TELIA.ST
   TEVA:
     market: US
     symbol: TEVA
@@ -10273,12 +13146,33 @@ entries:
   TGT.US:
     market: US
     symbol: TGT
+  THL.NZ:
+    market: NZ
+    symbol: THL.NZ
+  TIDLOR.BK:
+    market: TH
+    symbol: TIDLOR.BK
+  TITN.BO:
+    market: IN
+    symbol: TITN.BO
+  TITN.NS:
+    market: IN
+    symbol: TITN.NS
+  TLKM.JK:
+    market: ID
+    symbol: TLKM.JK
+  TLX.AX:
+    market: AU
+    symbol: TLX.AX
   TME.N:
     market: US
     symbol: TME
   TME.US:
     market: US
     symbol: TME
+  TNE.AX:
+    market: AU
+    symbol: TNE.AX
   TOPPAN:
     market: JP
     symbol: 7911.T
@@ -10297,6 +13191,21 @@ entries:
   TPG Mortgage Investment Trust, Inc.:
     market: US
     symbol: MITT
+  TPGC.KL:
+    market: MY
+    symbol: TPGC.KL
+  TPW.AX:
+    market: AU
+    symbol: TPW.AX
+  TPWR.IN:
+    market: IN
+    symbol: TPWR.NS
+  TPWR.NS:
+    market: IN
+    symbol: TPWR.NS
+  TREN.BO:
+    market: IN
+    symbol: TREN.BO
   TREX:
     market: US
     symbol: TREX
@@ -10309,6 +13218,18 @@ entries:
   TRIP.US:
     market: US
     symbol: TRIP
+  TRN.MI:
+    market: IT
+    symbol: TRN.MI
+  TRST.L:
+    market: UK
+    symbol: TRST.L
+  TRUE.BK:
+    market: TH
+    symbol: TRUE.BK
+  TRYG.CO:
+    market: DK
+    symbol: TRYG.CO
   TSCO:
     market: US
     symbol: TSCO
@@ -10327,6 +13248,12 @@ entries:
   TTD.US:
     market: US
     symbol: TTD
+  TVS Motor:
+    market: IN
+    symbol: TVSM.BO
+  TVSM.BO:
+    market: IN
+    symbol: TVSM.BO
   TVTX:
     market: US
     symbol: TVTX
@@ -10342,6 +13269,12 @@ entries:
   TWE:
     market: US
     symbol: TWE
+  TWE.AU:
+    market: AU
+    symbol: TWE.AX
+  TWE.AX:
+    market: AU
+    symbol: TWE.AX
   TXN:
     market: US
     symbol: TXN
@@ -10358,9 +13291,54 @@ entries:
   Target Corp.:
     market: US
     symbol: TGT
+  Tata Consultancy Services:
+    market: IN
+    symbol: TCS.NS
+  Tata Power:
+    market: IN
+    symbol: TPWR.NS
+  Tecan:
+    market: CH
+    symbol: TECN.SW
+  Technip Energies:
+    market: FR
+    symbol: TE.PA
+  Technology One:
+    market: AU
+    symbol: TNE.AX
   Tecon Biology:
     market: CN
     symbol: 002100.SZ
+  Telefonica:
+    market: ES
+    symbol: TEF.MC
+  Telenor:
+    market: 'NO'
+    symbol: TEL.OL
+  Telenor Group:
+    market: 'NO'
+    symbol: TEL.OL
+  Telia:
+    market: SE
+    symbol: TELIA.ST
+  Telia Co.:
+    market: SE
+    symbol: TELIA.ST
+  Telix Pharmaceuticals:
+    market: AU
+    symbol: TLX.AX
+  Telix Pharmaceuticals Ltd:
+    market: AU
+    symbol: TLX.AX
+  Telkom Indonesia:
+    market: ID
+    symbol: TLKM.JK
+  Temple & Webster:
+    market: AU
+    symbol: TPW.AX
+  Temple & Webster Group:
+    market: AU
+    symbol: TPW.AX
   Tencent:
     market: HK
     symbol: 0700.HK
@@ -10376,6 +13354,9 @@ entries:
   Tencent Music Entertainment Group:
     market: US
     symbol: TME
+  Terna:
+    market: IT
+    symbol: TRN.MI
   Tesla Inc:
     market: US
     symbol: TSLA
@@ -10388,6 +13369,9 @@ entries:
   Teva Pharmaceuticals:
     market: US
     symbol: TEVA
+  Thai Beverage:
+    market: SG
+    symbol: TBEV.SI
   The Kraft Heinz Company:
     market: US
     symbol: KHC
@@ -10397,6 +13381,12 @@ entries:
   Tigermed:
     market: HK
     symbol: 3347.HK
+  Titan Company Limited:
+    market: IN
+    symbol: TITN.NS
+  Titan Company Ltd:
+    market: IN
+    symbol: TITN.NS
   Toast:
     market: US
     symbol: TOST
@@ -10421,6 +13411,9 @@ entries:
   Tongkun Group:
     market: CN
     symbol: 601233.SH
+  Top Glove:
+    market: MY
+    symbol: TPGC.KL
   Topsports International:
     market: HK
     symbol: 6110.HK
@@ -10430,9 +13423,18 @@ entries:
   Topsports Intl Holdings:
     market: HK
     symbol: 6110.HK
+  Toronto Dominion Bank:
+    market: CA
+    symbol: TD.TO
   Toto:
     market: JP
     symbol: 5332.T
+  Tourism:
+    market: NZ
+    symbol: THL.NZ
+  Tourism Holdings:
+    market: NZ
+    symbol: THL.NZ
   Toyota Motor:
     market: JP
     symbol: 7203.T
@@ -10472,6 +13474,12 @@ entries:
   Trend Micro Inc.:
     market: JP
     symbol: 4704.T
+  Trent:
+    market: IN
+    symbol: TREN.BO
+  Trent Ltd.:
+    market: IN
+    symbol: TREN.BO
   Trex:
     market: US
     symbol: TREX
@@ -10496,6 +13504,12 @@ entries:
   TruCall - Affirm:
     market: US
     symbol: AFRM
+  'True':
+    market: TH
+    symbol: TRUE.BK
+  True Corporation:
+    market: TH
+    symbol: TRUE.BK
   Truist Financial:
     market: US
     symbol: TFC
@@ -10505,6 +13519,12 @@ entries:
   Truist Financial Corporation:
     market: US
     symbol: TFC
+  Trustpilot Group plc:
+    market: UK
+    symbol: TRST.L
+  Tryg:
+    market: DK
+    symbol: TRYG.CO
   Tsuruha:
     market: JP
     symbol: 3391.T
@@ -10529,6 +13549,15 @@ entries:
   UBTECH Robotics:
     market: HK
     symbol: 9880.HK
+  UCB:
+    market: BE
+    symbol: UCB.BR
+  UCB.BB:
+    market: BE
+    symbol: UCB.BR
+  UCB.BR:
+    market: BE
+    symbol: UCB.BR
   UEC:
     market: US
     symbol: UEC
@@ -10559,6 +13588,21 @@ entries:
   ULTA.US:
     market: US
     symbol: ULTA
+  ULVR.L:
+    market: UK
+    symbol: ULVR.L
+  ULVR.LN:
+    market: UK
+    symbol: ULVR.L
+  UNA.AS:
+    market: NL
+    symbol: UNA.AS
+  UNA.NA:
+    market: NL
+    symbol: UNA.AS
+  UNBK.BO:
+    market: IN
+    symbol: UNBK.BO
   UNF:
     market: US
     symbol: UNF
@@ -10571,6 +13615,9 @@ entries:
   UNP.US:
     market: US
     symbol: UNP
+  UNTR.JK:
+    market: ID
+    symbol: UNTR.JK
   UPR:
     market: US
     symbol: UPR
@@ -10592,6 +13639,15 @@ entries:
   UT Group:
     market: JP
     symbol: 2146.T
+  UTG.L:
+    market: UK
+    symbol: UTG.L
+  UWC:
+    market: MY
+    symbol: UWCB.KL
+  UWCB.KL:
+    market: MY
+    symbol: UWCB.KL
   UWM Holdings:
     market: US
     symbol: UWMC
@@ -10649,15 +13705,30 @@ entries:
   Unicharm:
     market: JP
     symbol: 8113.T
+  Unilever:
+    market: UK
+    symbol: ULVR.L
+  Union Bank of India:
+    market: IN
+    symbol: UNBK.BO
   Union Pacific:
     market: US
     symbol: UNP
   Union Pacific Corporation:
     market: US
     symbol: UNP
+  Unite:
+    market: UK
+    symbol: UTG.L
+  Unite Group:
+    market: UK
+    symbol: UTG.L
   United Imaging:
     market: CN
     symbol: 688271.SH
+  United Tractors:
+    market: ID
+    symbol: UNTR.JK
   United Wholesale Mortgage:
     market: US
     symbol: UWMC
@@ -10691,6 +13762,18 @@ entries:
   VAL.US:
     market: US
     symbol: VAL
+  VARB.BO:
+    market: IN
+    symbol: VARB.BO
+  VEND.NO:
+    market: 'NO'
+    symbol: VEND.OL
+  VEND.OL:
+    market: 'NO'
+    symbol: VEND.OL
+  VENDA.OL:
+    market: 'NO'
+    symbol: VENDA.OL
   VF Corporation:
     market: US
     symbol: VFC
@@ -10700,6 +13783,18 @@ entries:
   VFC.US:
     market: US
     symbol: VFC
+  VID.L:
+    market: UK
+    symbol: VID.L
+  VID.LN:
+    market: UK
+    symbol: VID.L
+  VIE.FP:
+    market: FR
+    symbol: VIE.PA
+  VIE.PA:
+    market: FR
+    symbol: VIE.PA
   VIPS:
     market: US
     symbol: VIPS
@@ -10733,6 +13828,12 @@ entries:
   VLY.US:
     market: US
     symbol: VLY
+  VNA.DE:
+    market: DE
+    symbol: VNA.DE
+  VNA.GR:
+    market: DE
+    symbol: VNA.DE
   VNDA:
     market: US
     symbol: VNDA
@@ -10754,6 +13855,18 @@ entries:
   VNET.US:
     market: US
     symbol: VNET
+  VOD.L:
+    market: UK
+    symbol: VOD.L
+  VOLARA.MX:
+    market: MX
+    symbol: VOLARA.MX
+  VOLT.IN:
+    market: IN
+    symbol: VOLT.NS
+  VOLT.NS:
+    market: IN
+    symbol: VOLT.NS
   VRDN:
     market: US
     symbol: VRDN
@@ -10799,6 +13912,9 @@ entries:
   VVV.US:
     market: US
     symbol: VVV
+  VWS.CO:
+    market: DK
+    symbol: VWS.CO
   VZ:
     market: US
     symbol: VZ
@@ -10835,6 +13951,15 @@ entries:
   Vanke:
     market: HK
     symbol: 2202.HK
+  Varun Beverages:
+    market: IN
+    symbol: VARB.BO
+  Varun Beverages Ltd.:
+    market: IN
+    symbol: VARB.BO
+  Veolia:
+    market: FR
+    symbol: VIE.PA
   VeriSilicon:
     market: CN
     symbol: 688521.SH
@@ -10859,6 +13984,9 @@ entries:
   Victory Giant:
     market: CN
     symbol: 300476.SZ
+  Videndum:
+    market: UK
+    symbol: VID.L
   Vipshop:
     market: US
     symbol: VIPS
@@ -10877,9 +14005,24 @@ entries:
   Vital Farms:
     market: US
     symbol: VITL
+  Vodafone:
+    market: UK
+    symbol: VOD.L
+  Vodafone Group:
+    market: UK
+    symbol: VOD.L
+  Vodafone Group PLC:
+    market: UK
+    symbol: VOD.L
   Volaris:
     market: US
     symbol: VLRS
+  Voltas:
+    market: IN
+    symbol: VOLT.NS
+  Vonovia SE:
+    market: DE
+    symbol: VNA.DE
   W.R. Berkley:
     market: US
     symbol: WRB
@@ -10932,6 +14075,12 @@ entries:
   WEICHAI POWER:
     market: HK
     symbol: 2338.HK
+  WEIR.L:
+    market: UK
+    symbol: WEIR.L
+  WEIR.LN:
+    market: UK
+    symbol: WEIR.L
   WFRD:
     market: US
     symbol: WFRD
@@ -10944,6 +14093,12 @@ entries:
   WGO.US:
     market: US
     symbol: WGO
+  WH Smith:
+    market: UK
+    symbol: SMWH.L
+  WH Smith PLC:
+    market: UK
+    symbol: SMWH.L
   WING:
     market: US
     symbol: WING
@@ -10959,6 +14114,9 @@ entries:
   WLK.US:
     market: US
     symbol: WLK
+  WLN.PA:
+    market: FR
+    symbol: WLN.PA
   WM:
     market: US
     symbol: WM
@@ -10971,6 +14129,9 @@ entries:
   WMT.US:
     market: US
     symbol: WMT
+  WOR.AX:
+    market: AU
+    symbol: WOR.AX
   WOSG:
     market: US
     symbol: WOSG
@@ -10986,6 +14147,21 @@ entries:
   WRD.US:
     market: US
     symbol: WRD
+  WSP Global:
+    market: CA
+    symbol: WSP.TO
+  WSP Global Inc:
+    market: CA
+    symbol: WSP.TO
+  WSP.TO:
+    market: CA
+    symbol: WSP.TO
+  WTB.L:
+    market: UK
+    symbol: WTB.L
+  WTB.LN:
+    market: UK
+    symbol: WTB.L
   WWD:
     market: US
     symbol: WWD
@@ -11064,6 +14240,12 @@ entries:
   Weimob:
     market: HK
     symbol: 2013.HK
+  Weir:
+    market: UK
+    symbol: WEIR.L
+  Weir Group:
+    market: UK
+    symbol: WEIR.L
   Western Digital:
     market: US
     symbol: WDC
@@ -11079,6 +14261,12 @@ entries:
   Weyerhaeuser Co:
     market: US
     symbol: WY
+  Whitbread:
+    market: UK
+    symbol: WTB.L
+  Whitbread PLC:
+    market: UK
+    symbol: WTB.L
   Winbond:
     market: TW
     symbol: 2344.TW
@@ -11106,6 +14294,9 @@ entries:
   Workday:
     market: US
     symbol: WDAY
+  Worldline SA:
+    market: FR
+    symbol: WLN.PA
   WuXi XDC:
     market: HK
     symbol: 2268.HK
@@ -11205,12 +14396,18 @@ entries:
   Xtep International:
     market: HK
     symbol: 1368.HK
+  YAZG.SI:
+    market: SG
+    symbol: YAZG.SI
   YELP:
     market: US
     symbol: YELP
   YELP.US:
     market: US
     symbol: YELP
+  YINS.KL:
+    market: MY
+    symbol: YINS.KL
   YJ Semi:
     market: CN
     symbol: 688498.SH
@@ -11235,6 +14432,9 @@ entries:
   Yelp Inc.:
     market: US
     symbol: YELP
+  Yinson:
+    market: MY
+    symbol: YINS.KL
   Youran Dairy:
     market: HK
     symbol: 9858.HK
@@ -11376,6 +14576,9 @@ entries:
   argenx:
     market: US
     symbol: ARGX
+  bp:
+    market: UK
+    symbol: BP.L
   eBay:
     market: US
     symbol: EBAY
@@ -11391,6 +14594,9 @@ entries:
   nCino:
     market: US
     symbol: NCNO
+  nib:
+    market: AU
+    symbol: NHF.AX
   uPI:
     market: TW
     symbol: 6719.TW
@@ -11439,6 +14645,21 @@ entries:
   三化学研究所株式会社:
     market: JP
     symbol: 4369.T
+  三星SDI:
+    market: KR
+    symbol: 006400.KS
+  三星物产:
+    market: KR
+    symbol: 028050.KS
+  三星生物:
+    market: KR
+    symbol: 207940.KS
+  三星生物制剂:
+    market: KR
+    symbol: 207940.KS
+  三星电子:
+    market: KR
+    symbol: 005930.KS
   三星电气:
     market: CN
     symbol: 601567.SH
@@ -11814,6 +15035,12 @@ entries:
   凯德石英:
     market: CN
     symbol: 301611.SZ
+  凯捷:
+    market: FR
+    symbol: CAPP.PA
+  凯捷集团:
+    market: FR
+    symbol: CAPP.PA
   创科实业:
     market: HK
     symbol: 0669.HK
@@ -11940,6 +15167,9 @@ entries:
   南方航空:
     market: HK
     symbol: 1055.HK
+  博柏利:
+    market: UK
+    symbol: BRBY.L
   博通:
     market: US
     symbol: AVGO
@@ -12048,6 +15278,9 @@ entries:
   嘉泽端子:
     market: TW
     symbol: 3533.TW
+  嘉能可:
+    market: UK
+    symbol: GLEN.L
   国巨:
     market: TW
     symbol: 2327.TW
@@ -12105,6 +15338,9 @@ entries:
   声破天:
     market: US
     symbol: SPOT
+  壳牌:
+    market: UK
+    symbol: SHEL.L
   复宏汉霖:
     market: HK
     symbol: 2696.HK
@@ -12138,6 +15374,12 @@ entries:
   大金重工:
     market: CN
     symbol: 002487.SZ
+  大陆:
+    market: DE
+    symbol: CON.DE
+  大陆集团:
+    market: DE
+    symbol: CON.DE
   大麦娱乐:
     market: HK
     symbol: 1060.HK
@@ -12258,6 +15500,9 @@ entries:
   宏发股份:
     market: CN
     symbol: 600885.SH
+  宝马:
+    market: DE
+    symbol: BMWG.DE
   密尔克卫:
     market: CN
     symbol: 603713.SH
@@ -12285,6 +15530,9 @@ entries:
   尼吉康:
     market: JP
     symbol: 6996.T
+  山特维克:
+    market: SE
+    symbol: SAND.ST
   川崎重工:
     market: JP
     symbol: 7012.T
@@ -12453,6 +15701,15 @@ entries:
   扬农化工:
     market: CN
     symbol: 600486.SH
+  扬子江船业:
+    market: SG
+    symbol: YAZG.SI
+  扬子江船舶:
+    market: SG
+    symbol: YAZG.SI
+  扬子江造船:
+    market: SG
+    symbol: YAZG.SI
   技嘉:
     market: TW
     symbol: 2376.TW
@@ -12540,6 +15797,9 @@ entries:
   旭升集团:
     market: CN
     symbol: 603305.SH
+  易捷航空:
+    market: UK
+    symbol: EZJ.L
   星巴克:
     market: US
     symbol: SBUX
@@ -12612,6 +15872,15 @@ entries:
   极智嘉:
     market: HK
     symbol: 2350.HK
+  极致科技:
+    market: MY
+    symbol: GREA.KL
+  柔道资本:
+    market: AU
+    symbol: JDO.AX
+  柔道资本控股:
+    market: AU
+    symbol: JDO.AX
   柳工:
     market: CN
     symbol: 000528.SZ
@@ -12666,6 +15935,12 @@ entries:
   永威科技:
     market: TW
     symbol: 6515.TW
+  汇丰:
+    market: UK
+    symbol: HSBA.L
+  汇丰控股:
+    market: UK
+    symbol: HSBA.L
   汇川技术:
     market: CN
     symbol: 300124.SZ
@@ -12765,6 +16040,9 @@ entries:
   润达医疗:
     market: CN
     symbol: 603127.SH
+  液化空气:
+    market: FR
+    symbol: AIRP.PA
   淘金诊断:
     market: CN
     symbol: 300685.SZ
@@ -12786,6 +16064,9 @@ entries:
   深圳英维克科技:
     market: CN
     symbol: 002837.SZ
+  渣打银行:
+    market: UK
+    symbol: STAN.L
   源杰半导体:
     market: CN
     symbol: 688498.SH
@@ -12798,6 +16079,15 @@ entries:
   潍柴动力:
     market: CN
     symbol: 000338.SZ
+  潘多拉:
+    market: DK
+    symbol: PNDORA.CO
+  澳大利亚证券交易所:
+    market: AU
+    symbol: ASX.AX
+  澳航:
+    market: AU
+    symbol: QAN.AX
   燧原科技:
     market: HK
     symbol: 9903.HK
@@ -12978,6 +16268,9 @@ entries:
   科达利:
     market: CN
     symbol: 002850.SZ
+  空客:
+    market: FR
+    symbol: AIR.PA
   第一拖拉机:
     market: HK
     symbol: 0038.HK
@@ -13032,6 +16325,9 @@ entries:
   经纬恒润:
     market: CN
     symbol: 688326.SH
+  维斯塔斯风力系统:
+    market: DK
+    symbol: VWS.CO
   绿的谐波:
     market: CN
     symbol: 688017.SH
@@ -13056,6 +16352,12 @@ entries:
   美蓓亚三美:
     market: JP
     symbol: 6479.T
+  翠丰:
+    market: UK
+    symbol: KGF.L
+  翠丰集团:
+    market: UK
+    symbol: KGF.L
   老百姓:
     market: CN
     symbol: 603883.SH
@@ -13065,6 +16367,15 @@ entries:
   联发科:
     market: TW
     symbol: 2454.TW
+  联合:
+    market: UK
+    symbol: UTG.L
+  联合利华:
+    market: UK
+    symbol: ULVR.L
+  联合集团:
+    market: UK
+    symbol: UTG.L
   联影医疗:
     market: CN
     symbol: 688271.SH
@@ -13116,6 +16427,9 @@ entries:
   英维克:
     market: CN
     symbol: 002837.SZ
+  英飞凌:
+    market: DE
+    symbol: IFX.DE
   荏原制作所:
     market: JP
     symbol: 6361.T
@@ -13155,9 +16469,15 @@ entries:
   蜜雪冰城集团:
     market: HK
     symbol: 2097.HK
+  西门子:
+    market: IN
+    symbol: SIEM.NS
   诺和诺德:
     market: US
     symbol: NVO
+  诺基亚:
+    market: FI
+    symbol: NOKIA.HE
   豪威:
     market: CN
     symbol: 603501.SH
@@ -13203,6 +16523,15 @@ entries:
   辛达克斯制药:
     market: US
     symbol: SNDX
+  达能:
+    market: FR
+    symbol: DANO.PA
+  迅达:
+    market: CH
+    symbol: SCHN.SW
+  迅达集团:
+    market: CH
+    symbol: SCHN.SW
   迈为:
     market: CN
     symbol: 300751.SZ
@@ -13275,6 +16604,12 @@ entries:
   阳光电源:
     market: CN
     symbol: 300274.SZ
+  阿尔斯通:
+    market: FR
+    symbol: ALSO.PA
+  阿斯利康:
+    market: UK
+    symbol: AZN.L
   阿波罗全球管理:
     market: US
     symbol: APO
@@ -13293,6 +16628,9 @@ entries:
   隆鑫通用:
     market: CN
     symbol: 603766.SH
+  雀巢:
+    market: CH
+    symbol: NESN.SW
   雅诗兰黛:
     market: US
     symbol: EL
@@ -13398,7 +16736,7 @@ entries:
   龙迅股份:
     market: CN
     symbol: 688486.SH
-entry_count: 4457
+entry_count: 5569
 negative_rules:
   ambiguous_text_tickers:
   - A

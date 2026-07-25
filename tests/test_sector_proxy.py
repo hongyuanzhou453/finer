@@ -312,9 +312,23 @@ class TestPlausibleTradableSymbol:
         for sym in ["NVDA", "0700.HK", "600989.SH", "159566.SZ", "SOX", "BTC", "ORCL"]:
             assert is_plausible_tradable_symbol(sym), sym
 
+    def test_international_canonical_shapes_pass(self):
+        # Follow-up: the gate now accepts every canonical international shape the
+        # ticker_normalization tables produce (Taiwan / Tokyo / European alpha /
+        # Asian alnum), so broker intents on those exchanges stop dying at the
+        # F5 pseudo-ticker gate. Derived from the tables — one source of truth.
+        for sym in ["2330.TW", "9202.T", "BP.L", "MC.PA", "005930.KS", "000660.KS"]:
+            assert is_plausible_tradable_symbol(sym), sym
+
     def test_pseudo_tickers_fail(self):
         for sym in [None, "", "宁德时代", "ENERGY_STORAGE", "OPTICAL_MODULE",
-                    "nvda", "TOOLONGSYM", "N/A", "US stock"]:
+                    "nvda", "TOOLONGSYM", "N/A", "US stock",
+                    # Still-invalid dialects: an alpha base on the Tokyo suffix
+                    # (Tokyo codes are 4-digit), a Shanghai code wearing a London
+                    # suffix (mismatched), and suffixes intentionally left out of
+                    # the tables (Swiss .S / Sweden-vs-Shanghai .SS collision) are
+                    # NOT normalization fixed points.
+                    "AAPL.JP", "600519.L", "RIEN.S", "SECARE.SS"]:
             assert not is_plausible_tradable_symbol(sym), sym
 
 

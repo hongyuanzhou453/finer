@@ -150,6 +150,27 @@ class TestDefaults:
         assert ta.metadata["action_hint_original"] == "add_position"
         assert ta.metadata["tier"] == "trade"
 
+    def test_risk_notes_propagate_to_metadata(self):
+        """B3: F4 risk_notes (e.g. the broker honesty note) reach the action.
+
+        PolicyMappedIntent.risk_notes documents "F5 should propagate these
+        into the TradeAction" — before B3 the composer dropped them, so the
+        'declarative rating, not the author's own position' caveat never
+        survived into the F5 JSON the audit view exports.
+        """
+        mapped = _mapped()
+        mapped = mapped.model_copy(update={"risk_notes": [
+            "Follows institutional recommendation (declarative rating); "
+            "not the author's own position change",
+            "Exit window: 'long' tier (180d)",
+        ]})
+        ta = _compose(policy_mapped_intent=mapped)
+        assert ta.metadata["risk_notes"] == list(mapped.risk_notes)
+
+    def test_empty_risk_notes_not_written(self):
+        ta = _compose()  # default _mapped() has no risk_notes
+        assert "risk_notes" not in ta.metadata
+
 
 class TestVersionStamp:
     def test_unstamped_keeps_schema_default(self):

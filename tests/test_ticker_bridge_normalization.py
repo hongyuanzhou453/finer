@@ -76,8 +76,11 @@ def test_bridge_base_key_wildcard_market_for_bare_inputs():
     # Input with a KNOWN canonical suffix → carries a concrete market hint.
     assert bridge_base_key("RIO.L") == ("RIO", "UK")
     assert bridge_base_key("600519.SS") == ("600519", "CN")
+    # Post international-unlock merge: .OL is now a canonical suffix (Oslo),
+    # so it resolves with a concrete market instead of the L3 wildcard strip.
+    assert bridge_base_key("EQNR.OL") == ("EQNR", "NO")
     # Input with an UNKNOWN dotted alpha tag → base stripped, market wildcard.
-    assert bridge_base_key("EQNR.OL") == ("EQNR", None)
+    assert bridge_base_key("EQNR.QQ") == ("EQNR", None)
 
 
 def test_bridge_base_key_rejects_garbage():

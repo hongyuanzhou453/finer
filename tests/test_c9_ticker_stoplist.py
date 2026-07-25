@@ -59,6 +59,58 @@ def test_bloomberg_variant_merges_to_reuters_canonical():
     assert normalize_broker_ticker("BP.LN") == normalize_broker_ticker("BP.L") == ("BP.L", "UK")
 
 
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        # Bloomberg-dialect tail merging into an existing Reuters canonical.
+        ("5802.JP", ("5802.T", "JP")),      # Tokyo → .T
+        ("2454.TT", ("2454.TW", "TW")),     # Taiwan main board → .TW
+        ("ALK.TSX", ("ALK.TO", "CA")),      # Toronto → .TO
+        ("GXI.GR", ("GXI.DE", "DE")),       # Germany → XETRA .DE
+        ("HEI.GY", ("HEI.DE", "DE")),       # Germany (alt) → .DE
+        ("RAND.NA", ("RAND.AS", "NL")),     # Amsterdam → .AS
+        ("SAN.SM", ("SAN.MC", "ES")),       # Madrid → .MC
+        ("SPM.IM", ("SPM.MI", "IT")),       # Milan → .MI
+        ("IEL.AU", ("IEL.AX", "AU")),       # ASX → .AX
+        ("PINELABS.IN", ("PINELABS.NS", "IN")),  # Bloomberg India → NSE
+        ("ARGX.BB", ("ARGX.BR", "BE")),     # Brussels (alt) → .BR
+        ("EQNR.NO", ("EQNR.OL", "NO")),     # Oslo (alt) → .OL
+        ("DANSKE.DC", ("DANSKE.CO", "DK")), # Copenhagen (alt) → .CO
+        # New exchanges (own canonical, exchange inferred from the issuer).
+        ("ITUB3.SA", ("ITUB3.SA", "BR")),   # B3 São Paulo (alnum base)
+        ("GRUMAB.MX", ("GRUMAB.MX", "MX")), # BMV Mexico
+        ("6488.TWO", ("6488.TWO", "TW")),   # Taipei OTC
+        ("UCB.BR", ("UCB.BR", "BE")),       # Brussels
+        ("TEL.OL", ("TEL.OL", "NO")),       # Oslo
+        ("NOVOB.CO", ("NOVOB.CO", "DK")),   # Copenhagen
+        ("MAPI.JK", ("MAPI.JK", "ID")),     # Jakarta
+        ("KGH.WA", ("KGH.WA", "PL")),       # Warsaw
+        ("TRUE.BK", ("TRUE.BK", "TH")),     # Bangkok
+        ("NOS.LS", ("NOS.LS", "PT")),       # Lisbon
+        ("KMD.NZ", ("KMD.NZ", "NZ")),       # New Zealand
+    ],
+)
+def test_bloomberg_tail_exchanges(raw, expected):
+    assert normalize_broker_ticker(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "SECARE.SS",  # .SS = Swedish here but already means Shanghai → collision, omitted
+        "SOBO.CN",    # .CN = Canada CSE vs China → collision, omitted
+        "2280.SE",    # .SE = Saudi but corpus mislabels (1211.SE=BYD) → omitted
+        "6FHAY.F",    # .F Frankfurt but derivative-code dirt → omitted
+        "RIEN.S",     # .S Swiss conflicts with .SW canonical → omitted
+        "TECK.B",     # share-class suffix, not an exchange → omitted
+    ],
+)
+def test_ambiguous_or_dirty_suffixes_stay_unmapped(raw):
+    # Intentionally NOT added — see ticker_normalization tail comment. Mapping
+    # these blind would fabricate wrong exchanges.
+    assert normalize_broker_ticker(raw) is None
+
+
 def test_numeric_base_rejected_for_alpha_exchange():
     # a Shanghai code with a London/Swiss suffix is a mismatched code+exchange.
     assert normalize_broker_ticker("600519.L") is None

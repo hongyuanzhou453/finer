@@ -43,12 +43,15 @@ from typing import List, Optional
 
 from finer.paths import DATA_ROOT
 
+# C3: this runner only drives the broker channel, so stamp source_channel
+# on every row it writes (COALESCE keeps any pre-existing non-NULL value).
 _STAGE_STATUS_UPSERT = """
-    INSERT INTO stage_status (content_id, stage, status, updated_at)
-    VALUES (?, ?, 'ready', ?)
+    INSERT INTO stage_status (content_id, stage, status, updated_at, source_channel)
+    VALUES (?, ?, 'ready', ?, 'broker')
     ON CONFLICT(content_id, stage) DO UPDATE SET
         status = 'ready',
-        updated_at = excluded.updated_at
+        updated_at = excluded.updated_at,
+        source_channel = COALESCE(excluded.source_channel, stage_status.source_channel)
 """
 
 

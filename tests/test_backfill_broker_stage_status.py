@@ -20,7 +20,12 @@ from finer.ingestion.broker_research_intake import run_intake
 from finer.scripts.project_memory_migrate import apply_migrations
 
 # Load the repo-root script module by path (mirrors tests/test_contract_drift.py).
-_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "backfill_broker_stage_status.py"
+# C5: the one-off backfill is retired to scripts/archive/ (run complete, kept
+# for provenance); the tests stay as executable documentation of its contract.
+_SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / "scripts" / "archive" / "backfill_broker_stage_status.py"
+)
 _spec = importlib.util.spec_from_file_location("backfill_broker_stage_status", _SCRIPT)
 assert _spec and _spec.loader
 _bf = importlib.util.module_from_spec(_spec)

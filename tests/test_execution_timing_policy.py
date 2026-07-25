@@ -16,12 +16,14 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from finer.execution.timing_policy import (
+    MARKET_SESSIONS,
     ExecutionTimingResult,
     MarketCalendarTimingPolicy,
     MarketConfig,
     MarketSession,
     NoOpHolidayProvider,
     TradingSession,
+    get_market_config,
 )
 
 
@@ -766,3 +768,105 @@ class TestAgentHint:
         )
 
         assert "agent_hint" not in result.execution_delay_reason
+
+
+# ---------------------------------------------------------------------------
+# 14. Shared market session table (B1 internationalization)
+# ---------------------------------------------------------------------------
+
+class TestSharedMarketTable:
+    """MARKET_SESSIONS is the single truth table for policy + timing_builder."""
+
+    def test_hk_cn_us_configs_frozen(self) -> None:
+        """The original three built-ins must stay byte-identical (zero regression)."""
+        hk = MARKET_SESSIONS["HK"]
+        assert hk.timezone == "Asia/Hong_Kong"
+        assert [(s.open, s.close) for s in hk.sessions] == [
+            (dt_time(9, 30), dt_time(12, 0)),
+            (dt_time(13, 0), dt_time(16, 0)),
+        ]
+        assert hk.pre_market_start == dt_time(9, 0)
+        assert hk.weekend_days == (5, 6)
+
+        cn = MARKET_SESSIONS["CN"]
+        assert cn.timezone == "Asia/Shanghai"
+        assert [(s.open, s.close) for s in cn.sessions] == [
+            (dt_time(9, 30), dt_time(11, 30)),
+            (dt_time(13, 0), dt_time(15, 0)),
+        ]
+        assert cn.pre_market_start == dt_time(9, 15)
+        assert cn.weekend_days == (5, 6)
+
+        us = MARKET_SESSIONS["US"]
+        assert us.timezone == "America/New_York"
+        assert [(s.open, s.close) for s in us.sessions] == [
+            (dt_time(9, 30), dt_time(16, 0)),
+        ]
+        assert us.pre_market_start == dt_time(4, 0)
+        assert us.weekend_days == (5, 6)
+
+    def test_covers_all_suffix_table_markets(self) -> None:
+        """Every market code derivable from the F2 suffix tables has a config."""
+        from finer.enrichment.ticker_normalization import (
+            INTERNATIONAL_SUFFIX_TABLE,
+            SUFFIX_NORMALIZATION_TABLE,
+        )
+
+        derivable = {market for _, market in SUFFIX_NORMALIZATION_TABLE.values()}
+        derivable |= {market for _, market, _ in INTERNATIONAL_SUFFIX_TABLE.values()}
+        missing = derivable - set(MARKET_SESSIONS)
+        assert not missing, f"markets without session config: {missing}"
+
+    def test_every_timezone_is_valid_iana(self) -> None:
+        for config in MARKET_SESSIONS.values():
+            ZoneInfo(config.timezone)  # raises ZoneInfoNotFoundError if invalid
+
+    def test_session_table_sanity(self) -> None:
+        """Sessions ordered, non-overlapping, Mon-Fri, pre-market before open."""
+        for market, config in MARKET_SESSIONS.items():
+            assert config.market == market
+            assert config.sessions, market
+            for sess in config.sessions:
+                assert sess.open < sess.close, market
+            for earlier, later in zip(config.sessions, config.sessions[1:]):
+                assert earlier.close <= later.open, market
+            assert config.pre_market_start <= config.sessions[0].open, market
+            assert config.weekend_days == (5, 6), market
+
+    def test_all_table_markets_registered_by_default(self) -> None:
+        """A default policy must resolve every table market (never UNKNOWN)."""
+        policy = MarketCalendarTimingPolicy()
+        published = datetime(2026, 4, 23, 3, 0, tzinfo=ZoneInfo("UTC"))
+        for market, config in MARKET_SESSIONS.items():
+            result = policy.compute_timing(
+                published_at=published,
+                market=market,
+                timezone=config.timezone,
+            )
+            assert result.market_session_at_publish != MarketSession.UNKNOWN.value, market
+            assert result.timezone == config.timezone, market
+
+    def test_get_market_config_lookup(self) -> None:
+        assert get_market_config("NO") is MARKET_SESSIONS["NO"]
+        assert get_market_config("no") is MARKET_SESSIONS["NO"]  # case-insensitive
+        assert get_market_config("JP").timezone == "Asia/Tokyo"
+        assert get_market_config("ZZ") is None
+        assert get_market_config("") is None
+
+    def test_no_friday_after_close_defers_to_monday(self) -> None:
+        """Oslo Børs: Friday 17:00 (after 16:20 close) → Monday 09:00 open."""
+        policy = MarketCalendarTimingPolicy()
+        published = datetime(2026, 4, 24, 17, 0, tzinfo=ZoneInfo("Europe/Oslo"))
+        result = policy.compute_timing(
+            published_at=published, market="NO", timezone="Europe/Oslo",
+        )
+        assert result.market_session_at_publish == MarketSession.AFTER_CLOSE.value
+        expected = datetime(2026, 4, 27, 9, 0, tzinfo=ZoneInfo("Europe/Oslo"))
+        assert result.action_executable_at == expected
+
+    def test_jp_lunch_break_modeled(self) -> None:
+        """TSE keeps the two-session shape (lunch 11:30-12:30) like HK/CN."""
+        jp = MARKET_SESSIONS["JP"]
+        assert len(jp.sessions) == 2
+        assert jp.sessions[0].close == dt_time(11, 30)
+        assert jp.sessions[1].open == dt_time(12, 30)

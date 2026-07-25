@@ -1,11 +1,13 @@
 """Tests for extraction.timing_builder — ExecutionTiming builder.
 
-Covers CN/HK/US timezone handling and temporal anchor resolution.
+Covers CN/HK/US timezone handling, international markets via the shared
+MARKET_SESSIONS table (B1), explicit unknown-market degradation, and temporal
+anchor resolution.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -265,20 +267,82 @@ class TestTemporalAnchorResolution:
 
 
 # ---------------------------------------------------------------------------
-# 5. Fallback and edge cases
+# 5. International markets (B1 — shared MARKET_SESSIONS table)
+# ---------------------------------------------------------------------------
+
+class TestInternationalTiming:
+    """Markets beyond CN/HK/US resolve via execution.timing_policy.MARKET_SESSIONS."""
+
+    def test_no_market_uses_oslo(self) -> None:
+        """NO (EQNR.OL flow) → Europe/Oslo; 10:00 regular session → +5 min."""
+        published = datetime(2026, 4, 23, 10, 0, tzinfo=ZoneInfo("Europe/Oslo"))
+        envelope = _make_envelope(published)
+
+        result = build_execution_timing(envelope=envelope, market="NO")
+
+        assert result.market == "NO"
+        assert result.timezone == "Europe/Oslo"
+        assert result.market_session_at_publish == MarketSession.REGULAR
+        expected = datetime(2026, 4, 23, 10, 5, tzinfo=ZoneInfo("Europe/Oslo"))
+        assert result.action_executable_at == expected
+
+    def test_jp_market_uses_tokyo(self) -> None:
+        """JP (8309.T flow) → Asia/Tokyo; 10:00 regular session → +5 min."""
+        published = datetime(2026, 4, 23, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+        envelope = _make_envelope(published)
+
+        result = build_execution_timing(envelope=envelope, market="JP")
+
+        assert result.timezone == "Asia/Tokyo"
+        assert result.market_session_at_publish == MarketSession.REGULAR
+        expected = datetime(2026, 4, 23, 10, 5, tzinfo=ZoneInfo("Asia/Tokyo"))
+        assert result.action_executable_at == expected
+
+    def test_jp_after_close_defers_to_next_day_open(self) -> None:
+        """JP Thursday 16:00 (after 15:30 close) → Friday 09:00 JST open."""
+        published = datetime(2026, 4, 23, 16, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+        envelope = _make_envelope(published)
+
+        result = build_execution_timing(envelope=envelope, market="JP")
+
+        assert result.market_session_at_publish == MarketSession.AFTER_CLOSE
+        expected = datetime(2026, 4, 24, 9, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+        assert result.action_executable_at == expected
+
+    def test_uk_market_uses_london(self) -> None:
+        """UK → Europe/London; 09:00 is within the 08:00-16:30 LSE session."""
+        published = datetime(2026, 4, 23, 9, 0, tzinfo=ZoneInfo("Europe/London"))
+        envelope = _make_envelope(published)
+
+        result = build_execution_timing(envelope=envelope, market="UK")
+
+        assert result.timezone == "Europe/London"
+        assert result.market_session_at_publish == MarketSession.REGULAR
+
+
+# ---------------------------------------------------------------------------
+# 6. Fallback and edge cases
 # ---------------------------------------------------------------------------
 
 class TestFallback:
     """Unknown market and missing published_at handling."""
 
-    def test_unknown_market_defaults_to_shanghai(self) -> None:
-        """Unknown market → fallback to Asia/Shanghai."""
-        published = datetime(2026, 4, 23, 10, 0)
+    def test_unknown_market_explicit_degraded_path(self) -> None:
+        """Unknown market must NOT silently assume Asia/Shanghai.
+
+        It takes the policy's explicit unknown-market path: neutral UTC
+        clock, MarketSession.UNKNOWN marker, default reaction delay — a
+        marked degraded result the drive loop can carry without crashing.
+        """
+        published = datetime(2026, 4, 23, 10, 0, tzinfo=ZoneInfo("UTC"))
         envelope = _make_envelope(published)
 
-        result = build_execution_timing(envelope=envelope, market="XX")
+        result = build_execution_timing(envelope=envelope, market="ZZ")
 
-        assert result.timezone == "Asia/Shanghai"
+        assert result.timezone == "UTC"
+        assert result.timezone != "Asia/Shanghai"
+        assert result.market_session_at_publish == MarketSession.UNKNOWN
+        assert result.action_executable_at == published + timedelta(minutes=5)
 
     def test_missing_published_at_raises(self) -> None:
         """Envelope without published_at must not fall back to runtime now."""

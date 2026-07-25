@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
+from finer.enrichment.ticker_normalization import normalize_broker_ticker
 from finer.schemas.investment_intent import (
     IntentTargetPrice,
     NormalizedInvestmentIntent,
@@ -171,8 +172,9 @@ def map_horizon_months(horizon_months: Optional[float]) -> str:
 def _normalize_symbol(symbol: str) -> str:
     """Minimal normalization only (upper + strip).
 
-    Deep ticker normalization is deliberately NOT done here — it belongs to
-    the F2 wave (enrichment/ is off-limits to this adapter).
+    Deep ticker normalization (rewriting the symbol) is deliberately NOT done
+    here — it belongs to the F2 wave. The adapter only *reads* the shared F2
+    suffix tables for market/currency inference (see ``infer_market``).
     """
     return symbol.strip().upper()
 
@@ -207,33 +209,48 @@ def select_target_symbol(t3: Dict[str, Any]) -> Optional[str]:
     return suffixed[-1] if suffixed else parts[0]
 
 
+# Market code → trading currency for the currency-inference heuristic.
+# Keys mirror the market universe of execution/timing_policy.py:MARKET_SESSIONS
+# (which itself covers the F2 suffix tables). LSE quotes are conventionally in
+# pence (GBp); we record the ISO currency GBP — precision matters less than
+# never mislabeling an international market as USD.
+MARKET_CURRENCY_TABLE: Dict[str, str] = {
+    "US": "USD", "CN": "CNY", "HK": "HKD", "TW": "TWD", "JP": "JPY",
+    "KR": "KRW", "SG": "SGD", "MY": "MYR", "IN": "INR", "TH": "THB",
+    "ID": "IDR", "AU": "AUD", "NZ": "NZD",
+    "UK": "GBP", "FR": "EUR", "NL": "EUR", "DE": "EUR", "IT": "EUR",
+    "ES": "EUR", "PT": "EUR", "FI": "EUR", "CH": "CHF", "SE": "SEK",
+    "DK": "DKK", "NO": "NOK",
+    "CA": "CAD", "BR": "BRL", "MX": "MXN",
+}
+
+
 def infer_market(symbol: Optional[str]) -> Optional[str]:
-    """Heuristic market from ticker suffix (.HK -> HK, .SZ/.SS/6-digit -> CN,
-    otherwise US). Documented heuristic, not authoritative."""
+    """Market from the shared F2 suffix tables via ``normalize_broker_ticker``
+    (single truth source — B1 replaced the local .HK/.SZ/.SS heuristic that
+    judged 600519.SH and every international suffix as US).
+
+    Only the ``market`` of the normalization result is used; the symbol is
+    NOT rewritten here (deep ticker normalization stays an F2 concern).
+    Returns ``None`` when the code cannot be confidently mapped — honest
+    absence, no US fabrication.
+    """
     if not symbol:
         return None
-    upper = symbol.upper()
-    if upper.endswith(".HK"):
-        return "HK"
-    if upper.endswith((".SZ", ".SS")):
-        return "CN"
-    if upper.isdigit() and len(upper) == 6:
-        return "CN"
-    return "US"
+    normalized = normalize_broker_ticker(symbol)
+    if normalized is None:
+        return None
+    return normalized.market
 
 
 def infer_currency(symbol: Optional[str]) -> str:
-    """Heuristic currency from ticker suffix when the report declared none:
-    .HK -> HKD, .SZ/.SS/6-digit -> CNY, else USD."""
-    if symbol:
-        upper = symbol.upper()
-        if upper.endswith(".HK"):
-            return "HKD"
-        if upper.endswith((".SZ", ".SS")):
-            return "CNY"
-        if upper.isdigit() and len(upper) == 6:
-            return "CNY"
-    return "USD"
+    """Heuristic currency when the report declared none: the inferred
+    market's trading currency (same table-driven path as ``infer_market``),
+    USD when the market is unknown (documented default, unchanged)."""
+    market = infer_market(symbol)
+    if market is None:
+        return "USD"
+    return MARKET_CURRENCY_TABLE.get(market, "USD")
 
 
 def build_target_price(

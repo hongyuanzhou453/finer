@@ -119,6 +119,30 @@ def test_no_price_data():
     assert skip.reason == "no_price_data"
 
 
+def test_review_required_horizon_refuses_settlement():
+    """B2: review_required is a routing verdict, not a horizon claim.
+
+    Before the guard these actions fell through resolve_horizon_tier's
+    unknown→long default and settled on a 180d window — 939 live actions
+    would have been scored without the review they were flagged for.
+    """
+    action = make_action(TradeDirection.BULLISH, ENTRY, time_horizon="review_required")
+    result, skip = evaluate_action(action, series(D0, [100, 101, 102]))
+    assert result is None and skip is not None
+    assert skip.reason == "review_required_horizon"
+
+
+def test_structured_window_fields_double_written():
+    """B4: evaluation_window_days/window_truncated mirror the period suffix."""
+    action = make_action(TradeDirection.BULLISH, ENTRY, time_horizon="long_term")
+    # Series ends well before the 180d window → END_OF_PERIOD + truncated.
+    result, skip = evaluate_action(action, series(D0, [100, 101, 102]))
+    assert skip is None and result is not None
+    assert result.evaluation_window_days == HORIZON_EXIT_TIERS["long"]
+    assert result.window_truncated is True
+    assert "[window=180d truncated]" in (result.backtest_period or "")
+
+
 def test_no_entry_bar_when_series_ends_before_clock():
     action = make_action(TradeDirection.BULLISH, ENTRY)
     closes = series(D0 - timedelta(days=10), [100, 101, 102])

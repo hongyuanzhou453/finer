@@ -205,6 +205,22 @@ def test_ticker_slash_split_falls_back_to_first_segment():
     ("600519.SS", "CN"),
     ("600519", "CN"),
     ("TSLA", "US"),
+    ("WB.US", "US"),
+    # B1: canonical .SH was previously misjudged as US (the infer_market bug)
+    ("600519.SH", "CN"),
+    # B1: international suffixes via the shared F2 suffix tables
+    ("8309.T", "JP"),
+    ("2330.TW", "TW"),
+    ("VOD.L", "UK"),
+    ("MC.PA", "FR"),
+    ("RIO.AX", "AU"),
+    ("005930.KS", "KR"),
+    # Post international-unlock merge .OL resolves canonically (Oslo).
+    ("EQNR.OL", "NO"),
+    # Not confidently mappable → honest None, never a fabricated "US".
+    ("EQNR.QQ", None),
+    ("UNKNOWNLONG", None),
+    (None, None),
 ])
 def test_market_inference(symbol, market):
     assert infer_market(symbol) == market
@@ -236,6 +252,17 @@ def test_target_price_passthrough_when_currency_declared():
     ("600519", "CNY"),
     ("TSLA", "USD"),
     (None, "USD"),
+    # B1: international suffixes → the market's trading currency
+    ("600519.SH", "CNY"),
+    ("8309.T", "JPY"),
+    ("VOD.L", "GBP"),
+    ("MC.PA", "EUR"),
+    ("RIO.AX", "AUD"),
+    ("005930.KS", "KRW"),
+    # Post international-unlock merge .OL resolves to Oslo → NOK.
+    ("EQNR.OL", "NOK"),
+    # Unknown market keeps the documented USD default
+    ("EQNR.QQ", "USD"),
 ])
 def test_currency_inference_from_suffix(symbol, currency):
     assert infer_currency(symbol) == currency

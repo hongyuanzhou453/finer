@@ -50,8 +50,10 @@ SUFFIX_NORMALIZATION_TABLE: Dict[str, Tuple[str, str]] = {
     "HK": ("HK", "HK"),
     # Taiwan
     "TW": ("TW", "TW"),
+    "TT": ("TW", "TW"),     # Bloomberg TWSE (2454.TT 联发科) → Reuters .TW
     # Tokyo (explicit suffix only; bare 4-digit codes stay ambiguous → rejected)
     "T": ("T", "JP"),
+    "JP": ("T", "JP"),      # Bloomberg Tokyo (5802.JP 住友电工) → Reuters .T
 }
 
 # ── International exchange suffixes ──────────────────────────────────────────
@@ -82,6 +84,32 @@ INTERNATIONAL_SUFFIX_TABLE: Dict[str, Tuple[str, str, str]] = {
     "SI": ("SI", "SG", _ALNUM),                              # Singapore SGX
     "KL": ("KL", "MY", _ALNUM),                              # Bursa Malaysia
     "NS": ("NS", "IN", _ALNUM), "BO": ("BO", "IN", _ALNUM), # India NSE / BSE
+    "IN": ("NS", "IN", _ALNUM),                              # Bloomberg India (Pine Labs) → NSE
+    # ── Bloomberg-dialect tail (C9 follow-up). Each row verified against the
+    #    broker corpus's company names — the exchange is inferred from the
+    #    issuer, not the suffix letters (e.g. .SA is São Paulo/Brazil, .BR is
+    #    Brussels/Belgium; .S/.SS/.CN/.SE/.F are intentionally OMITTED: they
+    #    collide with Swiss/Shanghai/China/Saudi or carry derivative-code dirt).
+    #    Bloomberg variants merge into the Reuters canonical already in this
+    #    table so intent + registry (both normalized here) resolve identically.
+    "GR": ("DE", "DE", _ALPHA), "GY": ("DE", "DE", _ALPHA),  # Bloomberg Germany (Rheinmetall) → XETRA .DE
+    "NA": ("AS", "NL", _ALPHA),                              # Bloomberg Amsterdam (Randstad) → .AS
+    "SM": ("MC", "ES", _ALPHA),                              # Bloomberg Madrid (Santander) → .MC
+    "IM": ("MI", "IT", _ALPHA),                              # Bloomberg Milan (Saipem) → .MI
+    "TSX": ("TO", "CA", _ALPHA),                             # Bloomberg Toronto (Alkane) → .TO
+    "AU": ("AX", "AU", _ALPHA),                              # Bloomberg ASX (Treasury Wine) → .AX
+    # New exchanges (no prior row). Alpha vs alnum matches the venue's code shape.
+    "SA": ("SA", "BR", _ALNUM),                              # B3 São Paulo (ITUB3, PETR4 = letters+digit)
+    "MX": ("MX", "MX", _ALPHA),                              # BMV Mexico (GRUMAB, GAPB)
+    "TWO": ("TWO", "TW", _ALNUM),                            # Taipei Exchange OTC (6488 环球晶圆)
+    "BR": ("BR", "BE", _ALPHA), "BB": ("BR", "BE", _ALPHA),  # Euronext Brussels (UCB, argenx)
+    "OL": ("OL", "NO", _ALPHA), "NO": ("OL", "NO", _ALPHA),  # Oslo Børs (Telenor, Equinor)
+    "CO": ("CO", "DK", _ALPHA), "DC": ("CO", "DK", _ALPHA),  # Nasdaq Copenhagen (Novo, Ørsted)
+    "JK": ("JK", "ID", _ALPHA),                              # IDX Jakarta (Indosat, United Tractors)
+    "WA": ("WA", "PL", _ALPHA),                              # GPW Warsaw (KGHM, Pepco)
+    "BK": ("BK", "TH", _ALPHA),                              # SET Bangkok (True Corp, PTTEP)
+    "LS": ("LS", "PT", _ALPHA),                              # Euronext Lisbon (NOS, Galp)
+    "NZ": ("NZ", "NZ", _ALPHA),                              # NZX New Zealand (KMD Brands)
 }
 
 

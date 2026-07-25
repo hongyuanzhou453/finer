@@ -150,6 +150,12 @@ def resolve_horizon_tier(time_horizon_hint: Optional[str]) -> str:
     historical 30-day default (R5: measuring 12-month judgments with a 30-day
     stopwatch renders coin flips as confident scores).
 
+    ``"review_required"`` is deliberately NOT in the mapping: it is a routing
+    verdict, not a horizon claim. Settlement refuses such actions upstream
+    (``per_action.evaluate_action`` → ``SkipInfo("review_required_horizon")``),
+    so the long default here is only ever consulted by F4 exit-parameter
+    construction, never to settle an unreviewed action (B2).
+
     Args:
         time_horizon_hint: A TIME_HORIZON_LITERAL value (or None / free text).
 

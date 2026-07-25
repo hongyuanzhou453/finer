@@ -9,7 +9,9 @@ Design principles:
 - Pure deterministic rules — zero LLM decisions
 - Timezone-aware via zoneinfo (PEP 615)
 - Holiday extension point via `is_holiday` hook
-- Supported markets: HK, CN, US
+- Supported markets: single truth table ``MARKET_SESSIONS`` below (HK/CN/US
+  plus every market code derivable from the F2 ticker suffix tables in
+  ``enrichment/ticker_normalization.py``)
 - All outputs are JSON-serializable via Pydantic V2
 
 Architecture position: F5 Execute stage, called by trade_action_extractor
@@ -21,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, time as dt_time
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
 from zoneinfo import ZoneInfo
 
 
@@ -86,6 +88,158 @@ class ExecutionTimingResult:
         d["action_executable_at"] = self.action_executable_at.isoformat()
         d["intent_published_at"] = self.intent_published_at.isoformat()
         return d
+
+
+# ---------------------------------------------------------------------------
+# Market session table — SINGLE truth source for market → timezone/sessions.
+# ---------------------------------------------------------------------------
+# Consumed by both MarketCalendarTimingPolicy (registration) and
+# extraction/timing_builder.py (timezone resolution). Do NOT fork a second
+# market → timezone map elsewhere.
+#
+# Coverage = HK/CN/US (byte-identical to the original built-ins — zero
+# regression) + the full market-code set derivable from the two suffix tables
+# in enrichment/ticker_normalization.py (SUFFIX_NORMALIZATION_TABLE +
+# INTERNATIONAL_SUFFIX_TABLE), + a small forward-compat block (NO/DK/PT/NZ/
+# TH/ID/BR/MX) for markets the within-envelope loose bridge can surface via
+# F2 anchors before their suffixes earn a canonical table row.
+#
+# Source: official exchange regular trading hours as of 2025/2026 (exchange
+# websites; e.g. TSE closes 15:30 since 2024-11). Lunch breaks are modeled as
+# a second TradingSession only where the venue actually has one, mirroring
+# the existing HK/CN pattern. Precision of pre_market_start matters less than
+# a correct IANA timezone; all weeks are Mon–Fri (weekend_days=(5, 6)).
+
+_WEEKEND_SAT_SUN: tuple[int, ...] = (5, 6)
+
+
+def _mk(
+    market: str,
+    timezone: str,
+    sessions: List[Tuple[dt_time, dt_time]],
+    pre_market_start: dt_time,
+) -> MarketConfig:
+    """Table-row helper: build one Mon–Fri MarketConfig."""
+    return MarketConfig(
+        market=market,
+        timezone=timezone,
+        sessions=[TradingSession(open=o, close=c) for o, c in sessions],
+        pre_market_start=pre_market_start,
+        weekend_days=_WEEKEND_SAT_SUN,
+    )
+
+
+MARKET_SESSIONS: Dict[str, MarketConfig] = {
+    cfg.market: cfg
+    for cfg in [
+        # ── Original built-ins (behavior frozen — do not touch) ────────────
+        _mk("HK", "Asia/Hong_Kong",
+            [(dt_time(9, 30), dt_time(12, 0)), (dt_time(13, 0), dt_time(16, 0))],
+            dt_time(9, 0)),
+        _mk("CN", "Asia/Shanghai",
+            [(dt_time(9, 30), dt_time(11, 30)), (dt_time(13, 0), dt_time(15, 0))],
+            dt_time(9, 15)),
+        _mk("US", "America/New_York",
+            [(dt_time(9, 30), dt_time(16, 0))],
+            dt_time(4, 0)),
+        # ── Asia-Pacific ────────────────────────────────────────────────────
+        _mk("JP", "Asia/Tokyo",  # TSE
+            [(dt_time(9, 0), dt_time(11, 30)), (dt_time(12, 30), dt_time(15, 30))],
+            dt_time(8, 0)),
+        _mk("TW", "Asia/Taipei",  # TWSE
+            [(dt_time(9, 0), dt_time(13, 30))],
+            dt_time(8, 30)),
+        _mk("KR", "Asia/Seoul",  # KRX
+            [(dt_time(9, 0), dt_time(15, 30))],
+            dt_time(8, 30)),
+        _mk("SG", "Asia/Singapore",  # SGX
+            [(dt_time(9, 0), dt_time(12, 0)), (dt_time(13, 0), dt_time(17, 0))],
+            dt_time(8, 30)),
+        _mk("MY", "Asia/Kuala_Lumpur",  # Bursa Malaysia
+            [(dt_time(9, 0), dt_time(12, 30)), (dt_time(14, 30), dt_time(17, 0))],
+            dt_time(8, 30)),
+        _mk("IN", "Asia/Kolkata",  # NSE / BSE
+            [(dt_time(9, 15), dt_time(15, 30))],
+            dt_time(9, 0)),
+        _mk("TH", "Asia/Bangkok",  # SET
+            [(dt_time(10, 0), dt_time(12, 30)), (dt_time(14, 30), dt_time(16, 30))],
+            dt_time(9, 30)),
+        _mk("ID", "Asia/Jakarta",  # IDX
+            [(dt_time(9, 0), dt_time(12, 0)), (dt_time(13, 30), dt_time(15, 50))],
+            dt_time(8, 45)),
+        _mk("AU", "Australia/Sydney",  # ASX
+            [(dt_time(10, 0), dt_time(16, 0))],
+            dt_time(7, 0)),
+        _mk("NZ", "Pacific/Auckland",  # NZX
+            [(dt_time(10, 0), dt_time(16, 45))],
+            dt_time(9, 0)),
+        # ── Europe ──────────────────────────────────────────────────────────
+        _mk("UK", "Europe/London",  # LSE
+            [(dt_time(8, 0), dt_time(16, 30))],
+            dt_time(7, 50)),
+        _mk("FR", "Europe/Paris",  # Euronext Paris
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(7, 15)),
+        _mk("NL", "Europe/Amsterdam",  # Euronext Amsterdam
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(7, 15)),
+        _mk("BE", "Europe/Brussels",  # Euronext Brussels (.BR Reuters / .BB Bloomberg)
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(7, 15)),
+        _mk("PL", "Europe/Warsaw",  # GPW Warsaw (.WA)
+            [(dt_time(9, 0), dt_time(17, 0))],
+            dt_time(8, 30)),
+        _mk("DE", "Europe/Berlin",  # XETRA
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(8, 0)),
+        _mk("CH", "Europe/Zurich",  # SIX Swiss
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(8, 0)),
+        _mk("IT", "Europe/Rome",  # Borsa Italiana
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(8, 0)),
+        _mk("ES", "Europe/Madrid",  # BME
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(8, 30)),
+        _mk("PT", "Europe/Lisbon",  # Euronext Lisbon (WET)
+            [(dt_time(8, 0), dt_time(16, 30))],
+            dt_time(7, 15)),
+        _mk("SE", "Europe/Stockholm",  # Nasdaq Stockholm
+            [(dt_time(9, 0), dt_time(17, 30))],
+            dt_time(8, 45)),
+        _mk("FI", "Europe/Helsinki",  # Nasdaq Helsinki (EET)
+            [(dt_time(10, 0), dt_time(18, 30))],
+            dt_time(9, 45)),
+        _mk("DK", "Europe/Copenhagen",  # Nasdaq Copenhagen
+            [(dt_time(9, 0), dt_time(17, 0))],
+            dt_time(8, 45)),
+        _mk("NO", "Europe/Oslo",  # Oslo Børs
+            [(dt_time(9, 0), dt_time(16, 20))],
+            dt_time(8, 15)),
+        # ── Americas ────────────────────────────────────────────────────────
+        _mk("CA", "America/Toronto",  # TSX
+            [(dt_time(9, 30), dt_time(16, 0))],
+            dt_time(7, 0)),
+        _mk("BR", "America/Sao_Paulo",  # B3
+            [(dt_time(10, 0), dt_time(17, 0))],
+            dt_time(9, 45)),
+        _mk("MX", "America/Mexico_City",  # BMV
+            [(dt_time(8, 30), dt_time(15, 0))],
+            dt_time(8, 0)),
+    ]
+}
+
+
+def get_market_config(market: str) -> Optional[MarketConfig]:
+    """Look up the shared session table; ``None`` for unknown market codes.
+
+    Callers (e.g. ``extraction/timing_builder.py``) MUST treat ``None`` as an
+    explicit degradation signal — never substitute a default timezone
+    silently.
+    """
+    if not market:
+        return None
+    return MARKET_SESSIONS.get(market.upper())
 
 
 # ---------------------------------------------------------------------------
@@ -165,42 +319,9 @@ class MarketCalendarTimingPolicy:
     # ------------------------------------------------------------------
 
     def _register_default_markets(self) -> None:
-        """Register built-in HK, CN, US market configurations."""
-
-        # HK: 09:30–12:00, 13:00–16:00 HKT
-        self.register_market(MarketConfig(
-            market="HK",
-            timezone="Asia/Hong_Kong",
-            sessions=[
-                TradingSession(open=dt_time(9, 30), close=dt_time(12, 0)),
-                TradingSession(open=dt_time(13, 0), close=dt_time(16, 0)),
-            ],
-            pre_market_start=dt_time(9, 0),
-            weekend_days=(5, 6),  # Sat, Sun
-        ))
-
-        # CN: 09:30–11:30, 13:00–15:00 CST
-        self.register_market(MarketConfig(
-            market="CN",
-            timezone="Asia/Shanghai",
-            sessions=[
-                TradingSession(open=dt_time(9, 30), close=dt_time(11, 30)),
-                TradingSession(open=dt_time(13, 0), close=dt_time(15, 0)),
-            ],
-            pre_market_start=dt_time(9, 15),
-            weekend_days=(5, 6),
-        ))
-
-        # US: 09:30–16:00 ET (single session, no lunch break)
-        self.register_market(MarketConfig(
-            market="US",
-            timezone="America/New_York",
-            sessions=[
-                TradingSession(open=dt_time(9, 30), close=dt_time(16, 0)),
-            ],
-            pre_market_start=dt_time(4, 0),
-            weekend_days=(5, 6),
-        ))
+        """Register every market from the shared ``MARKET_SESSIONS`` table."""
+        for config in MARKET_SESSIONS.values():
+            self.register_market(config)
 
     def register_market(self, config: MarketConfig) -> None:
         """Register a market configuration.  Overwrites if already exists."""
