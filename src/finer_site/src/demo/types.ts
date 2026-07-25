@@ -97,6 +97,10 @@ export interface BacktestLite {
   max_drawdown_pct: number;
   sharpe_ratio: number;
   backtest_period: string;
+  // B4: structured window audit (mirrors schemas/trade_action.py BacktestResult).
+  // Absent on results that predate the fields (read the backtest_period suffix).
+  evaluation_window_days?: number | null;
+  window_truncated?: boolean | null;
 }
 
 export interface RlhfLite {

@@ -980,6 +980,34 @@ export type PolicyDecision = {
   metadata: Record<string, unknown>;
 };
 
+// F4 policy hint enums — mirrored from finer.schemas.policy (*_HINT_LITERAL).
+// Exported (not inline) so scripts/check_contract_drift.py can parse them;
+// TradeAction.time_horizon shares PolicyHoldingPeriodHint (B2).
+export type PolicyActionHint =
+  | "watch_only"
+  | "watch_or_no_trade"
+  | "avoid_or_watch_risk"
+  | "open_position"
+  | "add_position"
+  | "reduce_position"
+  | "hold_position"
+  | "close_position"
+  | "review_required";
+
+export type PolicyPositionSizingHint =
+  | "none"
+  | "small"
+  | "medium"
+  | "large"
+  | "review_required";
+
+export type PolicyHoldingPeriodHint =
+  | "intraday"
+  | "short_term"
+  | "medium_term"
+  | "long_term"
+  | "review_required";
+
 export type PolicyMappingResult = {
   policy_id: string;
   intent_id: string;
@@ -987,28 +1015,9 @@ export type PolicyMappingResult = {
   kol_id?: string;
   policy_version: string;
   policy_layers_applied: string[];
-  action_hint:
-    | "watch_only"
-    | "watch_or_no_trade"
-    | "avoid_or_watch_risk"
-    | "open_position"
-    | "add_position"
-    | "reduce_position"
-    | "hold_position"
-    | "close_position"
-    | "review_required";
-  position_sizing_hint:
-    | "none"
-    | "small"
-    | "medium"
-    | "large"
-    | "review_required";
-  holding_period_hint:
-    | "intraday"
-    | "short_term"
-    | "medium_term"
-    | "long_term"
-    | "review_required";
+  action_hint: PolicyActionHint;
+  position_sizing_hint: PolicyPositionSizingHint;
+  holding_period_hint: PolicyHoldingPeriodHint;
   risk_constraints: PolicyRiskConstraints;
   mapping_rationale: string;
   layer_traces: PolicyLayerTrace[];
@@ -1024,28 +1033,9 @@ export type PolicyMappedIntent = {
   intent_id: string;
   policy_id: string;
   original_intent_summary: string;
-  action_hint:
-    | "watch_only"
-    | "watch_or_no_trade"
-    | "avoid_or_watch_risk"
-    | "open_position"
-    | "add_position"
-    | "reduce_position"
-    | "hold_position"
-    | "close_position"
-    | "review_required";
-  position_sizing_hint:
-    | "none"
-    | "small"
-    | "medium"
-    | "large"
-    | "review_required";
-  holding_period_hint:
-    | "intraday"
-    | "short_term"
-    | "medium_term"
-    | "long_term"
-    | "review_required";
+  action_hint: PolicyActionHint;
+  position_sizing_hint: PolicyPositionSizingHint;
+  holding_period_hint: PolicyHoldingPeriodHint;
   risk_notes: string[];
   mapping_confidence: number;
   requires_human_review: boolean;
@@ -1723,7 +1713,7 @@ export type TradeAction = {
   model_version: string;
   extraction_method: string;
   validation_status: TradeValidationStatus;
-  time_horizon?: string;
+  time_horizon?: PolicyHoldingPeriodHint; // B2: Literal on both sides now
   rationale?: string;
   tags: string[];
 };

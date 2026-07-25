@@ -57,6 +57,11 @@ REGISTRY: Dict[str, Tuple[str, str, str]] = {
     "MarketSession": ("finer.schemas.trade_action", "MarketSession", "enum"),
     "InstrumentType": ("finer.schemas.trade_action", "INSTRUMENT_TYPE_LITERAL", "literal"),
     "SignalClass": ("finer.schemas.trade_action", "SIGNAL_CLASS_LITERAL", "literal"),
+    # F4 policy hint literals (policy.py) — F5 TradeAction.time_horizon shares
+    # HOLDING_PERIOD_HINT_LITERAL (B2), so drift here corrupts settle windows.
+    "PolicyActionHint": ("finer.schemas.policy", "ACTION_HINT_LITERAL", "literal"),
+    "PolicyPositionSizingHint": ("finer.schemas.policy", "POSITION_SIZING_HINT_LITERAL", "literal"),
+    "PolicyHoldingPeriodHint": ("finer.schemas.policy", "HOLDING_PERIOD_HINT_LITERAL", "literal"),
     # F3 NormalizedInvestmentIntent literals (investment_intent.py)
     "IntentTargetType": ("finer.schemas.investment_intent", "TARGET_TYPE_LITERAL", "literal"),
     "IntentTimeHorizon": ("finer.schemas.investment_intent", "TIME_HORIZON_LITERAL", "literal"),

@@ -122,6 +122,12 @@ def build_action_metadata(
         metadata["leverage_flag"] = intent.leverage_flag
     if intent.entry_timing_style != "unknown":
         metadata["entry_timing_style"] = intent.entry_timing_style
+    # F4 risk_notes carry audit-critical caveats (e.g. the honesty note that a
+    # broker recommendation is a declarative rating, not the author's own
+    # position change). PolicyMappedIntent.risk_notes documents "F5 should
+    # propagate these into the TradeAction" — do so verbatim (B3).
+    if policy_mapped_intent.risk_notes:
+        metadata["risk_notes"] = list(policy_mapped_intent.risk_notes)
     return metadata
 
 

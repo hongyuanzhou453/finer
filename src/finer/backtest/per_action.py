@@ -84,7 +84,7 @@ _DIRECTION_SIGN = {
 class SkipInfo:
     """Why an action could not be evaluated."""
 
-    reason: str  # "non_directional" | "no_price_data" | "no_entry_bar"
+    reason: str  # "non_directional" | "no_price_data" | "no_entry_bar" | "review_required_horizon"
 
 
 @dataclass(frozen=True)
@@ -194,6 +194,12 @@ def evaluate_action(
     sign = direction_sign(action)
     if sign is None:
         return None, SkipInfo("non_directional")
+    # "review_required" is a routing verdict ("a human must look at this"),
+    # not a holding-period claim. resolve_horizon_tier's unknown→long default
+    # would silently settle these on a 180-day window, turning un-reviewed
+    # actions into confident-looking scores (B2). Refuse instead.
+    if action.time_horizon == "review_required":
+        return None, SkipInfo("review_required_horizon")
     if not closes:
         return None, SkipInfo("no_price_data")
 
@@ -258,6 +264,11 @@ def evaluate_action(
             backtest_period=(
                 f"{entry_day.isoformat()} — {exit_day.isoformat()} {window_note}"
             ),
+            # B4: structured window fields are now the source of truth; the
+            # backtest_period suffix above stays double-written for one
+            # compatibility round (legacy readers), then gets removed.
+            evaluation_window_days=window_days,
+            window_truncated=window_truncated,
         ),
         None,
     )

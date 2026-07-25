@@ -110,6 +110,7 @@ class SettleReport:
     skipped_under_review: int = 0
     skipped_non_directional: int = 0
     skipped_no_data: int = 0
+    skipped_review_required: int = 0  # time_horizon="review_required" — settle refused (B2)
     skipped_terminal: int = 0  # already VERIFIED/FAILED — never re-flipped
     skipped_manual_semantics: int = 0  # SIGNAL_REVERSAL / MANUAL exits
     errors: List[Dict[str, str]] = field(default_factory=list)
@@ -208,6 +209,10 @@ def settle_actions(
         if skip is not None:
             if skip.reason == "non_directional":
                 report.skipped_non_directional += 1
+            elif skip.reason == "review_required_horizon":
+                # Not a data gap: these stay unsettled until a human resolves
+                # the horizon (or re-extraction assigns a real one).
+                report.skipped_review_required += 1
             else:  # NO_DATA_SKIP_REASONS — retry naturally on the next pass
                 report.skipped_no_data += 1
             return

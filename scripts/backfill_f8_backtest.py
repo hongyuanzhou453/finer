@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path("/Users/zhouhongyuan/Desktop/finer")
 sys.path.insert(0, str(ROOT / "src"))
 
-from finer.backtest.per_action import evaluate_action  # noqa: E402
+from finer.backtest.per_action import _WINDOW_SUFFIX_RE, evaluate_action  # noqa: E402
 from finer.backtest.yahoo_prices import fetch_daily_closes  # noqa: E402
 from finer.schemas.trade_action import TradeAction  # noqa: E402
 from finer.services.repository import TradeActionRepository  # noqa: E402
@@ -79,7 +79,11 @@ def main() -> int:
     print(f"{'ticker':<14}{'dir':<14}{'entry':<12}{'exit':<12}{'reason':<16}{'net_ret':>8}")
     for a, r in sorted(evaluated, key=lambda x: x[1].return_pct or 0, reverse=True):
         ticker = a.target.ticker_normalized or a.target.ticker
-        period = (r.backtest_period or " — ").split(" — ")
+        # Strip the legacy "[window=Nd( truncated)?]" suffix before splitting,
+        # or the exit-date column absorbs it (B4 — structured fields now carry
+        # the window; the suffix is a one-round compatibility double-write).
+        raw_period = _WINDOW_SUFFIX_RE.sub("", r.backtest_period or " — ").rstrip()
+        period = (raw_period or " — ").split(" — ")
         print(
             f"{ticker:<14}{a.direction.value:<14}{period[0]:<12}{period[-1]:<12}"
             f"{r.exit_reason.value:<16}{(r.return_pct or 0) * 100:>7.1f}%"
