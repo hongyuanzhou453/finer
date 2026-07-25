@@ -1,42 +1,21 @@
-"""Script-level tests for scripts/drive_broker_recommendations.bridge_target_symbol.
+"""Tests for enrichment.anchor_bridge.bridge_target_symbol (C1 hoisted home).
 
 B1: a successful tier-2/tier-3 bridge must also refresh ``intent.market``
 from the bridged symbol — otherwise the intent keeps its stale F3-era market
 (often a wrong "US") and the action lands on the wrong trading calendar.
 
-The driver script is import-safe (module-level code is sys.path setup,
-imports and constants only; the drive itself runs under ``main()``), so it is
-loaded here via importlib and the pure bridge function is exercised against
-real ``NormalizedInvestmentIntent`` instances.
+Originally written against the drive_broker_recommendations.py script copy;
+C1 hoisted the function into ``finer.enrichment.anchor_bridge`` and the script
+became a thin shell, so the pure function is imported directly now.
 """
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Optional
 
+from finer.enrichment import anchor_bridge as driver
 from finer.schemas.investment_intent import NormalizedInvestmentIntent
-
-_SCRIPT_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "scripts"
-    / "drive_broker_recommendations.py"
-)
-
-
-def _load_driver() -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "drive_broker_recommendations_under_test", _SCRIPT_PATH
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-driver = _load_driver()
 
 
 # ---------------------------------------------------------------------------

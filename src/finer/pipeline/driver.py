@@ -330,18 +330,25 @@ def _upsert_stage_status(
     status: str,
     error_code: Optional[str] = None,
     error_message: Optional[str] = None,
+    source_channel: Optional[str] = None,
 ) -> None:
+    # C3: stamp source_channel on driver-written rows so channel-scoped
+    # progress queries cover downstream stages, not just F0 intake rows.
+    # COALESCE keeps an existing channel when the caller passes None.
     conn.execute(
         """
-        INSERT INTO stage_status (content_id, stage, status, error_code, error_message, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO stage_status (content_id, stage, status, error_code, error_message,
+                                  updated_at, source_channel)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(content_id, stage) DO UPDATE SET
             status = excluded.status,
             error_code = excluded.error_code,
             error_message = excluded.error_message,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            source_channel = COALESCE(excluded.source_channel, stage_status.source_channel)
         """,
-        (content_id, stage, status, error_code, error_message, datetime.now().isoformat()),
+        (content_id, stage, status, error_code, error_message,
+         datetime.now().isoformat(), source_channel),
     )
     conn.commit()
 
@@ -352,6 +359,7 @@ def _record_failure(
     content_id: str,
     stage: str,
     exc: Exception,
+    source_channel: Optional[str] = None,
 ) -> None:
     error_code = exc.error_code_str if isinstance(exc, FinerError) else type(exc).__name__
     error_message = str(exc)[:500]
@@ -364,7 +372,10 @@ def _record_failure(
         }
     )
     if not report.dry_run:
-        _upsert_stage_status(conn, content_id, stage, "failed", error_code, error_message)
+        _upsert_stage_status(
+            conn, content_id, stage, "failed", error_code, error_message,
+            source_channel=source_channel,
+        )
 
 
 def _reconcile_orphan(
@@ -658,7 +669,10 @@ def _drive_once_unlocked(
                     continue  # downstream stages need the real envelope
                 f1_path = f1_run(rec, data_root)
                 report.f1_ran += 1
-                _upsert_stage_status(conn, content_id, "F1", "ready")
+                _upsert_stage_status(
+                    conn, content_id, "F1", "ready",
+                    source_channel=rec.source_platform,
+                )
 
             # F2
             if not f2_path.exists():
@@ -669,24 +683,42 @@ def _drive_once_unlocked(
                     continue
                 f2_path = f2_run(f1_path, rec, data_root)
                 report.f2_ran += 1
-                _upsert_stage_status(conn, content_id, "F2", "ready")
+                _upsert_stage_status(
+                    conn, content_id, "F2", "ready",
+                    source_channel=rec.source_platform,
+                )
 
             # F5 (+ embedded F8 auto-backtest). A prior legitimate 0-action
             # run is remembered in stage_status so empties aren't re-extracted
             # every drive.
             if not run_f5:
                 continue
-            # R2 guard: broker F5 belongs to the declarative path only. The
-            # generic F3 extractor cannot emit actionability="recommendation"
-            # (see intent_extractor valid_actionability), so running it here
-            # would mint a duplicate kol_statement action set for every broker
-            # envelope. Routing into the declarative executor lands in C2.
-            if rec.source_platform == "broker":
-                report.skipped_broker_declarative += 1
-                continue
             bri_f5_path = data_root / "F5_executed" / f"bri_{content_id}_actions.json"
             if f5_path.exists() or bri_f5_path.exists() or _stage_ready(conn, content_id, "F5"):
                 report.skipped_complete += 1
+                continue
+            # R2 guard + C2 routing: broker F5 belongs to the declarative path.
+            # The generic F3 extractor cannot emit actionability="recommendation"
+            # (see intent_extractor valid_actionability), so running it here
+            # would mint a duplicate kol_statement action set for every broker
+            # envelope. Route through broker_runner instead — it is internally
+            # idempotent (intent-level) and registers its own stage_status rows.
+            if rec.source_platform == "broker":
+                if dry_run:
+                    report.skipped_broker_declarative += 1
+                    continue
+                from finer.pipeline.broker_runner import run_broker_declarative_f5_sync
+
+                broker_report = run_broker_declarative_f5_sync(
+                    data_root,
+                    content_ids={content_id},
+                    execute=True,
+                    stage_status_db=db_path,
+                )
+                if broker_report.actions_written:
+                    report.f5_ran += 1
+                else:
+                    report.skipped_broker_declarative += 1
                 continue
             if dry_run:
                 report.f5_ran += 1
@@ -699,16 +731,23 @@ def _drive_once_unlocked(
                 "F5",
                 "ready",
                 error_message=None if count else "0 actions (all intents rejected)",
+                source_channel=rec.source_platform,
             )
         except FinerError as exc:
-            _record_failure(conn, report, content_id, exc.stage or "F5", exc)
+            _record_failure(
+                conn, report, content_id, exc.stage or "F5", exc,
+                source_channel=rec.source_platform,
+            )
         except Exception as exc:  # noqa: BLE001 — per-content isolation
             stage = (
                 "F1" if not f1_path.exists()
                 else "F2" if not f2_path.exists()
                 else "F5"
             )
-            _record_failure(conn, report, content_id, stage, exc)
+            _record_failure(
+                conn, report, content_id, stage, exc,
+                source_channel=rec.source_platform,
+            )
 
     if run_settle and config.runs("settle"):
         from finer.backtest.settle import settle_actions

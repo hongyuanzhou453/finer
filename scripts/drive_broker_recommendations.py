@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 """Drive broker recommendation intents (bri_*) through F4 → F5 canonical pipeline.
 
-Reads data/F3_intents/bri_*.json (produced by broker_recommendation_adapter),
-joins each intent to its F2-anchored envelope (data/F2_anchored/broker_*.json),
-bridges the grounding gap (intent.target_symbol → anchor.resolved_symbol via
-enrichment.ticker_normalization), maps F4 policy per intent, and runs the
-canonical F5 entry point `run_canonical_from_artifacts`.
+Thin CLI shell (C2) over the canonical executor
+``finer.pipeline.broker_runner.run_broker_declarative_f5`` — all business
+logic (bri intent loading, anchor bridging, F4 mapping, canonical F5, sidecar
+persistence, SQLite index, stage_status upsert) lives in src/. The pipeline
+driver routes broker records through the same executor automatically; this
+shell remains the manual full-corpus entry point.
 
 Zero LLM calls: strategy is "programmatic" throughout.
 
-Output: data/F5_executed/bri_{env_stem}_actions.json  (bri_ prefix keeps these
-files out of regen_canonical_f5.py's re-extraction sweep) + SQLite index via
-TradeActionRepository.index_trade_action.
+Output: data/F5_executed/bri_{content_id}_actions.json  (bri_ prefix keeps
+these files out of regen_canonical_f5.py's re-extraction sweep) + SQLite index.
 
 Idempotent: intents whose intent_id already appears in an existing
 bri_*_actions.json are skipped.
@@ -24,308 +24,48 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import sys
-from collections import Counter, defaultdict
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from finer.enrichment.ticker_normalization import (  # noqa: E402
-    bridge_symbol_equivalent,
-    normalize_broker_ticker,
+from finer.pipeline.broker_runner import (  # noqa: E402
+    BrokerDriveReport,
+    run_broker_declarative_f5,
 )
-from finer.pipeline.canonical_runner import (  # noqa: E402
-    _coerce_envelope_anchors,
-    run_canonical_from_artifacts,
-)
-from finer.policy.policy_mapper import PolicyMapper  # noqa: E402
-from finer.schemas.content_envelope import ContentEnvelope  # noqa: E402
-from finer.schemas.evidence import EvidenceSpan  # noqa: E402
-from finer.schemas.investment_intent import NormalizedInvestmentIntent  # noqa: E402
-from finer.schemas.policy import PolicyContext  # noqa: E402
-
-DATA_ROOT = REPO_ROOT / "data"
-F3_DIR = DATA_ROOT / "F3_intents"
-F2_DIR = DATA_ROOT / "F2_anchored"
-F4_DIR = DATA_ROOT / "F4_policy_mapped"
-F5_DIR = DATA_ROOT / "F5_executed"
 
 
-# ── Loading ──────────────────────────────────────────────────────────────────
-
-
-def load_bri_intents() -> List[NormalizedInvestmentIntent]:
-    intents: List[NormalizedInvestmentIntent] = []
-    for path in sorted(F3_DIR.glob("bri_*.json")):
-        # JSON mode: strict models still accept ISO datetime strings here
-        intents.append(
-            NormalizedInvestmentIntent.model_validate_json(path.read_text(encoding="utf-8"))
-        )
-    return intents
-
-
-def load_envelopes() -> Dict[str, Tuple[Path, ContentEnvelope]]:
-    """envelope_id → (file path, coerced ContentEnvelope)."""
-    envs: Dict[str, Tuple[Path, ContentEnvelope]] = {}
-    for path in sorted(F2_DIR.glob("broker_*.json")):
-        env = ContentEnvelope.model_validate_json(path.read_text(encoding="utf-8"))
-        _coerce_envelope_anchors(env)
-        envs[env.envelope_id] = (path, env)
-    return envs
-
-
-def existing_actioned_intent_ids() -> set[str]:
-    """intent_ids already present in bri_*_actions.json files (idempotency)."""
-    seen: set[str] = set()
-    for path in F5_DIR.glob("bri_*_actions.json"):
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            for action in data.get("actions", []):
-                iid = action.get("intent_id")
-                if iid:
-                    seen.add(iid)
-        except (OSError, json.JSONDecodeError):
-            continue
-    return seen
-
-
-# ── Grounding bridge ─────────────────────────────────────────────────────────
-
-
-def bridge_target_symbol(
-    intent: NormalizedInvestmentIntent, env: ContentEnvelope
-) -> Optional[str]:
-    """Normalize intent.target_symbol to match one of the envelope's F2
-    anchor resolved_symbols. Returns the matched symbol or None (no fabrication).
-
-    Three tiers, strict → loose, each confined to THIS envelope's anchor set so
-    no cross-corpus symbol can leak in:
-      1. exact string match on the raw target_symbol
-      2. canonical ``normalize_broker_ticker`` match (US/CN/HK/intl suffix table)
-      3. within-envelope loose base bridging — recovers broker dialects the
-         canonical resolver rejects in isolation (bare ``8309`` ↔ ``8309.T``,
-         ``EQNR`` ↔ ``EQNR.OL``, ``VARB.NS`` ↔ ``VARB.BO``) because the anchor
-         disambiguates. The matched anchor's resolved_symbol is what F2 grounding
-         is keyed on, so target_symbol is rewritten to the anchor form.
-
-    B1: a successful tier-2/tier-3 bridge also refreshes ``intent.market``
-    from the bridged symbol — the intent otherwise keeps its stale F3-era
-    market (often a wrong "US"), which would put the action on the wrong
-    trading calendar. When normalization cannot name a market (tier-3 anchor
-    with a suffix outside the canonical tables), the market is left unchanged
-    — no fabrication.
-
-    Only mutates the in-memory intent; pipeline code untouched.
-    """
-    anchor_symbols = [
-        getattr(a, "resolved_symbol", None)
-        for a in (env.entity_anchors or [])
-    ]
-    anchor_symbols = [s for s in anchor_symbols if s]
-    anchor_set = set(anchor_symbols)
-
-    raw = intent.target_symbol
-    if raw in anchor_set:
-        return raw
-
-    normalized = normalize_broker_ticker(raw) if raw else None
-    if normalized and normalized.symbol in anchor_set:
-        intent.target_symbol = normalized.symbol
-        if normalized.market is not None:
-            intent.market = normalized.market
-        return normalized.symbol
-
-    if raw:
-        loose_hits = [
-            s for s in anchor_symbols if bridge_symbol_equivalent(raw, s)
-        ]
-        # Only bridge on an unambiguous single-anchor match — a base that maps to
-        # two different anchors in one envelope would be fabrication, so skip it.
-        if len(set(loose_hits)) == 1:
-            matched = loose_hits[0]
-            intent.target_symbol = matched
-            # The anchor form decides the market too (e.g. EQNR → EQNR.OL is
-            # not a US instrument). None → keep the intent's market as-is.
-            anchor_normalized = normalize_broker_ticker(matched)
-            if anchor_normalized is not None:
-                intent.market = anchor_normalized.market
-            return matched
-    return None
-
-
-def collect_env_spans(env: ContentEnvelope) -> List[EvidenceSpan]:
-    spans: List[EvidenceSpan] = []
-    for block in env.blocks or []:
-        raw_spans = (
-            block.get("evidence_spans") if isinstance(block, dict)
-            else getattr(block, "evidence_spans", None)
-        ) or []
-        for raw in raw_spans:
-            try:
-                spans.append(
-                    raw if isinstance(raw, EvidenceSpan) else EvidenceSpan.model_validate(raw)
-                )
-            except Exception:  # noqa: BLE001 — malformed F2 span, skip
-                continue
-    return spans
-
-
-# ── Main drive ───────────────────────────────────────────────────────────────
-
-
-async def drive(execute: bool) -> None:
-    intents = load_bri_intents()
-    envs = load_envelopes()
-    already = existing_actioned_intent_ids()
-
-    print(f"bri intents: {len(intents)}")
-    print(f"broker envelopes: {len(envs)}")
-    print(f"already-actioned intent_ids (skip): {len(already & {i.intent_id for i in intents})}")
-
-    # Group runnable intents per envelope
-    per_env: Dict[str, List[NormalizedInvestmentIntent]] = defaultdict(list)
-    skips: Counter = Counter()
-    skip_detail: List[str] = []
-    bridged = 0
-
-    for intent in intents:
-        if intent.intent_id in already:
-            skips["already_actioned"] += 1
-            continue
-        pair = envs.get(intent.envelope_id)
-        if pair is None:
-            skips["no_envelope"] += 1
-            skip_detail.append(f"{intent.intent_id}: envelope {intent.envelope_id} not found")
-            continue
-        _, env = pair
-        matched = bridge_target_symbol(intent, env)
-        if matched is None:
-            skips["no_anchor_match"] += 1
-            skip_detail.append(
-                f"{intent.intent_id}: target_symbol={intent.target_symbol!r} "
-                f"has no matching resolved_symbol in {intent.envelope_id}"
-            )
-            continue
-        bridged += 1
-        per_env[intent.envelope_id].append(intent)
-
-    print(f"grounding bridge matched: {bridged}")
-    if skips:
-        print(f"skips: {dict(skips)}")
-    for line in skip_detail:
+def _print_report(report: BrokerDriveReport, execute: bool) -> None:
+    print(f"bri intents: {report.intents_seen}")
+    print(f"broker envelopes: {report.envelopes_seen}")
+    print(f"grounding bridge matched: {report.bridged}")
+    if report.skips:
+        print(f"skips: {report.skips}")
+    for line in report.skip_detail:
         print(f"  skip: {line}")
 
     if not execute:
         print("\n[dry-run] plan:")
-        for eid, group in sorted(per_env.items()):
-            path, env = envs[eid]
-            out = F5_DIR / f"bri_{path.stem}_actions.json"
-            print(f"  {eid} ({env.creator_id}): {len(group)} intent(s) -> {out.name}")
+        for eid, count in sorted(report.planned.items()):
+            print(f"  {eid}: {count} intent(s)")
         print("\nUse --execute to run F4/F5 and write outputs.")
         return
 
-    # Lazy import so dry-run never touches SQLite
-    from finer.services.repository import TradeActionRepository
-
-    # Bind the index + action dir to the selected data root (so --data-root runs
-    # from a worktree still index into the canonical data root, not the worktree).
-    repo = TradeActionRepository(
-        db_path=DATA_ROOT / "cache" / "trade_actions.db",
-        action_dir=F5_DIR,
-    )
-    action_hint_dist: Counter = Counter()
-    trace_status_dist: Counter = Counter()
-    rejected_reasons: Counter = Counter()
-    written_files: List[str] = []
-    f4_written = 0
-    indexed = 0
-    total_actions = 0
-
-    F5_DIR.mkdir(parents=True, exist_ok=True)
-    F4_DIR.mkdir(parents=True, exist_ok=True)
-
-    for eid, group in sorted(per_env.items()):
-        env_path, env = envs[eid]
-
-        # F4 — per-envelope batch (composer consumes batch.mapped_intents)
-        mapper = PolicyMapper(context=PolicyContext(kol_id=env.creator_id))
-        batch = mapper.map_batch(group)
-        for m in batch.mappings:
-            action_hint_dist[m.action_hint] += 1
-
-        # C7: persist each F4 PolicyMappingResult so /audit can resolve the
-        # policy segment (audit_assembler reads F4_policy_mapped/{policy_id}.json).
-        for pmr in batch.mappings:
-            f4_path = F4_DIR / f"{pmr.policy_id}.json"
-            with open(f4_path, "w", encoding="utf-8") as f:
-                json.dump(pmr.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
-            f4_written += 1
-
-        # F5 — canonical entry. persist_dir makes the runner write the F2
-        # evidence sidecars each emitted action references (the root-cause fix:
-        # this driver previously wrote F5 + F4 but never the evidence sidecars,
-        # so broker evidence resolvability collapsed to 6.6% — C8).
-        result = await run_canonical_from_artifacts(
-            intents=group,
-            policy_batch=batch,
-            evidence_spans=collect_env_spans(env),
-            envelope=env,
-            temporal_anchors=env.temporal_anchors,
-            strategy="programmatic",
-            persist_dir=DATA_ROOT,
-        )
-
-        for r in result.rejected_intents:
-            rejected_reasons[r.reason] += 1
-        for a in result.trade_actions:
-            trace_status_dist[a.canonical_trace_status] += 1
-
-        if not result.trade_actions:
-            continue
-
-        out_path = F5_DIR / f"bri_{env_path.stem}_actions.json"
-        # Merge with any prior actions in the same file (idempotent reruns)
-        prior_actions: List[Dict[str, Any]] = []
-        if out_path.exists():
-            try:
-                with open(out_path, encoding="utf-8") as f:
-                    prior_actions = json.load(f).get("actions", [])
-            except (OSError, json.JSONDecodeError):
-                prior_actions = []
-
-        output_data = {
-            "source_file": str(env_path),
-            "extracted_at": datetime.now().isoformat(),
-            "model": "canonical-programmatic-bri",
-            "actions": prior_actions
-            + [a.model_dump(mode="json") for a in result.trade_actions],
-        }
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(output_data, f, ensure_ascii=False, indent=2)
-        written_files.append(str(out_path))
-        total_actions += len(result.trade_actions)
-
-        for a in result.trade_actions:
-            repo.index_trade_action(a, str(out_path))
-            indexed += 1
-
     print("\n== execute report ==")
-    print(f"F4 action_hint distribution: {dict(action_hint_dist)}")
-    print(f"F5 trade_actions produced: {total_actions}")
-    print(f"F5 canonical_trace_status distribution: {dict(trace_status_dist)}")
-    print(f"F5 rejected: {sum(rejected_reasons.values())}")
-    for reason, n in rejected_reasons.most_common():
+    print(f"F4 action_hint distribution: {report.action_hint_dist}")
+    print(f"F5 trade_actions produced: {report.actions_written}")
+    print(f"F5 canonical_trace_status distribution: {report.trace_status_dist}")
+    print(f"F5 rejected: {sum(report.rejected_reasons.values())}")
+    for reason, n in sorted(
+        report.rejected_reasons.items(), key=lambda kv: kv[1], reverse=True
+    ):
         print(f"  rejected[{n}]: {reason}")
-    print(f"files written: {len(written_files)}")
-    for p in written_files:
+    print(f"files written: {len(report.written_files)}")
+    for p in report.written_files:
         print(f"  {p}")
-    print(f"F4 PolicyMappingResults persisted: {f4_written}")
-    print(f"indexed actions: {indexed}")
+    print(f"F4 PolicyMappingResults persisted: {report.f4_written}")
+    print(f"indexed actions: {report.indexed}")
 
 
 def main() -> None:
@@ -342,16 +82,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.data_root is not None:
-        global DATA_ROOT, F3_DIR, F2_DIR, F4_DIR, F5_DIR
-        DATA_ROOT = args.data_root.resolve()
-        F3_DIR = DATA_ROOT / "F3_intents"
-        F2_DIR = DATA_ROOT / "F2_anchored"
-        F4_DIR = DATA_ROOT / "F4_policy_mapped"
-        F5_DIR = DATA_ROOT / "F5_executed"
+    data_root = (args.data_root or (REPO_ROOT / "data")).resolve()
+    print(f"data root: {data_root}")
 
-    print(f"data root: {DATA_ROOT}")
-    asyncio.run(drive(execute=args.execute))
+    report = asyncio.run(
+        run_broker_declarative_f5(data_root, execute=args.execute)
+    )
+    _print_report(report, execute=args.execute)
 
 
 if __name__ == "__main__":
