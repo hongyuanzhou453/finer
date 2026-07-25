@@ -194,3 +194,70 @@ def normalize_broker_ticker(raw_code: str) -> Optional[NormalizedTicker]:
         return NormalizedTicker(code, "US")
 
     return None
+
+
+# ── Within-envelope loose bridging ───────────────────────────────────────────
+# The canonical resolver above intentionally REJECTS forms it cannot map with
+# certainty in isolation — bare 4/5-digit codes (HK vs JP vs KR), vendor index
+# decorations (SPGI.MSCI, GILD.BIC), and exchange dialects not worth a canonical
+# table row. But the broker driver bridge does not resolve a code in isolation:
+# it compares a broker intent's ``target_symbol`` against the F2 anchor set of
+# the *same envelope*. Within that closed set the anchor itself disambiguates —
+# a bare ``8309`` is unambiguously ``8309.T`` when the envelope's only 8309
+# anchor is Tokyo-suffixed. These helpers exist ONLY for that within-envelope
+# comparison; they must never be used as a canonical resolver (that stays
+# ``normalize_broker_ticker``), and matching is intentionally confined to a
+# single envelope so base collisions across the whole symbol universe can't leak
+# in. Measured on the live bri corpus this recovers ~163 otherwise-skipped
+# intents with zero multi-anchor collisions.
+
+
+def bridge_base_key(raw_code: str) -> Optional[Tuple[str, Optional[str]]]:
+    """Loose ``(base, market_hint)`` key for within-envelope anchor bridging.
+
+    NOT canonical resolution. Prefers the strict canonical shape; where that
+    rejects the code, falls back to stripping a trailing dotted alpha exchange/
+    vendor tag or accepting a bare numeric/alpha base. ``market_hint`` is
+    ``None`` (wildcard) for bare inputs — the anchor supplies the market — and
+    the canonical market only when the input carried an explicit suffix. Returns
+    ``None`` for input that is not a plausible code at all (empty, spaced,
+    over-long, punctuation-only).
+    """
+    if not raw_code:
+        return None
+    code = raw_code.strip().upper()
+    if not code or " " in code:
+        return None
+    had_dot = "." in code
+
+    canonical = normalize_broker_ticker(raw_code)
+    if canonical is not None:
+        base = canonical.symbol.rpartition(".")[0] or canonical.symbol
+        return (base.upper(), canonical.market if had_dot else None)
+
+    if had_dot:
+        base, _, suffix = code.rpartition(".")
+        if base and suffix.isalpha() and 1 <= len(suffix) <= 4:
+            return (base, None)
+        return None
+    if _is_all_digits(code):
+        return (code, None)
+    if _is_all_alpha(code) and 1 <= len(code) <= _MAX_US_TICKER_LEN:
+        return (code, None)
+    return None
+
+
+def bridge_symbol_equivalent(intent_symbol: str, anchor_symbol: str) -> bool:
+    """True if two symbols name the same instrument for within-envelope bridging.
+
+    Requires identical base tokens plus compatible market hints (``None`` acts
+    as a wildcard). Intended to bridge a broker intent's ``target_symbol`` to one
+    F2 ``EntityAnchor.resolved_symbol`` in the SAME envelope — never as a global
+    equality test.
+    """
+    ka = bridge_base_key(intent_symbol)
+    kb = bridge_base_key(anchor_symbol)
+    if ka is None or kb is None or ka[0] != kb[0]:
+        return False
+    ma, mb = ka[1], kb[1]
+    return ma is None or mb is None or ma == mb

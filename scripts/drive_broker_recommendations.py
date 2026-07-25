@@ -34,7 +34,10 @@ from typing import Any, Dict, List, Optional, Tuple
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from finer.enrichment.ticker_normalization import normalize_broker_ticker  # noqa: E402
+from finer.enrichment.ticker_normalization import (  # noqa: E402
+    bridge_symbol_equivalent,
+    normalize_broker_ticker,
+)
 from finer.pipeline.canonical_runner import (  # noqa: E402
     _coerce_envelope_anchors,
     run_canonical_from_artifacts,
@@ -100,22 +103,44 @@ def bridge_target_symbol(
     """Normalize intent.target_symbol to match one of the envelope's F2
     anchor resolved_symbols. Returns the matched symbol or None (no fabrication).
 
+    Three tiers, strict → loose, each confined to THIS envelope's anchor set so
+    no cross-corpus symbol can leak in:
+      1. exact string match on the raw target_symbol
+      2. canonical ``normalize_broker_ticker`` match (US/CN/HK/intl suffix table)
+      3. within-envelope loose base bridging — recovers broker dialects the
+         canonical resolver rejects in isolation (bare ``8309`` ↔ ``8309.T``,
+         ``EQNR`` ↔ ``EQNR.OL``, ``VARB.NS`` ↔ ``VARB.BO``) because the anchor
+         disambiguates. The matched anchor's resolved_symbol is what F2 grounding
+         is keyed on, so target_symbol is rewritten to the anchor form.
+
     Only mutates the in-memory intent; pipeline code untouched.
     """
-    anchor_symbols = {
+    anchor_symbols = [
         getattr(a, "resolved_symbol", None)
         for a in (env.entity_anchors or [])
-    }
-    anchor_symbols.discard(None)
+    ]
+    anchor_symbols = [s for s in anchor_symbols if s]
+    anchor_set = set(anchor_symbols)
 
     raw = intent.target_symbol
-    if raw in anchor_symbols:
+    if raw in anchor_set:
         return raw
 
     normalized = normalize_broker_ticker(raw) if raw else None
-    if normalized and normalized.symbol in anchor_symbols:
+    if normalized and normalized.symbol in anchor_set:
         intent.target_symbol = normalized.symbol
         return normalized.symbol
+
+    if raw:
+        loose_hits = [
+            s for s in anchor_symbols if bridge_symbol_equivalent(raw, s)
+        ]
+        # Only bridge on an unambiguous single-anchor match — a base that maps to
+        # two different anchors in one envelope would be fabrication, so skip it.
+        if len(set(loose_hits)) == 1:
+            matched = loose_hits[0]
+            intent.target_symbol = matched
+            return matched
     return None
 
 
