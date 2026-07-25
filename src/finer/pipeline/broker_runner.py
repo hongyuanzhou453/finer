@@ -89,9 +89,11 @@ class BrokerDriveReport:
 # ── Loading ──────────────────────────────────────────────────────────────────
 
 
-def _load_bri_intents(f3_dir: Path) -> List[NormalizedInvestmentIntent]:
+def _load_bri_intents(
+    f3_dir: Path, intent_glob: str = "bri_*.json"
+) -> List[NormalizedInvestmentIntent]:
     intents: List[NormalizedInvestmentIntent] = []
-    for path in sorted(f3_dir.glob("bri_*.json")):
+    for path in sorted(f3_dir.glob(intent_glob)):
         # JSON mode: strict models still accept ISO datetime strings here
         intents.append(
             NormalizedInvestmentIntent.model_validate_json(
@@ -136,10 +138,12 @@ def _load_envelopes(
     return envs
 
 
-def _existing_actioned_intent_ids(f5_dir: Path) -> set[str]:
-    """intent_ids already present in bri_*_actions.json files (idempotency)."""
+def _existing_actioned_intent_ids(
+    f5_dir: Path, output_prefix: str = "bri_"
+) -> set[str]:
+    """intent_ids already present in {prefix}*_actions.json files (idempotency)."""
     seen: set[str] = set()
-    for path in f5_dir.glob("bri_*_actions.json"):
+    for path in f5_dir.glob(f"{output_prefix}*_actions.json"):
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
@@ -173,6 +177,8 @@ def load_pending_by_envelope(
     data_root: Path,
     content_ids: Optional[set[str]] = None,
     report: Optional[BrokerDriveReport] = None,
+    intent_glob: str = "bri_*.json",
+    output_prefix: str = "bri_",
 ) -> Tuple[
     Dict[str, List[NormalizedInvestmentIntent]],
     Dict[str, Tuple[Path, ContentEnvelope]],
@@ -189,7 +195,7 @@ def load_pending_by_envelope(
     f2_dir = data_root / "F2_anchored"
     f5_dir = data_root / "F5_executed"
 
-    intents = _load_bri_intents(f3_dir)
+    intents = _load_bri_intents(f3_dir, intent_glob)
     report.intents_seen = len(intents)
     if not intents:
         # No declarative intents at all (fresh env / non-broker corpus) —
@@ -197,7 +203,7 @@ def load_pending_by_envelope(
         return {}, {}, report
 
     envs = _load_envelopes(f2_dir, content_ids, report)
-    already = _existing_actioned_intent_ids(f5_dir)
+    already = _existing_actioned_intent_ids(f5_dir, output_prefix)
 
     report.envelopes_seen = len(envs)
 
@@ -294,8 +300,15 @@ async def run_broker_declarative_f5(
     repo: Optional[Any] = None,
     update_stage_status: bool = True,
     stage_status_db: Optional[Path] = None,
+    intent_glob: str = "bri_*.json",
+    output_prefix: str = "bri_",
 ) -> BrokerDriveReport:
-    """Drive pending bri_* intents through F4 → canonical F5.
+    """Drive pending declarative intents through F4 → canonical F5.
+
+    ``intent_glob`` / ``output_prefix`` default to the broker recommendation
+    family (bri_*); the T9 sector adapter reuses the exact same executor with
+    ``t9i_*.json`` / ``t9i_`` so both families share one canonical entry and
+    stay idempotent within their own namespace (D1).
 
     Args:
         data_root: Repo data root (F2/F3/F4/F5 live under it).
@@ -309,7 +322,9 @@ async def run_broker_declarative_f5(
         stage_status_db: Project Memory DB path override (the driver passes
             its own db_path; default is the canonical F0_INDEX_DB_PATH).
     """
-    per_env, envs, report = load_pending_by_envelope(data_root, content_ids)
+    per_env, envs, report = load_pending_by_envelope(
+        data_root, content_ids, intent_glob=intent_glob, output_prefix=output_prefix
+    )
 
     if not execute:
         return report
@@ -377,7 +392,7 @@ async def run_broker_declarative_f5(
                 )
             continue
 
-        out_path = f5_dir / f"bri_{content_id}_actions.json"
+        out_path = f5_dir / f"{output_prefix}{content_id}_actions.json"
         # Merge with any prior actions in the same file (idempotent reruns)
         prior_actions: List[Dict[str, Any]] = []
         if out_path.exists():
@@ -420,6 +435,8 @@ def run_broker_declarative_f5_sync(
     repo: Optional[Any] = None,
     update_stage_status: bool = True,
     stage_status_db: Optional[Path] = None,
+    intent_glob: str = "bri_*.json",
+    output_prefix: str = "bri_",
 ) -> BrokerDriveReport:
     """Synchronous wrapper (driver executors are sync — same pattern as
     ``driver._default_f5_executor``)."""
@@ -431,5 +448,7 @@ def run_broker_declarative_f5_sync(
             repo=repo,
             update_stage_status=update_stage_status,
             stage_status_db=stage_status_db,
+            intent_glob=intent_glob,
+            output_prefix=output_prefix,
         )
     )
