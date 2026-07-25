@@ -627,6 +627,51 @@ def test_broker_pdf_is_not_excluded(data_root, pm_db):
     assert rec.f1_calls == ["broker_pdf"]
 
 
+def test_broker_f5_skipped_for_declarative_path(data_root, pm_db):
+    """R2 guard: broker F5 is owned by the declarative path.
+
+    The generic F3 extractor can never emit actionability="recommendation", so
+    driving broker envelopes through the generic F5 executor would mint a
+    duplicate kol_statement action set for every broker envelope (6,529 F0-ready
+    rows in production). F1/F2 still fill; F5 must skip with its own counter.
+    """
+    _broker(pm_db, data_root, "broker_r2")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec, channel="broker")
+
+    assert rec.f1_calls == ["broker_r2"]
+    assert rec.f2_calls == ["broker_r2"]
+    assert rec.f5_calls == []                       # generic F5 never runs
+    assert report.f5_ran == 0
+    assert report.skipped_broker_declarative == 1
+    assert report.to_dict()["skipped_broker_declarative"] == 1
+    assert _stage_rows(pm_db, "broker_r2").get("F5") is None
+
+
+def test_bri_action_file_counts_as_f5_complete(data_root, pm_db):
+    """R2 double-insurance: a bri_{content_id}_actions.json marks F5 complete.
+
+    The declarative driver writes bri_-prefixed action files (to dodge
+    regen_canonical_f5 overwrites); the generic idempotency probe must accept
+    that spelling too, or a non-broker record whose actions were produced
+    declaratively would be re-extracted.
+    """
+    _register_content(pm_db, data_root, "c-bri")
+    _touch_f1(data_root, "c-bri")
+    _touch_f2(data_root, "c-bri")
+    bri_path = data_root / "F5_executed" / "bri_c-bri_actions.json"
+    bri_path.parent.mkdir(parents=True, exist_ok=True)
+    bri_path.write_text("[]", encoding="utf-8")
+    rec = StageRecorder(data_root)
+
+    report = _drive(data_root, pm_db, rec)
+
+    assert rec.f5_calls == []
+    assert report.f5_ran == 0
+    assert report.skipped_complete == 1
+
+
 def test_stages_whitelist_stops_before_f5(data_root, pm_db):
     _broker(pm_db, data_root, "c-x")
     rec = StageRecorder(data_root)

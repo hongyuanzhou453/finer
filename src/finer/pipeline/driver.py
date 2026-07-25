@@ -70,6 +70,11 @@ class DriveReport:
     skipped_excluded: int = 0
     skipped_legacy_identity: int = 0
     skipped_unmounted: int = 0  # broker F1 items skipped because the source volume is unmounted (C6)
+    # R2 guard: broker F5 is owned by the declarative path (bri_* actions via
+    # broker_recommendation_adapter + drive_broker_recommendations); the generic
+    # F3 extractor can never emit actionability="recommendation", so driving it
+    # here would mint duplicate kol_statement actions for every broker envelope.
+    skipped_broker_declarative: int = 0
     f1_ran: int = 0
     f2_ran: int = 0
     f5_ran: int = 0
@@ -88,6 +93,7 @@ class DriveReport:
             "skipped_excluded": self.skipped_excluded,
             "skipped_legacy_identity": self.skipped_legacy_identity,
             "skipped_unmounted": self.skipped_unmounted,
+            "skipped_broker_declarative": self.skipped_broker_declarative,
             "f1_ran": self.f1_ran,
             "f2_ran": self.f2_ran,
             "f5_ran": self.f5_ran,
@@ -670,7 +676,16 @@ def _drive_once_unlocked(
             # every drive.
             if not run_f5:
                 continue
-            if f5_path.exists() or _stage_ready(conn, content_id, "F5"):
+            # R2 guard: broker F5 belongs to the declarative path only. The
+            # generic F3 extractor cannot emit actionability="recommendation"
+            # (see intent_extractor valid_actionability), so running it here
+            # would mint a duplicate kol_statement action set for every broker
+            # envelope. Routing into the declarative executor lands in C2.
+            if rec.source_platform == "broker":
+                report.skipped_broker_declarative += 1
+                continue
+            bri_f5_path = data_root / "F5_executed" / f"bri_{content_id}_actions.json"
+            if f5_path.exists() or bri_f5_path.exists() or _stage_ready(conn, content_id, "F5"):
                 report.skipped_complete += 1
                 continue
             if dry_run:
