@@ -78,12 +78,17 @@ action 无法由 main 代码复现；终点：**3,921+ passed、audit 三路 100
 | driver 干跑（broker channel, limit 50） | `skipped_broker_declarative=50, f5_ran=0`（R2 护栏实证） |
 | sidecar 回填 | dry-run 与 execute 数字逐位一致：573 action / 24,463 span / 0 不可恢复 |
 | T9 干跑（21,231 行） | no_f0=21,218 — T9 池（宏观/行业）与已导入 F0 子集（个股）几乎不相交 |
+| T3/T9/F0 全量对账（收尾追加） | T3 池 6,631 中 **6,441 已在 F0（97.1%）**；T9 池 18,747 中 **仅 13 在 F0（0.07%）**；**T3 ∩ T9 = 0**；未导入候选池 18,924，抽样 300/300 磁盘存在 |
+| 券商 creator 覆盖（收尾追加） | 数据中 28 个 distinct creator_id，27 个已有 YAML；唯一缺档是占位值 `未知券商`（3 条）。**`creator_id=None` 实测为 0 条**——调研阶段的「171 条」有误 |
 
 ## 未解决项
 
 1. **合回 main** 待用户确认（只 merge 不 push）。
 2. **C3 对账 `--execute`** 待确认（3,187 F5 行 + 97 渠道回填）。
 3. **C5 脚本归档**：候选 `c9_evidence_reanchor.py` / `reanchor_broker_f2_dryrun.py` / `backfill_bri_signal_class_f4.py` / `backfill_broker_stage_status.py` / `backfill_bri_evidence_sidecars.py`（本轮新增，已执行完毕）/ `probe_*.py` / `card*_*.py` — `git mv` 到 `scripts/archive/`，逐项待确认。
-4. **T9 量产前置**：T9 池 PDF 的 F0 导入波（C10 金丝雀已授权 1,000 份，属独立任务）。
+4. **T9 量产前置**：T9 池 PDF 的 F0 导入波。**已并入 C10**——`docs/specs/2026-07-18-phase0-activation-task-cards.md` 的 C10 卡追加了「2026-07-25 选批策略修正」小节：金丝雀须显式按 T9 池选批（否则构成不可控、外推失真）、并跑 D1 适配器、报告新增 theme→sector 命中率与 `sector_proxy_not_configured` 拒绝分布（即 sector_proxies.yaml 待补清单）、验收扩展到 t9i action。
 5. **陈旧 worktree/分支清理**（删除红线）：6 个已并 worktree + `chore/quality-collar` / `claude/sad-gagarin-db0af5` / `feat/pipeline-autodrive` / cherry-pick 后的 `claude/dreamy-vaughan-90a5d0`、两个 B1/C4/C6 agent worktree 分支 — 待用户逐项确认。
-6. Defer 清单其余项见计划（SQLite superseded 列 / launchd / .env / 830 重结算 / backtest_period 后缀摘除 / creator_id=None 171 条 / leaderboard UI 徽章）。
+6. Defer 清单其余项（收尾复核后的分类）：
+   - **需用户执行/授权**：SQLite `superseded` 列（DDL 红线）、launchd `launchctl load`（改系统配置）、`.env` BBDOWN_COOKIE 引号（红线）、830 条国际存量重结算（批量重建）。
+   - **等时机的代码项**：`backtest_period` 后缀摘除（双写兼容期满一轮后）、`DRIVE_STAGES` 增 f3/f4 token、T3 content_id 索引持久化、leaderboard UI `signal_class` 徽章（后端隔离已就位）。
+   - **已核销**：~~creator_id=None 171 条~~ —— 实测 0 条，调研数字有误；真实缺档只有占位值 `未知券商`（3 条），保持无 YAML 是正确行为。~~time_horizon 完全 Literal 化~~ —— B2 普查后已直接完成，无需分期。
