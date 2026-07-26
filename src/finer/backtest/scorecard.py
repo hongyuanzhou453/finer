@@ -1,0 +1,307 @@
+"""F8 记分卡聚合 — 把已结算 TradeAction 汇总成 creator / market 维度的可审计报表.
+
+为什么在 backtest/ 而不是新建模块：记分卡消费的是 F8 结算产物
+（``BacktestResult``），与 ``per_action`` / ``settle`` 同层同源。路线图里的
+``credibility/``（CRD-1，信誉打分）与投影表（PROJ-1）是更上层的产品化概念，
+本模块不预占其命名，只提供它们将来要用的确定性聚合底座。
+
+**度量口径的核心告诫（2026-07-25 归因拆解结论）**：
+
+胜率**不能**跨波动率不同的市场直接比较。退出规则是非对称的
+（−20% 止损 / +40% 止盈），止损距离只有止盈的一半，所以低波动标的
+触发止损的次数天然更少 → 在**均值收益完全相同**的情况下也会得到更高胜率。
+实证：非亚洲国际股均值 +0.22% vs 美股 +0.27%（几乎相同），胜率却高 8.8pp。
+
+因此本模块**始终并列输出 win_rate 与 mean_return**，并额外给出
+``expected_win_rate``（按该 creator 的市场构成、用各市场语料基准胜率算出的
+纯暴露预期）与 ``excess_win_rate``（实际 − 预期，即剥离市场暴露后的超额）。
+消费方不得只取 win_rate 排名。
+
+详见 ``docs/specs/2026-07-25-intl-winrate-decomposition.md``。
+"""
+
+from __future__ import annotations
+
+import statistics
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, List, Optional, Sequence
+
+from finer.enrichment.ticker_normalization import normalize_broker_ticker
+from finer.schemas.trade_action import TradeAction
+
+__all__ = [
+    "GroupStats",
+    "Scorecard",
+    "build_scorecard",
+    "is_scoreable",
+    "render_markdown",
+]
+
+#: 参与记分的最小样本量 —— 低于此值的分组只统计不排名（噪声压倒信号）。
+MIN_RANKED_N = 30
+
+#: 计算 within-market 分项时，单个 (creator, market) 单元的最小样本量。
+MIN_STRATUM_N = 5
+
+
+# =============================================================================
+# 统计单元
+# =============================================================================
+
+
+@dataclass
+class GroupStats:
+    """一个分组（creator 或 market）的记分卡指标。"""
+
+    key: str
+    n: int = 0
+    wins: int = 0
+    mean_return: float = 0.0
+    median_return: float = 0.0
+    stop_rate: float = 0.0
+    target_rate: float = 0.0
+    median_drawdown: Optional[float] = None
+    #: 按本组市场构成 + 各市场语料基准胜率推出的纯暴露预期胜率
+    expected_win_rate: Optional[float] = None
+    #: 市场构成（market -> n），用于审计「这个分数里有多少是市场暴露」
+    market_mix: Dict[str, int] = field(default_factory=dict)
+
+    @property
+    def win_rate(self) -> float:
+        return self.wins / self.n if self.n else 0.0
+
+    @property
+    def excess_win_rate(self) -> Optional[float]:
+        """实际胜率 − 市场暴露预期胜率（剥离市场构成后的超额）。"""
+        if self.expected_win_rate is None:
+            return None
+        return self.win_rate - self.expected_win_rate
+
+    @property
+    def ranked(self) -> bool:
+        return self.n >= MIN_RANKED_N
+
+
+@dataclass
+class Scorecard:
+    """一次记分卡快照。"""
+
+    total_actions: int = 0
+    settled_actions: int = 0
+    excluded_superseded: int = 0
+    by_creator: List[GroupStats] = field(default_factory=list)
+    by_market: List[GroupStats] = field(default_factory=list)
+    signal_class_filter: Optional[str] = None
+
+
+# =============================================================================
+# 取数
+# =============================================================================
+
+
+def is_scoreable(action: TradeAction) -> bool:
+    """该 action 是否进入记分聚合。
+
+    排除两类：尚未结算的（无 ``return_pct``），以及被去重标记为
+    ``metadata.superseded_by`` 的重复件（同一份研报被重复导入时，
+    计分两次会双记同一个判断）。
+    """
+    br = action.backtest_result
+    if br is None or br.return_pct is None:
+        return False
+    if (action.metadata or {}).get("superseded_by"):
+        return False
+    return True
+
+
+def _market_of(action: TradeAction) -> Optional[str]:
+    """标的的**真实**市场，优先从 ticker 归一化推导。
+
+    不能直接信 ``execution_timing.market`` / ``target.market``：存量里有 870 条
+    国际股被 F3 早期的 ``infer_market`` 误标成 ``US``（该 bug 已于 2026-07-25 修复
+    前向，但存量未回写）。若照搬存量标记，记分卡的市场维度会把日/台/韩股全部
+    算进美股桶 —— 实测会把美股胜率从真实的 43.1% 抬到 47.8%，
+    正好复现本模块 docstring 警告的那类伪影。
+
+    ticker 无法归一化时（sector 代理、异常代码）才回落到存量标记。
+    详见 ``docs/specs/2026-07-25-intl-calendar-impact-assessment.md``。
+    """
+    target = action.target
+    if target is not None:
+        symbol = target.ticker_normalized or target.ticker
+        if symbol:
+            normalized = normalize_broker_ticker(symbol)
+            if normalized is not None and normalized.market:
+                return normalized.market
+    timing = action.execution_timing
+    if timing is not None and timing.market:
+        return timing.market
+    return target.market if target is not None else None
+
+
+def _creator_of(action: TradeAction) -> str:
+    src = action.source
+    return (src.creator_id if src is not None else None) or "unknown"
+
+
+def _stats_for(key: str, actions: Sequence[TradeAction]) -> GroupStats:
+    returns = [a.backtest_result.return_pct for a in actions]  # type: ignore[union-attr]
+    drawdowns = [
+        a.backtest_result.max_drawdown_pct  # type: ignore[union-attr]
+        for a in actions
+        if a.backtest_result is not None and a.backtest_result.max_drawdown_pct is not None
+    ]
+    exits = Counter(
+        a.backtest_result.exit_reason.value  # type: ignore[union-attr]
+        for a in actions
+        if a.backtest_result is not None
+    )
+    n = len(actions)
+    return GroupStats(
+        key=key,
+        n=n,
+        wins=sum(1 for r in returns if r > 0),
+        mean_return=statistics.fmean(returns) if returns else 0.0,
+        median_return=statistics.median(returns) if returns else 0.0,
+        stop_rate=exits.get("stop_loss", 0) / n if n else 0.0,
+        target_rate=exits.get("target_reached", 0) / n if n else 0.0,
+        median_drawdown=statistics.median(drawdowns) if drawdowns else None,
+        market_mix=dict(Counter(_market_of(a) or "unknown" for a in actions)),
+    )
+
+
+# =============================================================================
+# 聚合
+# =============================================================================
+
+
+def build_scorecard(
+    actions: Iterable[TradeAction],
+    *,
+    signal_class: Optional[str] = None,
+) -> Scorecard:
+    """把 TradeAction 汇总成记分卡。
+
+    Args:
+        actions: 待聚合的 action（通常来自 ``TradeActionRepository.load_all_actions()``）。
+        signal_class: 只统计该 ``signal_class`` 的 action。R6 规定券商声明式建议
+            （``broker_recommendation``）不得与 KOL 自述仓位（``kol_statement``）
+            混在同一张榜里 —— 二者的 conviction 来源与语义不同。None 表示不过滤
+            （仅用于全局体检，不可直接当排名用）。
+
+    Returns:
+        Scorecard，creator 与 market 两个维度均按 n 降序。
+    """
+    all_actions = list(actions)
+    scoreable: List[TradeAction] = []
+    superseded = 0
+    for a in all_actions:
+        if (a.metadata or {}).get("superseded_by"):
+            br = a.backtest_result
+            if br is not None and br.return_pct is not None:
+                superseded += 1
+            continue
+        if not is_scoreable(a):
+            continue
+        if signal_class is not None and a.signal_class != signal_class:
+            continue
+        scoreable.append(a)
+
+    by_market_actions: Dict[str, List[TradeAction]] = defaultdict(list)
+    by_creator_actions: Dict[str, List[TradeAction]] = defaultdict(list)
+    for a in scoreable:
+        by_market_actions[_market_of(a) or "unknown"].append(a)
+        by_creator_actions[_creator_of(a)].append(a)
+
+    market_stats = [_stats_for(m, rs) for m, rs in by_market_actions.items()]
+    market_baseline = {s.key: s.win_rate for s in market_stats}
+
+    creator_stats: List[GroupStats] = []
+    for creator, rs in by_creator_actions.items():
+        stats = _stats_for(creator, rs)
+        # 纯暴露预期：把本 creator 的每条 action 换成「该市场的语料平均水平」
+        if stats.n:
+            stats.expected_win_rate = sum(
+                market_baseline.get(m, 0.0) * count
+                for m, count in stats.market_mix.items()
+            ) / stats.n
+        creator_stats.append(stats)
+
+    return Scorecard(
+        total_actions=len(all_actions),
+        settled_actions=len(scoreable),
+        excluded_superseded=superseded,
+        by_creator=sorted(creator_stats, key=lambda s: -s.n),
+        by_market=sorted(market_stats, key=lambda s: -s.n),
+        signal_class_filter=signal_class,
+    )
+
+
+# =============================================================================
+# 渲染
+# =============================================================================
+
+
+def _pct(v: Optional[float], digits: int = 1, signed: bool = False) -> str:
+    if v is None:
+        return "—"
+    fmt = f"{{:+.{digits}f}}%" if signed else f"{{:.{digits}f}}%"
+    return fmt.format(v * 100)
+
+
+def render_markdown(card: Scorecard) -> str:
+    """渲染成可直接落盘审阅的 markdown。"""
+    lines: List[str] = []
+    scope = card.signal_class_filter or "全部（未按 signal_class 过滤）"
+    lines.append("# 券商/KOL 记分卡")
+    lines.append("")
+    lines.append(f"- 口径：`{scope}`")
+    lines.append(f"- action 总数 {card.total_actions}，参与记分 {card.settled_actions}"
+                 f"，因 `superseded_by` 排除 {card.excluded_superseded}")
+    lines.append(f"- 排名门槛：n ≥ {MIN_RANKED_N}")
+    lines.append("")
+    lines.append("> ⚠️ **胜率不可跨市场比较。** 退出规则非对称（−20% 止损 / +40% 止盈），")
+    lines.append("> 低波动标的触发止损更少，在均值收益相同时也会得到更高胜率。")
+    lines.append("> 请并列阅读 `均值收益` 与 `超额胜率`（已剥离市场暴露）。")
+    lines.append("")
+
+    lines.append("## 按信源")
+    lines.append("")
+    lines.append("| 信源 | n | 胜率 | 均值收益 | 中位收益 | 市场预期胜率 | 超额 | 主要市场 |")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---|")
+    for s in [x for x in card.by_creator if x.ranked]:
+        mix = ", ".join(
+            f"{m}:{c}" for m, c in sorted(s.market_mix.items(), key=lambda kv: -kv[1])[:3]
+        )
+        lines.append(
+            f"| {s.key} | {s.n} | {_pct(s.win_rate)} | {_pct(s.mean_return, 2, True)} | "
+            f"{_pct(s.median_return, 2, True)} | {_pct(s.expected_win_rate)} | "
+            f"{_pct(s.excess_win_rate, 1, True)} | {mix} |"
+        )
+    unranked = [x for x in card.by_creator if not x.ranked]
+    if unranked:
+        lines.append("")
+        lines.append(f"*样本不足未排名（n < {MIN_RANKED_N}）：*"
+                     + "、".join(f"{s.key}({s.n})" for s in unranked))
+
+    lines.append("")
+    lines.append("## 按市场")
+    lines.append("")
+    lines.append("| 市场 | n | 胜率 | 均值收益 | 中位收益 | 止损率 | 止盈率 | 中位回撤 |")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+    thin = False
+    for s in card.by_market:
+        mark = "" if s.ranked else " \\*"
+        thin = thin or not s.ranked
+        lines.append(
+            f"| {s.key}{mark} | {s.n} | {_pct(s.win_rate)} | {_pct(s.mean_return, 2, True)} | "
+            f"{_pct(s.median_return, 2, True)} | {_pct(s.stop_rate)} | "
+            f"{_pct(s.target_rate)} | {_pct(s.median_drawdown, 2, True)} |"
+        )
+    if thin:
+        lines.append("")
+        lines.append(f"\\* n < {MIN_RANKED_N}，仅供参考，不构成市场结论"
+                     f"（单条记录的胜率必然是 0% 或 100%）。")
+    lines.append("")
+    return "\n".join(lines)
