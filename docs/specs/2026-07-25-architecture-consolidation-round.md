@@ -90,6 +90,6 @@ action 无法由 main 代码复现；终点：**3,921+ passed、audit 三路 100
 4. **T9 量产前置**：T9 池 PDF 的 F0 导入波。**已并入 C10**——`docs/specs/2026-07-18-phase0-activation-task-cards.md` 的 C10 卡追加了「2026-07-25 选批策略修正」小节：金丝雀须显式按 T9 池选批（否则构成不可控、外推失真）、并跑 D1 适配器、报告新增 theme→sector 命中率与 `sector_proxy_not_configured` 拒绝分布（即 sector_proxies.yaml 待补清单）、验收扩展到 t9i action。
 5. **陈旧 worktree/分支清理**（删除红线）：6 个已并 worktree + `chore/quality-collar` / `claude/sad-gagarin-db0af5` / `feat/pipeline-autodrive` / cherry-pick 后的 `claude/dreamy-vaughan-90a5d0`、两个 B1/C4/C6 agent worktree 分支 — 待用户逐项确认。
 6. Defer 清单其余项（收尾复核后的分类）：
-   - **需用户执行/授权**：SQLite `superseded` 列（DDL 红线）、launchd `launchctl load`（改系统配置）、`.env` BBDOWN_COOKIE 引号（红线）、830 条国际存量重结算（批量重建）。
+   - **需用户执行/授权**：SQLite `superseded` 列（DDL 红线）、launchd `launchctl load`（改系统配置）、`.env` BBDOWN_COOKIE 引号（红线）、国际存量回写+重结算（批量重建）——**已完成只读影响评估，见 `docs/specs/2026-07-25-intl-calendar-impact-assessment.md`**：实际 870 条错日历（非 830），其中仅 237 条 settled 会真正换入场 bar；位移 100% 单向偏晚（US 日历一致偏宽，是真实 look-ahead）；但准对照组显示胜率/中位数几乎不变，均值差由厚尾驱动 → 修复属**审计正确性**而非业绩修正，建议与下次记分卡刷新合并成一个批次。
    - **等时机的代码项**：`backtest_period` 后缀摘除（双写兼容期满一轮后）、`DRIVE_STAGES` 增 f3/f4 token、T3 content_id 索引持久化、leaderboard UI `signal_class` 徽章（后端隔离已就位）。
    - **已核销**：~~creator_id=None 171 条~~ —— 实测 0 条，调研数字有误；真实缺档只有占位值 `未知券商`（3 条），保持无 YAML 是正确行为。~~time_horizon 完全 Literal 化~~ —— B2 普查后已直接完成，无需分期。
