@@ -72,6 +72,7 @@ action 无法由 main 代码复现；终点：**3,921+ passed、audit 三路 100
 | 检查 | 结果 |
 |---|---|
 | `pytest tests/ -q`（A 后 / B 后 / C 后 / D 后终验） | 3,845 / 3,890 / 3,910 / **3,921 passed，0 failed** |
+| `settle --limit 400` 干跑（收尾追加，解冻验证） | `skipped_review_required=4`、`errors=[]`；护栏在真实数据上生效。**但量级需更正**：939 条 `review_required` 中 908 条是 `neutral` 方向，本就先被 `non_directional` 拦截；真正受本护栏保护的是 **4 条 directional-pending**。另 27 条早已带 R5 前的 flat-30d 结果且状态终态（settle 不再翻牌），**并未发生「按 180d 错结算」**——B2 是防患，不是救火 |
 | `python scripts/audit_trace_integrity.py` | intent/policy/evidence 三路 100%（3,313/3,313；span 级 114,110/114,110） |
 | `python scripts/check_contract_drift.py` | ✓ 29 mapped enums in sync |
 | `cd src/finer_dashboard && npx tsc --noEmit && npm run build` | 均通过 |
