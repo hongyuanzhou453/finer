@@ -7,7 +7,7 @@ anchor resolution.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -360,3 +360,65 @@ class TestFallback:
         )
 
         assert isinstance(result, ExecutionTiming)
+
+
+# ---------------------------------------------------------------------------
+# date-only 发布时间戳的重锚（2026-07-27 全语料前视偏差根因）
+# ---------------------------------------------------------------------------
+
+class TestDateOnlyReanchoring:
+    """研报只有日期没有时刻；零点占位符不得被当作真实时刻解释。
+
+    根因：北京时 D 日零点 ≡ 纽约时 D−1 日 11:00（盘中），于是可执行时间被放到
+    D−1，比研报日期早一整天。实测语料 1,669 条（50.4%）中招，绝大多数是美股。
+    """
+
+    def test_is_date_only_detects_placeholder(self):
+        from finer.extraction.timing_builder import is_date_only
+
+        assert is_date_only(datetime(2025, 12, 16, 0, 0, tzinfo=timezone(timedelta(hours=8))))
+        assert not is_date_only(
+            datetime(2025, 12, 16, 20, 0, tzinfo=timezone(timedelta(hours=8)))
+        )
+
+    def test_reanchor_moves_date_only_to_target_timezone(self):
+        from finer.extraction.timing_builder import resolve_publication_instant
+
+        beijing_midnight = datetime(2025, 12, 16, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+        anchored = resolve_publication_instant(beijing_midnight, "America/New_York")
+        # 同一个日历日，但锚在纽约当地零点（而不是纽约 12-15 11:00）
+        assert anchored.date() == date(2025, 12, 16)
+        assert anchored.hour == 0
+        assert anchored.utcoffset() != beijing_midnight.utcoffset()
+
+    def test_reanchor_leaves_real_timestamps_untouched(self):
+        from finer.extraction.timing_builder import resolve_publication_instant
+
+        real = datetime(2025, 12, 16, 20, 30, tzinfo=timezone(timedelta(hours=8)))
+        assert resolve_publication_instant(real, "America/New_York") == real
+
+    def test_us_entry_never_precedes_the_report_date(self):
+        """核心回归：美股 date-only 研报不得在研报日之前入场。"""
+        envelope = _make_envelope(
+            published_at=datetime(2025, 12, 16, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+        )
+        timing = build_execution_timing(envelope, market="US")
+        assert timing.action_executable_at.date() >= date(2025, 12, 16)
+
+    def test_european_entry_never_precedes_the_report_date(self):
+        """欧洲市场同样中招（北京以西即中招），且是只改市场标记修不掉的那一类。"""
+        envelope = _make_envelope(
+            published_at=datetime(2026, 3, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+        )
+        for market in ("UK", "FR", "DE"):
+            timing = build_execution_timing(envelope, market=market)
+            assert timing.action_executable_at.date() >= date(2026, 3, 10), market
+
+    def test_asia_pacific_behavior_unchanged(self):
+        """亚太当地零点与北京零点同日 —— 行为必须逐位不变（零回归）。"""
+        envelope = _make_envelope(
+            published_at=datetime(2026, 3, 10, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+        )
+        for market in ("CN", "HK", "JP", "TW", "KR"):
+            timing = build_execution_timing(envelope, market=market)
+            assert timing.action_executable_at.date() == date(2026, 3, 10), market
