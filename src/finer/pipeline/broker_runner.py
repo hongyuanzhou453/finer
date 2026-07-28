@@ -229,6 +229,16 @@ def load_pending_by_envelope(
             )
             continue
         _, env = pair
+        # sector intent 不走实体锚点桥：它的 target_symbol 是板块占位符
+        # （GOLD / SEMICONDUCTOR），实体锚点里本就不会有，硬套这道桥会把
+        # D1 的全部产出判成 no_anchor_match 丢掉。canonical_runner 对
+        # target_type=="sector" 有独立解析（configs/sector_proxies.yaml →
+        # 代理 ETF，未配置则 reject sector_proxy_not_configured），
+        # 那才是 sector 的正确门。
+        if intent.target_type == "sector":
+            report.bridged += 1
+            per_env[intent.envelope_id].append(intent)
+            continue
         matched = bridge_target_symbol(intent, env)
         if matched is None:
             skips["no_anchor_match"] += 1

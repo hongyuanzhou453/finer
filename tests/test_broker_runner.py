@@ -209,3 +209,61 @@ def test_content_ids_scope_narrows_without_skip_noise(data_root: Path):
     # The intent targeting an out-of-scope envelope is not a "skip" — it is
     # simply outside this run's scope (driver routes one content at a time).
     assert "no_envelope" not in report.skips
+
+
+# ---------------------------------------------------------------------------
+# sector intent 绕过实体锚点桥（D1 产出的生命线）
+# ---------------------------------------------------------------------------
+
+
+def _sector_intent() -> NormalizedInvestmentIntent:
+    """T9 适配器产出的板块意图：target_symbol 是占位符不是可交易代码。"""
+    return NormalizedInvestmentIntent(
+        intent_id="t9i_test000000000000000001",
+        envelope_id="env-broker-runner-001",
+        block_ids=[],
+        creator_id="高盛",
+        target_type="sector",
+        target_name="半导体",
+        target_symbol="SEMICONDUCTOR",
+        market=None,
+        direction="bullish",
+        actionability="recommendation",
+        position_delta_hint="none",
+        conviction=0.6,
+        confidence=0.85,
+        conviction_source="derived_lookup",
+        evidence_span_ids=[],
+        ambiguity_flags=[],
+    )
+
+
+def test_sector_intent_skips_the_entity_anchor_bridge(data_root: Path):
+    """板块占位符不可能出现在实体锚点里 —— 硬套桥会让 D1 产出归零。
+
+    canonical_runner 对 sector 有独立的 proxy 解析路径，那才是它的正确门；
+    broker_runner 只需把它放行。
+    """
+    (data_root / "F3_intents" / "t9i_test.json").write_text(
+        _sector_intent().model_dump_json(indent=2), encoding="utf-8"
+    )
+    per_env, _envs, report = load_pending_by_envelope(
+        data_root, intent_glob="t9i_*.json", output_prefix="t9i_"
+    )
+
+    assert report.skips.get("no_anchor_match") is None
+    assert report.bridged == 1
+    assert per_env["env-broker-runner-001"][0].target_type == "sector"
+
+
+def test_stock_intent_still_requires_an_anchor(data_root: Path):
+    """回归保险：放行只对 sector 生效，个股仍必须锚定（防捏造）。"""
+    unanchored = _bri_intent().model_copy(
+        update={"intent_id": "bri_unanchored00000000001", "target_symbol": "NOSUCH"}
+    )
+    (data_root / "F3_intents" / "bri_unanchored.json").write_text(
+        unanchored.model_dump_json(indent=2), encoding="utf-8"
+    )
+    _per_env, _envs, report = load_pending_by_envelope(data_root)
+
+    assert report.skips.get("no_anchor_match") == 1
