@@ -387,6 +387,20 @@ async def run_broker_declarative_f5(
             persist_dir=data_root,
         )
 
+        # 声明式链路的立身之本是可审计（C8 三向 100%）。canonical_runner 的
+        # F2-grounding 硬门只在信封**碰巧**有 F2 span 时生效
+        # （envelope_has_f2 = bool(f2_span_by_id)）—— 那个逃生门是给伪造的
+        # dev 信封留的。真实 F2 信封若一个 span 都没抽出来（图片型 PDF 等），
+        # 门会失效并放出 evidence 为空的 action，直接破坏审计不变量。
+        # 本链路不接受：无证据即不落盘，计入拒绝原因。
+        groundable = []
+        for a in result.trade_actions:
+            if not a.evidence_span_ids:
+                rejected_reasons["evidence_empty_not_auditable"] += 1
+                continue
+            groundable.append(a)
+        result.trade_actions = groundable
+
         for r in result.rejected_intents:
             rejected_reasons[r.reason] += 1
         for a in result.trade_actions:

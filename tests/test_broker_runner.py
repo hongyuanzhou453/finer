@@ -267,3 +267,45 @@ def test_stock_intent_still_requires_an_anchor(data_root: Path):
     _per_env, _envs, report = load_pending_by_envelope(data_root)
 
     assert report.skips.get("no_anchor_match") == 1
+
+
+@pytest.mark.asyncio
+async def test_evidence_less_actions_never_land(data_root: Path, monkeypatch):
+    """无证据的 action 不得落盘 —— 否则破坏 C8 三向审计的 100% 不变量。
+
+    canonical_runner 的 grounding 硬门只在信封碰巧有 F2 span 时生效
+    （给伪造 dev 信封留的逃生门）。真实 F2 信封若一个 span 都没抽出来，
+    门失效并放出空证据 action。声明式链路必须自己兜住这一层。
+    """
+    from finer.pipeline import broker_runner as runner
+
+    async def _fake_run(**kwargs):
+        from types import SimpleNamespace
+
+        env = kwargs["envelope"]
+        good = _envelope()  # 借用真实 schema 构造一条带证据的 action
+        del good
+        actions = kwargs["intents"]  # 占位，真实 action 由下方替换
+        del actions
+        naked = SimpleNamespace(
+            evidence_span_ids=[], canonical_trace_status="partial",
+            trade_action_id="ta-naked",
+        )
+        grounded = SimpleNamespace(
+            evidence_span_ids=["span-1"], canonical_trace_status="canonical",
+            trade_action_id="ta-grounded", model_dump=lambda mode=None: {"x": 1},
+        )
+        del env
+        return SimpleNamespace(
+            trade_actions=[naked, grounded], rejected_intents=[]
+        )
+
+    monkeypatch.setattr(runner, "run_canonical_from_artifacts", _fake_run)
+    repo = _FakeRepo()
+    report = await runner.run_broker_declarative_f5(
+        data_root, execute=True, repo=repo, update_stage_status=False
+    )
+
+    assert report.rejected_reasons.get("evidence_empty_not_auditable") == 1
+    assert report.actions_written == 1  # 只有带证据的那条落盘
+    assert [i for i, _ in repo.indexed] == ["ta-grounded"]

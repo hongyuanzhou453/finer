@@ -128,3 +128,67 @@ def test_direction_changes_id():
     a = derive_t9_intent_id("f.pdf", "GOLD", "improving")
     b = derive_t9_intent_id("f.pdf", "GOLD", "deteriorating")
     assert a != b
+
+
+# ---------------------------------------------------------------------------
+# 证据块匹配（F5 grounding 硬门的生命线）
+# ---------------------------------------------------------------------------
+
+BLOCKS = [
+    {"block_id": "b1", "text": "半导体行业景气度持续回升，晶圆代工产能利用率抬升。"},
+    {"block_id": "b2", "text": "我们上调该板块评级。The cycle is turning up decisively."},
+    {"block_id": "b3", "text": "免责声明与风险提示。"},
+]
+
+
+def _row_with_quotes(quotes):
+    row = _t9_row("中国半导体行业", "improving")
+    row["extraction"]["evidence_quotes"] = quotes
+    return row
+
+
+def test_quotes_match_back_to_blocks():
+    from finer.extraction.sector_transmission_adapter import match_evidence_blocks
+
+    hits = match_evidence_blocks(
+        ["晶圆代工产能利用率抬升", "The cycle is turning up decisively"], BLOCKS
+    )
+    assert hits == ["b1", "b2"]
+
+
+def test_whitespace_differences_do_not_break_matching():
+    """F1 与 NAS 侧抽取器对换行/空格处理不同，归一化后才对得上。"""
+    from finer.extraction.sector_transmission_adapter import match_evidence_blocks
+
+    assert match_evidence_blocks(["The cycle is\n turning  up decisively"], BLOCKS) == ["b2"]
+
+
+def test_short_quotes_rejected_as_spurious():
+    """过短的片段会撞上任意文本，属伪匹配，必须拒绝。"""
+    from finer.extraction.sector_transmission_adapter import match_evidence_blocks
+
+    assert match_evidence_blocks(["半导体"], BLOCKS) == []
+
+
+def test_unmatched_quotes_leave_no_grounding():
+    """匹配不上就留空 —— 让下游诚实拒绝，不伪造锚点。"""
+    from finer.extraction.sector_transmission_adapter import match_evidence_blocks
+
+    assert match_evidence_blocks(["这句话根本不在这篇研报里出现过啊"], BLOCKS) == []
+
+
+def test_adapter_populates_block_ids_from_quotes():
+    intent, skip = adapt_t9_record(
+        _row_with_quotes(["晶圆代工产能利用率抬升"]), F0, ENV_ID, SECTOR_NAMES,
+        blocks=BLOCKS,
+    )
+    assert skip is None and intent is not None
+    assert intent.block_ids == ["b1"]
+
+
+def test_adapter_without_blocks_yields_no_grounding():
+    """不传 blocks（或信封无块）→ block_ids 为空，下游会拒绝，符合预期。"""
+    intent, _ = adapt_t9_record(
+        _row_with_quotes(["晶圆代工产能利用率抬升"]), F0, ENV_ID, SECTOR_NAMES
+    )
+    assert intent is not None and intent.block_ids == []

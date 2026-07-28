@@ -60,14 +60,19 @@ def _iter_t9_rows(t9_dir: Path) -> Iterator[Dict[str, Any]]:
                     yield row
 
 
-def _envelope_id_for(data_root: Path, content_id: str) -> Optional[str]:
+def _envelope_for(
+    data_root: Path, content_id: str
+) -> tuple[Optional[str], list]:
+    """(envelope_id, blocks)。blocks 供 T9 引句→block 证据匹配使用；
+    缺了它 sector intent 会因 evidence_not_grounded_in_f2 被整条拒绝。"""
     env_path = data_root / "F1_standardized" / content_id / "content_envelope.json"
     if not env_path.exists():
-        return None
+        return None, []
     try:
-        return json.loads(env_path.read_text(encoding="utf-8")).get("envelope_id")
+        doc = json.loads(env_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
+        return None, []
+    return doc.get("envelope_id"), (doc.get("blocks") or [])
 
 
 def main() -> int:
@@ -106,7 +111,7 @@ def main() -> int:
     funnel: Counter = Counter()
     unmapped_themes: Counter = Counter()
     adapted = []
-    envelope_cache: Dict[str, Optional[str]] = {}
+    envelope_cache: Dict[str, tuple] = {}
 
     for row in _iter_t9_rows(args.t9_dir):
         funnel["rows_scanned"] += 1
@@ -120,13 +125,15 @@ def main() -> int:
             funnel["no_f0"] += 1
             continue
         if content_id not in envelope_cache:
-            envelope_cache[content_id] = _envelope_id_for(data_root, content_id)
-        envelope_id = envelope_cache[content_id]
+            envelope_cache[content_id] = _envelope_for(data_root, content_id)
+        envelope_id, blocks = envelope_cache[content_id]
         if envelope_id is None:
             funnel["no_envelope"] += 1
             continue
 
-        intent, skip_reason = adapt_t9_record(row, f0_record, envelope_id, sector_names)
+        intent, skip_reason = adapt_t9_record(
+            row, f0_record, envelope_id, sector_names, blocks=blocks
+        )
         if intent is None:
             funnel[skip_reason] += 1
             if skip_reason == "theme_unmapped":
