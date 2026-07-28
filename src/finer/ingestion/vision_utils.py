@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 import httpx
 
+from finer.llm.client import _log_usage
 from finer.model_config import get_vision_registry
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,16 @@ class VisionDescriptor:
                     if response.status_code == 200:
                         result = response.json()
                         content = result["choices"][0]["message"]["content"]
+                        # 这条路径直接打 httpx，不经过 llm.client，此前完全没有
+                        # token 记账 —— 而 F1 的 vision/OCR 正是最大的消耗方，
+                        # 缺了它成本外推是空的。显式补记（best-effort，
+                        # 失败绝不影响调用本身）。
+                        _log_usage(
+                            model_config.name,
+                            model_config.base_url,
+                            result.get("usage"),
+                            caller_tag="f1_vision",
+                        )
                         logger.info(f"Successfully generated vision descriptor using {model_config.name}")
 
                         # Cache the result

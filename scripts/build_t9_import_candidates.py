@@ -120,13 +120,22 @@ def main() -> int:
         if not exists:
             continue
         extraction = row.get("extraction") or {}
+        # 字段集必须满足 finer.ingestion.broker_research_intake 的 meta 契约：
+        # filepath 必填，其余走 _META_PASSTHROUGH（filename/broker/date/
+        # company_name/stock_code/... ），否则 F0 记录会缺元数据。
         candidates.append({
             "filepath": filepath,
+            "filename": row.get("filename") or Path(filepath).name,
             "broker": row.get("broker"),
             "date": row.get("date"),
-            "industry_or_theme": extraction.get("industry_or_theme"),
-            "cycle_view": extraction.get("cycle_view"),
-            "n_chains": (row.get("validation") or {}).get("n_chains"),
+            "company_name": row.get("company_name") or None,
+            "stock_code": row.get("stock_code") or None,
+            "topic": extraction.get("industry_or_theme"),
+            "is_industry_report": True,  # T9 池按定义是行业/宏观研报
+            # 以下非 intake 契约字段，仅供 D1 适配器与批次审计使用
+            "t9_industry_or_theme": extraction.get("industry_or_theme"),
+            "t9_cycle_view": extraction.get("cycle_view"),
+            "t9_n_chains": (row.get("validation") or {}).get("n_chains"),
         })
 
     print("\n候选池统计:")
