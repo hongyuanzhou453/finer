@@ -259,8 +259,7 @@ def _default_f1_executor(rec: ContentRecord, data_root: Path) -> Path:
         )
     env, _report = _ROUTER.route(rec, raw_path)
     out = data_root / "F1_standardized" / rec.content_id / "content_envelope.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(env.model_dump_json(indent=2), encoding="utf-8")
+    _atomic_write_text(out, env.model_dump_json(indent=2))
     return out
 
 
@@ -271,10 +270,9 @@ def _default_f2_executor(f1_envelope_path: Path, rec: ContentRecord, data_root: 
     envelope = json.loads(f1_envelope_path.read_text(encoding="utf-8"))
     f2_env = build_f2_deterministic_envelope(envelope, f0_record=rec.model_dump(mode="json"))
     out = data_root / "F2_anchored" / f"{rec.content_id}.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
+    _atomic_write_text(
+        out,
         json.dumps(f2_env.model_dump(mode="json"), ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
     )
     return out
 
@@ -452,6 +450,26 @@ def _discover_ready_content(
             cause=exc,
         ) from exc
     return [r["content_id"] for r in rows]
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """原子写：tmp + fsync + os.replace。
+
+    F1/F2 此前直接 ``write_text`` 原地写。进程中途被杀（批量放量时很常见）会
+    留下 0 字节或半截 JSON，而下游只抛一个不知来源的 ``JSONDecodeError`` ——
+    实测一次强杀 F1 就留下了一个 0 字节 envelope，直到 F2 覆盖率回归测试才
+    暴露出来，且报错完全没指向根因。
+
+    与 ``services.repository`` 的写入模式一致：临时文件写满并 fsync 后再
+    ``os.replace``，读者要么看到旧内容要么看到完整新内容，不会看到半截。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
 
 
 def _load_content_record(path: Path) -> Optional[ContentRecord]:

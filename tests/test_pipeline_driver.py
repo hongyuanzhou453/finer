@@ -776,3 +776,30 @@ def test_broker_f1_runs_when_volume_available(data_root, pm_db, monkeypatch):
 
     assert report.skipped_unmounted == 0
     assert "brk-3" in rec.f1_calls
+
+
+def test_atomic_write_leaves_no_partial_file(tmp_path):
+    """F1/F2 信封必须原子写 —— 中断留下的 0 字节文件只会在很远的下游
+    炸出一个不知来源的 JSONDecodeError（实测：一次强杀 F1 留下 0 字节
+    envelope，直到 F2 覆盖率回归测试才暴露）。"""
+    from finer.pipeline.driver import _atomic_write_text
+
+    target = tmp_path / "nested" / "content_envelope.json"
+    _atomic_write_text(target, '{"envelope_id": "e1"}')
+    assert json.loads(target.read_text(encoding="utf-8"))["envelope_id"] == "e1"
+    # 临时文件不得残留
+    assert list(target.parent.glob("*.tmp")) == []
+
+
+def test_atomic_write_replaces_without_truncating_on_failure(tmp_path):
+    """写新内容失败时，旧内容必须完好 —— 原地写会先清空再写，这正是
+    半截文件的来源。"""
+    from finer.pipeline.driver import _atomic_write_text
+
+    target = tmp_path / "content_envelope.json"
+    _atomic_write_text(target, '{"v": 1}')
+    try:
+        _atomic_write_text(target, None)  # type: ignore[arg-type]
+    except Exception:
+        pass
+    assert json.loads(target.read_text(encoding="utf-8"))["v"] == 1
