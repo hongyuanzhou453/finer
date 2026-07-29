@@ -81,6 +81,12 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None,
                         help="取 N 份（金丝雀批量；省略则输出全部候选）")
     parser.add_argument(
+        "--year", action="append", default=None,
+        help="只取该年份目录下的研报（可重复，如 --year 2025）。"
+             "分段放量用：2025 段图片型 PDF 仅约 1.9%（几乎零 OCR 成本），"
+             "2026 段约 35.5%（需先决策是否配 OCR）。",
+    )
+    parser.add_argument(
         "--sample", choices=["even", "head"], default="even",
         help="选批方式。even（默认）= 按 filepath 排序后等距抽样，保持券商/期间构成"
              "与候选池一致，金丝雀才能外推全量；head = 取前 N 份（构成会偏向排序靠前的"
@@ -110,6 +116,9 @@ def main() -> int:
             continue
         if filepath in seen:
             stats["duplicate_row"] += 1
+            continue
+        if args.year and not any(f"/{y}年/" in filepath for y in args.year):
+            stats["year_filtered_out"] += 1
             continue
         seen[filepath] = row
 
