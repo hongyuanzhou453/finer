@@ -27,7 +27,9 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence
 
+from finer.credibility.significance import get_significance_gate
 from finer.enrichment.ticker_normalization import normalize_broker_ticker
+from finer.schemas.significance import SampleSufficiency
 from finer.schemas.trade_action import TradeAction
 
 __all__ = [
@@ -39,6 +41,8 @@ __all__ = [
 ]
 
 #: 参与记分的最小样本量 —— 低于此值的分组只统计不排名（噪声压倒信号）。
+#: 与 ``configs/significance.yaml`` 的 ``tiers.sufficient.min_settled`` 保持一致；
+#: 该 YAML 是真相源，本常量只在门加载失败时兜底。
 MIN_RANKED_N = 30
 
 #: 计算 within-market 分项时，单个 (creator, market) 单元的最小样本量。
@@ -66,6 +70,10 @@ class GroupStats:
     expected_win_rate: Optional[float] = None
     #: 市场构成（market -> n），用于审计「这个分数里有多少是市场暴露」
     market_mix: Dict[str, int] = field(default_factory=dict)
+    #: 该组内的全部 action 数（含未结算），供 CRD-2 算结算覆盖率
+    total_n: Optional[int] = None
+    #: CRD-2 统计效力门的判定。阈值真相源 = configs/significance.yaml
+    sufficiency: Optional[SampleSufficiency] = None
 
     @property
     def win_rate(self) -> float:
@@ -80,6 +88,15 @@ class GroupStats:
 
     @property
     def ranked(self) -> bool:
+        """是否够格进排名。
+
+        真相源是 CRD-2 效力门（``configs/significance.yaml``）——``MIN_RANKED_N``
+        只在门不可用时兜底，两者的 ``sufficient`` 门槛保持一致。
+        走门的额外收益：结算覆盖率过低时即使 n 够大也会被降档，
+        避免「只有能结算的那部分」被当成全貌。
+        """
+        if self.sufficiency is not None:
+            return self.sufficiency.tier == "sufficient"
         return self.n >= MIN_RANKED_N
 
 
@@ -208,6 +225,17 @@ def build_scorecard(
             continue
         scoreable.append(a)
 
+    # per-creator 全量计数（含未结算），CRD-2 用它算结算覆盖率。
+    # 口径与 scoreable 一致地先过 signal_class 过滤，否则覆盖率会被别的
+    # 信号类别稀释。
+    creator_totals: Dict[str, int] = defaultdict(int)
+    for a in all_actions:
+        if (a.metadata or {}).get("superseded_by"):
+            continue
+        if signal_class is not None and a.signal_class != signal_class:
+            continue
+        creator_totals[_creator_of(a)] += 1
+
     by_market_actions: Dict[str, List[TradeAction]] = defaultdict(list)
     by_creator_actions: Dict[str, List[TradeAction]] = defaultdict(list)
     for a in scoreable:
@@ -217,9 +245,19 @@ def build_scorecard(
     market_stats = [_stats_for(m, rs) for m, rs in by_market_actions.items()]
     market_baseline = {s.key: s.win_rate for s in market_stats}
 
+    gate = get_significance_gate()
     creator_stats: List[GroupStats] = []
     for creator, rs in by_creator_actions.items():
         stats = _stats_for(creator, rs)
+        stats.total_n = creator_totals.get(creator, stats.n)
+        stats.sufficiency = gate.assess(
+            successes=stats.wins,
+            settled_n=stats.n,
+            total_n=stats.total_n,
+            metric="broker_excess_win_rate"
+            if signal_class == "broker_recommendation"
+            else None,
+        )
         # 纯暴露预期：把本 creator 的每条 action 换成「该市场的语料平均水平」
         if stats.n:
             stats.expected_win_rate = sum(
@@ -265,21 +303,64 @@ def render_markdown(card: Scorecard) -> str:
     lines.append("> 低波动标的触发止损更少，在均值收益相同时也会得到更高胜率。")
     lines.append("> 请并列阅读 `均值收益` 与 `超额胜率`（已剥离市场暴露）。")
     lines.append("")
+    verdict = next(
+        (x.sufficiency.predictive_claim for x in card.by_creator
+         if x.sufficiency is not None and x.sufficiency.predictive_claim is not None),
+        None,
+    )
+    if verdict is not None and not verdict.permitted:
+        lines.append("> 🚫 **本表描述已发生的事实，不构成对未来的预测。**")
+        if verdict.summary:
+            lines.append(f"> 跨期持续性检验结论：{verdict.summary}")
+        if verdict.scope_note:
+            lines.append(f"> 适用边界：{verdict.scope_note}")
+        if verdict.evidence:
+            lines.append(f"> 依据：`{verdict.evidence}`")
+        lines.append("> 因此**不要据此排序选择信源**——见下表的 95% 区间，")
+        lines.append("> 绝大多数信源之间的差距在统计上不可分辨。")
+        lines.append("")
 
     lines.append("## 按信源")
     lines.append("")
-    lines.append("| 信源 | n | 胜率 | 均值收益 | 中位收益 | 市场预期胜率 | 超额 | 主要市场 |")
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---|")
+    lines.append("| 信源 | n | 胜率 | 95% 区间 | 均值收益 | 中位收益 | 市场预期胜率 | 超额 | 主要市场 |")
+    lines.append("|---|---:|---:|:---:|---:|---:|---:|---:|---|")
     for s in [x for x in card.by_creator if x.ranked]:
         mix = ", ".join(
             f"{m}:{c}" for m, c in sorted(s.market_mix.items(), key=lambda kv: -kv[1])[:3]
         )
+        suf = s.sufficiency
+        ci = (
+            f"{_pct(suf.wilson_low)}–{_pct(suf.wilson_high)}"
+            if suf is not None and suf.wilson_low is not None
+            else "—"
+        )
         lines.append(
-            f"| {s.key} | {s.n} | {_pct(s.win_rate)} | {_pct(s.mean_return, 2, True)} | "
+            f"| {s.key} | {s.n} | {_pct(s.win_rate)} | {ci} | "
+            f"{_pct(s.mean_return, 2, True)} | "
             f"{_pct(s.median_return, 2, True)} | {_pct(s.expected_win_rate)} | "
             f"{_pct(s.excess_win_rate, 1, True)} | {mix} |"
         )
-    unranked = [x for x in card.by_creator if not x.ranked]
+
+    # CRD-2 的中间档：样本够看但不够排，单列而非与「样本不足」混为一谈
+    provisional = [
+        x for x in card.by_creator
+        if not x.ranked and x.sufficiency is not None
+        and x.sufficiency.display_policy == "show_with_warning"
+    ]
+    if provisional:
+        lines.append("")
+        lines.append("*样本偏少，数字仅供参考（未进排名）：*"
+                     + "、".join(
+                         f"{s.key}({s.n}，{_pct(s.win_rate)}"
+                         f"，区间 {_pct(s.sufficiency.wilson_low)}"
+                         f"–{_pct(s.sufficiency.wilson_high)})"
+                         for s in provisional
+                     ))
+
+    unranked = [
+        x for x in card.by_creator
+        if not x.ranked and x not in provisional
+    ]
     if unranked:
         lines.append("")
         lines.append(f"*样本不足未排名（n < {MIN_RANKED_N}）：*"
