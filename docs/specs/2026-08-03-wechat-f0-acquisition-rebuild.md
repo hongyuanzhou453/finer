@@ -66,7 +66,17 @@
 
 后果是危险的：外壳被解析为「空文章」，而 EMPTY 是终态跳过——**一篇只是被限流的文章会被静默判死、永不重试**。现按外壳标记 + 重定向后 URL 双重检测，归类为 BLOCKED。
 
-### 5. 限速的真实边界比预想宽
+### 5. 路径穿越（自查发现并已修，commit `f5b44f1a`）
+
+初版把 `account_id` / `article_id` 直接当路径组件用，但这两个值全都来自不可信输入：`__biz` 是第三方 RSS bridge 提供的 URL query 参数，`user_name`/`mid`/`idx` 是从远程页面里正则抠出来的。**没有任何净化。**
+
+实测复现：一个携带 `__biz=../../../../tmp/pwned` 的 feed 条目，把 `9_1.md`、`9_1.sidecar.json`、`sync_state.json` 写到了 data 根目录之外，而导入结果报告的是 `status=imported`。
+
+良性输入也会踩到：`__biz` 是 base64，字母表含 `/`，会把一个账号无声地拆散到嵌套目录里。
+
+修法是双层的——在身份层净化（保证路径组件与落盘 metadata 一致），并在写盘前加围栏（未来若净化逻辑回退，会响亮报错而不是落到磁盘上）。穿越段做替换而非剥离，且全由点构成的标识符退回占位符，因此没有任何编码路径能产出 `.` 或 `..`。对合法标识符净化是恒等变换：真实文章的 `content_id` 未变（已对真实数据验证），且磁盘上 0 条 wechat ContentRecord，无迁移问题。
+
+### 6. 限速的真实边界比预想宽
 
 本机住宅 IP + 普通 Android UA，12 篇不同文章背靠背请求，26 req/min，全部 200，无验证页。失败的 2 篇是真实内容状态（`该内容已被发布者删除` / `此内容因违规无法查看`），不是反爬。
 
@@ -130,7 +140,7 @@ record metadata 带 `acquired_via`（`public_url` / `bridge_content`）与 `disc
 
 ```bash
 pytest tests/ -q --ignore=tests/test_wechat_live.py
-# 3872 passed, 69 skipped  （新增 42 条，无回归）
+# 3885 passed, 69 skipped  （新增 55 条，无回归）
 ```
 
 真实数据端到端：
