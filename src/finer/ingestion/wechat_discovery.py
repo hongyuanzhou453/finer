@@ -151,12 +151,24 @@ class RssDiscovery:
         self.timeout = timeout
         self.account_name = account_name
 
+    @property
+    def safe_feed_url(self) -> str:
+        """The feed URL with query and fragment dropped, for logs and errors.
+
+        Bridge feed URLs routinely carry an access token in the query string
+        (and the path itself can be a capability id). Line F forbids secrets in
+        error details, and a log line is just as durable — so anything
+        user-facing gets scheme+host only.
+        """
+        parsed = urllib.parse.urlparse(self.feed_url)
+        return f"{parsed.scheme}://{parsed.netloc}/…"
+
     def _fetch(self) -> str:
         parsed = urllib.parse.urlparse(self.feed_url)
         if parsed.scheme not in {"http", "https"}:
             raise FinerError(
                 ErrorCode.F0_IN_001,
-                f"Feed URL must be http(s): {self.feed_url!r}",
+                f"Feed URL must be http(s): {self.safe_feed_url!r}",
                 stage="F0",
                 operation="wechat_discovery",
                 source_channel="wechat",
@@ -179,7 +191,7 @@ class RssDiscovery:
                 source_channel="wechat",
                 retryable=True,
                 cause=exc,
-                details={"feed_url": self.feed_url},
+                details={"feed_url": self.safe_feed_url},
             ) from exc
 
     def discover(self) -> list[DiscoveredArticle]:
@@ -189,7 +201,7 @@ class RssDiscovery:
         except ET.ParseError as exc:
             logger.warning(
                 "Feed %s is not well-formed XML (%s); falling back to URL scan",
-                self.feed_url,
+                self.safe_feed_url,
                 exc,
             )
             return [

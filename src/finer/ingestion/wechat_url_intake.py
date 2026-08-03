@@ -24,7 +24,10 @@ quietly goes stale is visible in the data rather than only in its absence.
 from __future__ import annotations
 
 import logging
+import os
+import re
 from dataclasses import dataclass
+from datetime import timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -133,6 +136,23 @@ def _build_receipt(
     )
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write via tmp + fsync + ``os.replace``.
+
+    Matches the pattern in ``pipeline.driver`` and ``services.repository``. An
+    in-place write killed mid-flight leaves a 0-byte or half-written JSON that
+    a later reader reports as an unattributable ``JSONDecodeError``; with this,
+    a reader sees either the old content or the complete new content.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
 def _assert_contained(root: Path, account_id: str, article_id: str, *, url: str) -> None:
     """Refuse to write outside ``{root}/data/raw/wechat/``.
 
@@ -194,7 +214,8 @@ def import_article(
         discovery_source: How this URL was found — stamped into metadata so a
             stale discovery source is auditable.
         force: Re-fetch and overwrite an already-imported article.
-        limiter: Rate limiter; ``None`` uses the module default pacing.
+        limiter: Rate limiter override; ``None`` keeps the module's paced
+            default rather than disabling pacing.
         article: Pre-fetched page, used by tests and by callers that already
             hold the page. Skips the network entirely.
         register_index: Set False to skip Project Memory (tests, dry runs).
@@ -202,7 +223,15 @@ def import_article(
     Returns:
         An :class:`ArticleImportOutcome`.
     """
-    fetched = article if article is not None else fetch_public_article(url, limiter=limiter)
+    # Pass the limiter only when the caller set one: fetch_public_article's own
+    # default is the shared paced limiter, and forwarding None would silently
+    # disable rate limiting for every import that did not name one.
+    if article is not None:
+        fetched = article
+    elif limiter is not None:
+        fetched = fetch_public_article(url, limiter=limiter)
+    else:
+        fetched = fetch_public_article(url)
 
     if fetched.state is not ArticleState.OK:
         logger.info("Skipping %s — page state is %s", url, fetched.state.value)
@@ -213,28 +242,49 @@ def import_article(
             reason=f"page state: {fetched.state.value}",
         )
 
+    if not fetched.has_identity:
+        # Better to skip than to invent an id: anything we make up either
+        # collides with another article (losing it as a "duplicate") or changes
+        # between runs (breaking idempotency).
+        logger.warning(
+            "Skipping %s — page carries no usable account/article identity", url
+        )
+        return ArticleImportOutcome(
+            status="skipped",
+            source_url=url,
+            article_state=fetched.state,
+            reason="no usable identity (missing account id or mid/idx)",
+        )
+
     store = WeChatArtifactStore(root)
     account_id = fetched.account_id
     article_id = fetched.article_id
     _assert_contained(root, account_id, article_id, url=url)
 
-    # Probe for an existing record before writing anything. content_id is a
+    # Probe for an existing import before writing anything. content_id is a
     # pure function of (account_id, article_id), so this is a cheap stat, not
     # a directory scan.
+    #
+    # The probe keys on the *receipt*, which is written last: keying on the
+    # record would make an import that died between the two writes look
+    # complete forever, leaving a ContentRecord with no receipt that no rerun
+    # would ever repair.
     from finer.services.wechat_content_record_builder import _derive_content_id
 
     content_id = _derive_content_id(account_id, article_id)
     intake_dir = _f0_intake_dir(root)
     record_path = intake_dir / f"{content_id}.json"
-    if record_path.exists() and not force:
+    receipt_path = intake_dir / f"{content_id}.receipt.json"
+    if receipt_path.exists() and not force:
         logger.info("Article already imported: %s (%s)", content_id, url)
         return ArticleImportOutcome(
             status="duplicate",
             source_url=url,
             content_id=content_id,
             record_path=record_path,
+            receipt_path=receipt_path,
             article_state=fetched.state,
-            reason="ContentRecord already on disk",
+            reason="import receipt already on disk",
         )
 
     artifacts = store.save_article_artifacts(
@@ -252,7 +302,7 @@ def import_article(
     )
 
     intake_dir.mkdir(parents=True, exist_ok=True)
-    record_path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
+    _atomic_write_text(record_path, record.model_dump_json(indent=2))
 
     receipt = _build_receipt(
         record=record,
@@ -263,8 +313,9 @@ def import_article(
         html_sha256=artifacts.html_sha256,
         acquired_via=acquired_via,
     )
-    receipt_path = intake_dir / f"{content_id}.receipt.json"
-    receipt_path.write_text(receipt.model_dump_json(indent=2), encoding="utf-8")
+    # Written last, and it is what the duplicate probe keys on, so a crash
+    # anywhere above leaves the import visibly incomplete and a rerun redoes it.
+    _atomic_write_text(receipt_path, receipt.model_dump_json(indent=2))
 
     if register_index:
         _register_f0_index(record, receipt)
@@ -386,15 +437,15 @@ def _render_markdown(article: PublicArticle) -> str:
     raw archive has to stand alone as evidence if the index is ever rebuilt.
     """
     published = (
-        article.published_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+        article.published_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         if article.published_at
         else "unknown"
     )
     header = [
-        f"# {article.title or 'untitled'}",
+        f"# {_header_safe(article.title) or 'untitled'}",
         "",
-        f"> 公众号：{article.account_name or article.account_id}",
-        f"> 作者：{article.author or '未知'}",
+        f"> 公众号：{_header_safe(article.account_name) or article.account_id}",
+        f"> 作者：{_header_safe(article.author) or '未知'}",
         f"> 发布时间：{published}",
         f"> 原文链接：{article.source_url}",
         f"> 账号标识：{article.ghid or article.biz}",
@@ -404,6 +455,16 @@ def _render_markdown(article: PublicArticle) -> str:
         "",
     ]
     return "\n".join(header) + article.markdown + "\n"
+
+
+def _header_safe(value: str) -> str:
+    """Flatten a value so it cannot forge extra provenance lines.
+
+    Title and account name can come from a third-party feed. A title containing
+    a newline plus ``> 原文链接：…`` would otherwise write a second, fake source
+    line into the archive that an auditor reads as ours.
+    """
+    return re.sub(r"\s+", " ", (value or "").replace(">", "＞")).strip()
 
 
 def import_article_urls(

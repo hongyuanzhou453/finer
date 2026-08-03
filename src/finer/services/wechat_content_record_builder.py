@@ -143,6 +143,14 @@ def build_public_article_record(
 
     published_at_missing = article.published_at is None
     published_at = article.published_at or datetime.now(timezone.utc)
+    # Bridge feeds report local offsets (Wechat2RSS emits +0800). Every
+    # timestamp crossing a contract boundary must be aware UTC, and a naive
+    # value is assumed to already be UTC rather than shifted.
+    published_at = (
+        published_at.astimezone(timezone.utc)
+        if published_at.tzinfo
+        else published_at.replace(tzinfo=timezone.utc)
+    )
     now = datetime.now(timezone.utc)
 
     metadata = {

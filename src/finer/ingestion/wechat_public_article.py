@@ -70,6 +70,18 @@ _HEADERS = {
 _BLOCK_TAGS = {"p", "div", "section", "blockquote", "table", "tr", "ul", "ol"}
 _SKIP_TAGS = {"script", "style", "noscript", "svg"}
 
+# Python's HTMLParser is not HTML5-aware: it reports a bare ``<img>`` or
+# ``<br>`` through handle_starttag with no matching handle_endtag, while the
+# self-closed ``<img />`` form goes through handle_startendtag and stays
+# balanced. Counting the unbalanced form would inflate the nesting depth
+# permanently, so the real ``</div>`` closing #js_content never registers and
+# the page footer bleeds into the article body. Excluded symmetrically on both
+# sides so a stray ``</br>`` cannot decrement either.
+_VOID_TAGS = {
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+}
+
 # Page-state markers, checked before parsing. WeChat serves these as HTTP 200
 # with a ~32KB body, so status code alone cannot distinguish them.
 _DELETED_MARKERS = ("该内容已被发布者删除", "已被发布者删除")
@@ -152,22 +164,42 @@ class PublicArticle:
 
         Falls back to the short-link token when a page omits ``mid``/``idx``
         (rare, seen on some migrated accounts) so a record can still be built.
+        Returns ``""`` when neither is available — see :attr:`has_identity`.
+
+        The fallback is taken *only* from the ``/s/<token>`` form. A long-form
+        URL's path is the bare ``/s``, so treating its tail as an id would give
+        every such article the identifier ``"s"`` and collapse them all onto one
+        ``content_id`` — the second article imported would be reported as a
+        duplicate and silently lost.
+
         Sanitized because this value becomes a filename.
         """
         if self.mid and self.idx:
-            return sanitize_path_component(f"{self.mid}_{self.idx}", fallback="unknown")
-        tail = urllib.parse.urlparse(self.source_url).path.rsplit("/", 1)[-1]
-        return sanitize_path_component(tail, fallback="unknown")
+            return sanitize_path_component(f"{self.mid}_{self.idx}", fallback="")
+        if is_short_link(self.source_url):
+            tail = urllib.parse.urlparse(self.source_url).path.rsplit("/", 1)[-1]
+            return sanitize_path_component(tail, fallback="")
+        return ""
 
     @property
     def account_id(self) -> str:
         """Canonical account identity, preferring the ``gh_`` name over ``__biz``.
 
-        Sanitized because this value becomes a directory name.
+        Returns ``""`` when the page carried neither. Sanitized because this
+        value becomes a directory name.
         """
-        return sanitize_path_component(
-            self.ghid or self.biz, fallback="unknown_account"
-        )
+        return sanitize_path_component(self.ghid or self.biz, fallback="")
+
+    @property
+    def has_identity(self) -> bool:
+        """True when this article can be given a unique, reproducible id.
+
+        Without both halves there is nothing to key a ``content_id`` on, and
+        anything we invent would either collide with other articles or change
+        between runs. Importing such a page is worse than skipping it: a
+        collision loses a real article, and a random id breaks idempotency.
+        """
+        return bool(self.account_id and self.article_id)
 
     @property
     def ok(self) -> bool:
@@ -255,7 +287,8 @@ class _ArticleParser(HTMLParser):
                 self.meta[key.lower()] = attrs["content"].strip()
 
         if self._capture is not None:
-            self._capture_depth += 1
+            if tag not in _VOID_TAGS:
+                self._capture_depth += 1
         elif attrs.get("id") in {"js_name", "js_author_name", "publish_time"}:
             self._capture = attrs["id"]
             self._capture_depth = 1
@@ -275,7 +308,8 @@ class _ArticleParser(HTMLParser):
                 self.content_seen = True
             return
 
-        self._content_depth += 1
+        if tag not in _VOID_TAGS:
+            self._content_depth += 1
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
             return
@@ -306,6 +340,11 @@ class _ArticleParser(HTMLParser):
                 self.parts.append(f"\n\n![]({html_module.unescape(src)})\n\n")
 
     def handle_endtag(self, tag: str) -> None:
+        if tag in _VOID_TAGS:
+            # A stray </br> or </img> closes nothing; decrementing on it would
+            # undo the balance that skipping the start tag just preserved.
+            return
+
         if self._capture is not None:
             self._capture_depth -= 1
             if self._capture_depth == 0:
@@ -347,7 +386,11 @@ class _ArticleParser(HTMLParser):
 
     def markdown(self) -> str:
         text = "".join(self.parts).replace("\xa0", " ")
-        text = re.sub(r"[ \t]+\n", "\n", text)
+        # Trailing-whitespace trimming is done per line rather than with
+        # ``re.sub(r"[ \t]+\n", ...)``: that pattern backtracks quadratically on
+        # long space runs (54ms at 8k spaces, 4x per doubling), and WeChat
+        # bodies routinely carry multi-KB runs of &nbsp; padding.
+        text = "\n".join(line.rstrip(" \t") for line in text.split("\n"))
         return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
@@ -361,17 +404,37 @@ _PAGE_VARS = {
 }
 
 
-def _classify(source: str, final_url: str = "") -> ArticleState:
+def _is_structural_block(source: str, final_url: str = "") -> bool:
+    """True for signals that cannot occur in article prose.
+
+    The captcha shell's script markers and the redirect endpoint are machine
+    artifacts, so unlike the visible Chinese notices they stay trustworthy even
+    on a page that also has a real body.
+    """
+    if any(marker in source for marker in _CAPTCHA_MARKERS):
+        return True
+    return bool(final_url) and "wappoc_appmsgcaptcha" in final_url
+
+
+def _classify(source: str, final_url: str = "", *, has_body: bool = False) -> ArticleState:
     """Classify a served page. BLOCKED is checked first and wins.
 
     An interstitial can quote any of the other markers, and misreading a
     challenge as DELETED would permanently retire a live article.
+
+    ``has_body`` guards against the mirror-image mistake. The visible markers
+    are ordinary Chinese sentences, and an article *about* censorship or
+    account bans will quote them verbatim — exactly the kind of article this
+    pipeline exists to capture. WeChat never serves an interstitial and a real
+    ``#js_content`` body together, so once a body has been found, only signals
+    that cannot appear in prose are still trusted: the captcha shell markers
+    and the redirect URL.
     """
+    if _is_structural_block(source, final_url):
+        return ArticleState.BLOCKED
+    if has_body:
+        return ArticleState.OK
     if any(marker in source for marker in _BLOCKED_MARKERS):
-        return ArticleState.BLOCKED
-    if any(marker in source for marker in _CAPTCHA_MARKERS):
-        return ArticleState.BLOCKED
-    if final_url and "wappoc_appmsgcaptcha" in final_url:
         return ArticleState.BLOCKED
     if any(marker in source for marker in _VIOLATION_MARKERS):
         return ArticleState.VIOLATION
@@ -417,13 +480,12 @@ def parse_public_article(
     fixtures without network access. ``final_url`` is the post-redirect URL,
     which is what exposes the captcha bounce.
     """
-    state = _classify(source, final_url)
     page_vars = {
         key: (match.group(1).strip() if (match := re.search(pattern, source)) else "")
         for key, pattern in _PAGE_VARS.items()
     }
 
-    if state is not ArticleState.OK:
+    def _non_article(state: ArticleState) -> PublicArticle:
         return PublicArticle(
             state=state,
             source_url=url,
@@ -434,11 +496,25 @@ def parse_public_article(
             html=raw,
         )
 
+    # Structural signals can never appear in article prose, so they are safe to
+    # trust before looking at the body — and checking them first avoids parsing
+    # a ~17KB captcha shell.
+    if _is_structural_block(source, final_url):
+        return _non_article(ArticleState.BLOCKED)
+
     parser = _ArticleParser()
     parser.feed(source)
     body = parser.markdown()
+    has_body = parser.content_seen and len(re.sub(r"\s+", "", body)) >= 20
 
-    if not parser.content_seen or len(re.sub(r"\s+", "", body)) < 20:
+    # Only now consult the visible markers, and only if no body was found: an
+    # article quoting WeChat's own "该内容已被发布者删除" notice is a real article,
+    # and dropping it would silently lose exactly the content this pipeline
+    # cares most about.
+    state = _classify(source, final_url, has_body=has_body)
+    if state is not ArticleState.OK:
+        return _non_article(state)
+    if not has_body:
         state = ArticleState.EMPTY
 
     title = (
@@ -551,7 +627,13 @@ def fetch_public_article(
                 raw = response.read()
                 charset = response.headers.get_content_charset() or "utf-8"
                 final_url = response.url
-            source = raw.decode(charset, "replace")
+            try:
+                source = raw.decode(charset, "replace")
+            except LookupError:
+                # An unknown charset label must not escape as a bare
+                # LookupError past the Line F envelope; WeChat serves UTF-8.
+                logger.warning("Unknown charset %r for %s; decoding as UTF-8", charset, url)
+                source = raw.decode("utf-8", "replace")
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last_error = exc
             logger.warning("WeChat fetch attempt %d/%d failed: %s", attempt + 1, attempts, exc)

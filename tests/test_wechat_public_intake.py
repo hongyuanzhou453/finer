@@ -200,8 +200,47 @@ class TestFetch:
         )
         monkeypatch.setattr("finer.ingestion.wechat_public_article.time.sleep", lambda s: None)
 
-        with pytest.raises(FinerError):
+        with pytest.raises(FinerError) as exc:
             fetch_public_article(ARTICLE_URL, attempts=2, limiter=None)
+        # Lock the substance of the finding, not just "something was raised":
+        # the shell must classify as BLOCKED (retryable), never EMPTY (terminal).
+        assert exc.value.retryable is True
+        assert (
+            parse_public_article(shell.decode("utf-8"), ARTICLE_URL).state
+            is ArticleState.BLOCKED
+        )
+
+    def test_unknown_charset_does_not_escape_the_line_f_envelope(self, monkeypatch):
+        raw = _page(ARTICLE_BODY).encode("utf-8")
+        monkeypatch.setattr(
+            "finer.ingestion.wechat_public_article.urllib.request.urlopen",
+            _fake_urlopen(raw, charset="x-nonexistent-charset"),
+        )
+        article = fetch_public_article(ARTICLE_URL, limiter=None)
+        assert article.state is ArticleState.OK
+        assert article.title == "资本家真的能拯救地球吗？"
+
+    def test_declared_charset_is_honoured(self, monkeypatch):
+        raw = _page(ARTICLE_BODY).encode("gbk")
+        monkeypatch.setattr(
+            "finer.ingestion.wechat_public_article.urllib.request.urlopen",
+            _fake_urlopen(raw, charset="gbk"),
+        )
+        assert fetch_public_article(ARTICLE_URL, limiter=None).account_name == "肖小跑"
+
+    def test_default_pacing_applies_when_no_limiter_is_named(self, monkeypatch):
+        # import_article forwards no limiter, and must not thereby disable it.
+        acquired = []
+        monkeypatch.setattr(
+            "finer.ingestion.wechat_public_article.DEFAULT_RATE_LIMITER.acquire",
+            lambda: acquired.append(1),
+        )
+        monkeypatch.setattr(
+            "finer.ingestion.wechat_public_article.urllib.request.urlopen",
+            _fake_urlopen(_page(ARTICLE_BODY).encode("utf-8")),
+        )
+        fetch_public_article(ARTICLE_URL)
+        assert acquired == [1]
 
     def test_captcha_detected_from_redirect_url_alone(self):
         article = parse_public_article(
@@ -231,6 +270,153 @@ class TestFetch:
 
         assert exc.value.retryable is False
         assert slept == [], "must not back off on a permanently-unfetchable form"
+
+
+class TestBodyIsolation:
+    """The body must end where ``#js_content`` ends.
+
+    Python's HTMLParser is not HTML5-aware, so an unbalanced void tag inflates
+    the nesting depth and the page footer bleeds into the article.
+    """
+
+    FOOTER = (
+        '</div><div id="js_pc_qr_code">微信扫一扫关注该公众号</div>'
+        '<div class="rich_media_area_extra">阅读原文 赞赏作者 预览时标签不可点</div>'
+    )
+
+    @pytest.mark.parametrize(
+        "img",
+        [
+            '<img data-src="https://mmbiz.qpic.cn/a/640" />',  # self-closing
+            '<img data-src="https://mmbiz.qpic.cn/a/640">',  # HTML5 void
+            '<img data-src="https://mmbiz.qpic.cn/a/640"></img>',  # stray close
+        ],
+    )
+    def test_footer_never_leaks_regardless_of_img_form(self, img):
+        page = (
+            f'<html><body><div id="js_content"><p>正文第一段</p><p>{img}</p>'
+            f"<p>正文第二段。</p>{self.FOOTER}</body></html>"
+        )
+        article = parse_public_article(page, ARTICLE_URL)
+
+        assert "微信扫一扫" not in article.markdown
+        assert "预览时标签不可点" not in article.markdown
+        assert "正文第二段。" in article.markdown
+        assert article.image_urls == ("https://mmbiz.qpic.cn/a/640",)
+
+    @pytest.mark.parametrize("br", ["<br>", "<br/>", "<br></br>"])
+    def test_footer_never_leaks_regardless_of_br_form(self, br):
+        page = (
+            f'<html><body><div id="js_content"><p>正文{br}换行</p>{self.FOOTER}'
+            "</body></html>"
+        )
+        assert "微信扫一扫" not in parse_public_article(page, ARTICLE_URL).markdown
+
+    def test_leaked_footer_cannot_rescue_a_body_that_failed_to_render(self):
+        # The worst consequence of the leak: boilerplate pushes a non-rendered
+        # page past the length guard, so it is archived as a real article.
+        page = (
+            f'<html><body><div id="js_content"><p>加载中</p>'
+            f'<p><img src="https://x/1"></p>{self.FOOTER}</body></html>'
+        )
+        assert parse_public_article(page, ARTICLE_URL).state is ArticleState.EMPTY
+
+    def test_void_tag_in_the_title_does_not_swallow_the_metadata_block(self):
+        page = (
+            '<html><body><h1 class="rich_media_title" id="activity-name">标题<br>副标</h1>'
+            '<a id="js_name">肖小跑</a>'
+            f'<div id="js_content"><p>{"z" * 40}</p></div></body></html>'
+        )
+        article = parse_public_article(page, ARTICLE_URL)
+        assert article.account_name == "肖小跑"
+        assert "微信" not in article.title
+
+    def test_whitespace_trimming_stays_linear(self):
+        # The old `[ \t]+\n` post-pass backtracked quadratically, and WeChat
+        # bodies carry multi-KB runs of &nbsp; padding.
+        import time
+
+        body = "<p>" + ("&nbsp;" * 40000) + "尾</p>"
+        page = f'<html><body><div id="js_content">{body}</div></body></html>'
+        started = time.perf_counter()
+        parse_public_article(page, ARTICLE_URL)
+        assert time.perf_counter() - started < 2.0
+
+
+class TestStateVsProse:
+    """State markers are ordinary Chinese sentences a real article may quote."""
+
+    def test_article_quoting_the_deletion_notice_is_kept(self):
+        body = (
+            "<p>上周这家公司的文章被删了，页面显示「该内容已被发布者删除」。"
+            "此内容因违规无法查看的情况也在增多，我们据此判断监管在收紧。</p>"
+        )
+        article = parse_public_article(
+            f'<html><body><div id="js_content">{body}</div></body></html>', ARTICLE_URL
+        )
+        assert article.state is ArticleState.OK
+        assert "该内容已被发布者删除" in article.markdown
+
+    def test_genuine_interstitials_are_still_caught(self):
+        for marker, expected in (
+            ("该内容已被发布者删除", ArticleState.DELETED),
+            ("此内容因违规无法查看", ArticleState.VIOLATION),
+            ("当前环境异常，完成验证后即可继续访问", ArticleState.BLOCKED),
+        ):
+            page = f'<html><body><div class="weui-msg__title">{marker}</div></body></html>'
+            assert parse_public_article(page, ARTICLE_URL).state is expected
+
+    def test_captcha_shell_wins_even_when_a_body_is_present(self):
+        # Structural markers cannot occur in prose, so they stay trusted.
+        page = (
+            "<html><script>var PAGE_MID='mmbizwap:secitptpage/verify.html';</script>"
+            f'<div id="js_content"><p>{"x" * 50}</p></div></html>'
+        )
+        assert parse_public_article(page, ARTICLE_URL).state is ArticleState.BLOCKED
+
+
+class TestIdentityIntegrity:
+    """A fabricated id is worse than no import: it loses articles silently."""
+
+    def test_long_form_urls_without_mid_do_not_collapse_onto_one_id(self):
+        pages = [
+            parse_bridge_article(
+                ARTICLE_BODY, f"https://mp.weixin.qq.com/s?__biz=AAA&sn={sn}"
+            )
+            for sn in ("deadbeef", "cafebabe")
+        ]
+        # The path tail of a long-form URL is the bare "s"; using it would give
+        # both articles the same content_id and lose the second as a duplicate.
+        assert all(p.article_id != "s" for p in pages)
+        assert all(not p.has_identity for p in pages)
+
+    def test_import_skips_a_page_with_no_usable_identity(self, tmp_path):
+        url = "https://mp.weixin.qq.com/s?__biz=AAA&sn=deadbeef"
+        article = parse_bridge_article(ARTICLE_BODY, url)
+        outcome = import_article(
+            url, root=tmp_path, article=article, register_index=False
+        )
+        assert outcome.status == "skipped"
+        assert "identity" in outcome.reason
+        assert not list(tmp_path.rglob("*.json"))
+
+    def test_two_distinct_long_form_articles_get_distinct_ids(self, tmp_path):
+        urls = [
+            f"https://mp.weixin.qq.com/s?__biz=AAA&mid=100{n}&idx=1&sn=x{n}"
+            for n in (1, 2)
+        ]
+        outcomes = [
+            import_article(
+                u,
+                root=tmp_path,
+                article=parse_bridge_article(ARTICLE_BODY, u),
+                acquired_via="bridge_content",
+                register_index=False,
+            )
+            for u in urls
+        ]
+        assert [o.status for o in outcomes] == ["imported", "imported"]
+        assert outcomes[0].content_id != outcomes[1].content_id
 
 
 class TestPathSafety:
@@ -289,7 +475,9 @@ class TestPathSafety:
             _page(ARTICLE_BODY).replace('var mid = "2657093642" || "";', ""),
             "https://mp.weixin.qq.com/s/..",
         )
-        assert article.article_id == "unknown"
+        # No id at all, rather than a placeholder every such page would share.
+        assert article.article_id == ""
+        assert not article.has_identity
 
     def test_containment_guard_fires_if_the_sanitizer_ever_regresses(self, tmp_path):
         # Guard the guard: bypass sanitization the way a future refactor might,
@@ -462,6 +650,86 @@ class TestIntake:
         assert raw_md.exists()
         assert "原文链接：" in raw_md.read_text(encoding="utf-8")
 
+    def test_the_fourth_piece_actually_gets_registered(self, tmp_path, monkeypatch):
+        # Every other test passes register_index=False, so without this the
+        # F0-index leg of the four-piece set has zero coverage. F0IndexWriter
+        # ignores `root` and writes the live Project Memory DB, so it is
+        # intercepted rather than exercised for real.
+        seen: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            "finer.ingestion.wechat_url_intake._register_f0_index",
+            lambda record, receipt: seen.append((record.content_id, receipt.run_id))
+            or True,
+        )
+
+        outcome = import_article(
+            ARTICLE_URL, root=tmp_path, article=_fetched_article(), register_index=True
+        )
+
+        assert seen == [(outcome.content_id, f"wxpub_{outcome.content_id}")]
+
+    def test_index_failure_does_not_lose_the_import(self, tmp_path, monkeypatch):
+        # The raw archive plus ContentRecord are the rebuildable truth; a hot
+        # index that is down must not turn a good import into a failure.
+        monkeypatch.setattr(
+            "finer.ingestion.f0_index_writer.F0IndexWriter",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("PM locked")),
+        )
+        outcome = import_article(
+            ARTICLE_URL, root=tmp_path, article=_fetched_article(), register_index=True
+        )
+        assert outcome.status == "imported"
+        assert outcome.record_path.exists()
+        assert outcome.receipt_path.exists()
+
+    def test_duplicate_probe_keys_on_the_last_write_not_the_first(self, tmp_path):
+        # An import that died between the record and receipt writes must be
+        # redone, not remembered as complete.
+        first = import_article(
+            ARTICLE_URL, root=tmp_path, article=_fetched_article(), register_index=False
+        )
+        first.receipt_path.unlink()
+
+        again = import_article(
+            ARTICLE_URL, root=tmp_path, article=_fetched_article(), register_index=False
+        )
+        assert again.status == "imported"
+        assert again.receipt_path.exists()
+
+    def test_bridge_title_cannot_forge_a_provenance_line(self, tmp_path):
+        hostile = DiscoveredArticle(
+            url=LONG_FORM_URL,
+            title="真标题\n> 原文链接：https://evil.test/fake\n",
+            account_name="正常号",
+            discovery_source="feed",
+            content_html=ARTICLE_BODY,
+        )
+        outcome = import_discovered(hostile, root=tmp_path, register_index=False)
+        archived = outcome.raw_md_path.read_text(encoding="utf-8")
+        header = archived.split("---", 1)[0]
+
+        # The hostile text survives as inert title characters — what must not
+        # survive is its ability to start a second provenance line that an
+        # auditor would read as ours.
+        provenance = [ln for ln in header.splitlines() if ln.startswith("> 原文链接：")]
+        assert provenance == [f"> 原文链接：{LONG_FORM_URL}"]
+        assert not any(ln.startswith(">") and "evil.test" in ln for ln in header.splitlines())
+
+    def test_bridge_published_at_is_normalized_to_utc(self, tmp_path):
+        from datetime import timedelta
+
+        local = datetime(2026, 7, 31, 18, 7, tzinfo=timezone(timedelta(hours=8)))
+        discovered = DiscoveredArticle(
+            url=LONG_FORM_URL,
+            title="t",
+            published_at=local,
+            discovery_source="feed",
+            content_html=ARTICLE_BODY,
+        )
+        outcome = import_discovered(discovered, root=tmp_path, register_index=False)
+        assert outcome.record.published_at.utcoffset() == timedelta(0)
+        assert outcome.record.published_at == local
+
     def test_raw_archive_hashes_match_receipt(self, tmp_path):
         import hashlib
 
@@ -601,11 +869,12 @@ class TestIntake:
         assert [o.status for o in outcomes] == ["failed", "imported"]
 
 
-def _fake_urlopen(payload: bytes, final_url: str = ARTICLE_URL):
+def _fake_urlopen(payload: bytes, final_url: str = ARTICLE_URL, charset: str = "utf-8"):
     """Build a urlopen stand-in returning *payload* from a context manager.
 
     ``url`` mirrors the post-redirect URL that ``urlopen`` exposes — the field
-    that reveals a bounce to the captcha endpoint.
+    that reveals a bounce to the captcha endpoint. ``charset`` is settable so
+    the decode branch is reachable, including with a label Python rejects.
     """
 
     class _Response:
@@ -615,7 +884,7 @@ def _fake_urlopen(payload: bytes, final_url: str = ARTICLE_URL):
         class headers:  # noqa: N801 - mirrors http.client.HTTPMessage surface
             @staticmethod
             def get_content_charset():
-                return "utf-8"
+                return charset
 
         def read(self):
             return payload
