@@ -443,19 +443,43 @@ def _classify(source: str, final_url: str = "", *, has_body: bool = False) -> Ar
     return ArticleState.OK
 
 
+def is_fetchable_url(url: str) -> bool:
+    """True when WeChat will serve this URL's article page to us.
+
+    Two forms work, and the distinction is a signature rather than the path:
+
+    ``/s/<token>``
+        The share short link. Always fetchable.
+    ``/s?__biz=…&mid=…&idx=…&sn=…&chksm=…``
+        The canonical long form **carrying its ``chksm`` signature**. Also
+        fetchable — verified 2026-08-03: a chksm-signed URL returned a 3.1MB
+        article page, while the same URL with ``chksm`` stripped returned the
+        17KB captcha shell.
+
+    A long-form URL *without* ``chksm`` is challenged unconditionally, across
+    iOS/Android MicroMessenger and desktop Chrome alike, so it is a property of
+    the URL rather than of rate or IP reputation.
+
+    This is what separates discovery sources that are merely informative from
+    ones that can actually feed the fetch leg: ``getalbum`` hands back signed
+    URLs and so is self-sufficient, while Wechat2RSS strips the signature and
+    can only be used via its own ``content:encoded`` body.
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname != WECHAT_ARTICLE_HOST:
+        return False
+    if parsed.path.startswith("/s/"):
+        return True
+    query = urllib.parse.parse_qs(parsed.query)
+    return bool(query.get("chksm") and query.get("__biz") and query.get("mid"))
+
+
 def is_short_link(url: str) -> bool:
-    """True for the ``/s/<token>`` form, the only one that fetches.
+    """True for the ``/s/<token>`` share form specifically.
 
-    The canonical long form (``/s?__biz=…&mid=…&idx=…&sn=…``) is answered with
-    the captcha challenge unconditionally — verified 2026-08-03 across iOS and
-    Android MicroMessenger and desktop Chrome UAs, including a long URL rebuilt
-    from an article whose short link fetched fine moments earlier. So this is a
-    property of the URL form, not of rate or IP reputation, and no header
-    tweaking gets around it.
-
-    This matters when choosing a discovery bridge: Wechat2RSS feeds carry only
-    long-form links, so their URLs cannot be re-fetched from source and their
-    ``content:encoded`` body is the usable payload instead.
+    Kept separate from :func:`is_fetchable_url` because the two answer
+    different questions: this one is about URL shape, that one about whether a
+    fetch will succeed.
     """
     parsed = urllib.parse.urlparse(url)
     return parsed.hostname == WECHAT_ARTICLE_HOST and parsed.path.startswith("/s/")
@@ -641,13 +665,14 @@ def fetch_public_article(
             article = parse_public_article(source, url, raw=raw, final_url=final_url)
             if article.state is not ArticleState.BLOCKED:
                 return article
-            if not is_short_link(url):
-                # Long-form URLs are challenged unconditionally; retrying only
-                # burns the backoff. Fail immediately with an actionable hint.
+            if not is_fetchable_url(url):
+                # An unsigned long-form URL is challenged every time; retrying
+                # only burns the backoff. Fail immediately with a usable hint.
                 raise FinerError(
                     ErrorCode.F0_EXT_002,
-                    "WeChat challenges long-form article URLs; only /s/<token> "
-                    "short links are fetchable",
+                    "WeChat challenges long-form article URLs that carry no "
+                    "chksm signature; use a /s/<token> short link or a signed "
+                    "long URL (as returned by the album listing)",
                     stage="F0",
                     operation="wechat_public_fetch",
                     source_channel="wechat",

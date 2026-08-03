@@ -130,6 +130,13 @@ def build_parser() -> argparse.ArgumentParser:
     wechat_source.add_argument(
         "--feed", help="RSS/Atom bridge URL (Wechat2RSS, we-mp-rss, RSSHub, ...)"
     )
+    wechat_source.add_argument(
+        "--album",
+        metavar="ALBUM_ID",
+        help="Bulk-import a WeChat 合集 by album_id, e.g. 3457885223537541125. "
+        "Needs no login. Find the id in the page source of any article in that "
+        "album (album_id: '...').",
+    )
     wechat_cmd.add_argument(
         "--discovery-source",
         default="",
@@ -291,11 +298,19 @@ def _cmd_wechat_import(args: argparse.Namespace) -> dict:
     """
     from dataclasses import replace
 
-    from finer.ingestion.wechat_discovery import RssDiscovery, StaticUrlDiscovery
+    from finer.ingestion.wechat_discovery import (
+        AlbumDiscovery,
+        RssDiscovery,
+        StaticUrlDiscovery,
+    )
     from finer.ingestion.wechat_public_article import RateLimiter
     from finer.ingestion.wechat_url_intake import import_discovered_articles
 
-    if args.feed:
+    if args.album:
+        # Accept a bare album_id, and tolerate a legacy "biz:album_id" pair.
+        biz, _, album_id = args.album.rpartition(":")
+        source = AlbumDiscovery(album_id or args.album, biz=biz)
+    elif args.feed:
         source = RssDiscovery(args.feed)
     elif args.url_file:
         source = StaticUrlDiscovery.from_file(args.url_file, name=f"file:{args.url_file.name}")

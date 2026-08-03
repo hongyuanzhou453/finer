@@ -15,6 +15,7 @@ import pytest
 
 from finer.errors import FinerError
 from finer.ingestion.wechat_discovery import (
+    AlbumDiscovery,
     RssDiscovery,
     StaticUrlDiscovery,
     extract_article_urls,
@@ -24,6 +25,7 @@ from finer.ingestion.wechat_public_article import (
     RateLimiter,
     fetch_public_article,
     identity_from_url,
+    is_fetchable_url,
     is_short_link,
     parse_bridge_article,
     parse_public_article,
@@ -490,11 +492,143 @@ class TestPathSafety:
         assert exc.value.stage == "F0"
 
 
+SIGNED_LONG_URL = (
+    "https://mp.weixin.qq.com/s?__biz=MzIyNjMxOTY0NA==&mid=2247506207&idx=1"
+    "&sn=db096b2c1899da39180877c527a1ce7b&chksm=e870d56cdf075c7a496d3e9c0de6#rd"
+)
+
+
+class TestAlbumDiscovery:
+    """A 合集 is the one bulk route that needs no credentials."""
+
+    ALBUM_PAGE_1 = {
+        "base_resp": {"ret": 0},
+        "getalbum_resp": {
+            "base_info": {"title": "AI技术与AI编程", "article_count": "3"},
+            "continue_flag": "1",
+            "article_list": [
+                {
+                    "title": "第一篇",
+                    "url": "http://mp.weixin.qq.com/s?__biz=B&mid=101&idx=1&sn=a&chksm=c1",
+                    "msgid": "101",
+                    "itemidx": "1",
+                    "create_time": "1785204245",
+                },
+                {
+                    "title": "第二篇",
+                    "url": "http://mp.weixin.qq.com/s?__biz=B&mid=100&idx=1&sn=b&chksm=c2",
+                    "msgid": "100",
+                    "itemidx": "1",
+                    "create_time": "1785104245",
+                },
+            ],
+        },
+    }
+    ALBUM_PAGE_2 = {
+        "base_resp": {"ret": 0},
+        "getalbum_resp": {
+            "base_info": {"title": "AI技术与AI编程"},
+            "continue_flag": "0",
+            "article_list": [
+                {
+                    "title": "第三篇",
+                    "url": "http://mp.weixin.qq.com/s?__biz=B&mid=99&idx=1&sn=c&chksm=c3",
+                    "msgid": "99",
+                    "itemidx": "1",
+                    "create_time": "1785004245",
+                }
+            ],
+        },
+    }
+
+    def _paged(self, monkeypatch, pages):
+        calls: list[tuple[str, str]] = []
+
+        def fake_page(self, begin_msgid="", begin_itemidx=""):
+            calls.append((begin_msgid, begin_itemidx))
+            return pages[len(calls) - 1]["getalbum_resp"]
+
+        monkeypatch.setattr(AlbumDiscovery, "_page", fake_page)
+        return calls
+
+    def test_pages_to_the_end_of_the_album(self, monkeypatch):
+        calls = self._paged(monkeypatch, [self.ALBUM_PAGE_1, self.ALBUM_PAGE_2])
+
+        found = AlbumDiscovery("345788").discover()
+
+        assert [a.title for a in found] == ["第一篇", "第二篇", "第三篇"]
+        # Page 2 must resume from the last item of page 1, not restart.
+        assert calls == [("", ""), ("100", "1")]
+
+    def test_album_urls_are_directly_fetchable(self, monkeypatch):
+        # This is what makes the album route self-sufficient: the listing hands
+        # back chksm-signed URLs, and those fetch without a captcha.
+        self._paged(monkeypatch, [self.ALBUM_PAGE_1, self.ALBUM_PAGE_2])
+        found = AlbumDiscovery("345788").discover()
+        assert all(a.fetchable for a in found)
+        assert all(a.url.startswith("https://") for a in found)
+
+    def test_account_name_comes_from_the_album_base_info(self, monkeypatch):
+        self._paged(monkeypatch, [self.ALBUM_PAGE_1, self.ALBUM_PAGE_2])
+        assert AlbumDiscovery("345788").discover()[0].account_name == "AI技术与AI编程"
+
+    def test_stops_when_continue_flag_clears(self, monkeypatch):
+        calls = self._paged(monkeypatch, [self.ALBUM_PAGE_2])
+        assert len(AlbumDiscovery("345788").discover()) == 1
+        assert len(calls) == 1
+
+    def test_missing_album_is_not_retryable(self, monkeypatch):
+        def fake_urlopen(request, timeout=None):
+            class _R:
+                def read(self):
+                    return b'{"base_resp":{"ret":10004}}'
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    return False
+
+            return _R()
+
+        monkeypatch.setattr(
+            "finer.ingestion.wechat_discovery.urllib.request.urlopen", fake_urlopen
+        )
+        with pytest.raises(FinerError) as exc:
+            AlbumDiscovery("does-not-exist").discover()
+        assert exc.value.retryable is False
+
+
 class TestUrlForm:
     def test_recognizes_fetchable_short_links(self):
         assert is_short_link(ARTICLE_URL)
         assert not is_short_link(LONG_FORM_URL)
         assert not is_short_link("https://example.com/s/abc")
+
+    def test_chksm_signed_long_urls_are_fetchable(self):
+        # Corrects an earlier belief that long-form URLs are always challenged:
+        # the signature is what decides. Verified live — the same URL fetched a
+        # 3.1MB article with chksm and the 17KB captcha shell without it.
+        assert is_fetchable_url(SIGNED_LONG_URL)
+        assert is_fetchable_url(ARTICLE_URL)
+        assert not is_fetchable_url(LONG_FORM_URL)
+        assert not is_fetchable_url("https://example.com/s?chksm=x&__biz=y&mid=1")
+
+    def test_unsigned_long_url_still_fails_fast(self, monkeypatch):
+        slept: list[float] = []
+        monkeypatch.setattr(
+            "finer.ingestion.wechat_public_article.urllib.request.urlopen",
+            _fake_urlopen(
+                "<html>访问过于频繁</html>".encode("utf-8"),
+                final_url="https://mp.weixin.qq.com/mp/wappoc_appmsgcaptcha?poc_token=X",
+            ),
+        )
+        monkeypatch.setattr(
+            "finer.ingestion.wechat_public_article.time.sleep", lambda s: slept.append(s)
+        )
+        with pytest.raises(FinerError):
+            fetch_public_article(LONG_FORM_URL, attempts=3, limiter=None)
+        assert slept == []
 
     def test_identity_survives_in_the_long_url(self):
         assert identity_from_url(LONG_FORM_URL) == ("MzA3NTg4MDUzNQ==", "2657093642", "1")

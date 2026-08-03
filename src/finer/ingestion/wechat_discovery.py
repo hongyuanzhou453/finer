@@ -25,6 +25,7 @@ no credentials of its own.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import urllib.error
@@ -72,10 +73,15 @@ class DiscoveredArticle:
 
     @property
     def fetchable(self) -> bool:
-        """True when the URL form can be fetched directly from WeChat."""
-        from finer.ingestion.wechat_public_article import is_short_link
+        """True when WeChat will serve this URL directly.
 
-        return is_short_link(self.url)
+        Covers both the ``/s/<token>`` share form and a chksm-signed long URL;
+        an unsigned long URL is not fetchable and falls back to
+        ``content_html`` if the bridge supplied one.
+        """
+        from finer.ingestion.wechat_public_article import is_fetchable_url
+
+        return is_fetchable_url(self.url)
 
 
 @runtime_checkable
@@ -281,6 +287,161 @@ class RssDiscovery:
                 "Imports will fall back to the feed's own content where present.",
                 self.name,
             )
+        return found
+
+
+class AlbumDiscovery:
+    """Enumerate a WeChat 合集 (album) — the one bulk route that needs no login.
+
+    ``mp/appmsgalbum?action=getalbum`` answers without any cookie or session,
+    pages through the whole album, and — critically — returns each article's
+    URL **with its ``chksm`` signature**, which is what makes those URLs
+    fetchable. So this is self-sufficient: discovery and fetch both work with
+    no credentials and therefore no account at risk.
+
+    Verified 2026-08-03 against a live album: 66 articles spanning 2024-05-16
+    to 2026-07-28, matching the album's own ``article_count`` exactly, and all
+    66 URLs directly fetchable. Only ``album_id`` is needed — the endpoint
+    ignores ``__biz``.
+
+    The limit is structural, not technical: an album is a folder the *author*
+    curates, so this covers the articles they filed into it, not everything the
+    account ever published. Accounts with no album cannot be enumerated this
+    way at all — and most do not have one. Get ``album_id`` from any article
+    page belonging to the album (``album_id: '…'`` in its page source);
+    ``action=getalbumlist``, which would list an account's albums, does require
+    a session and is therefore not usable here.
+    """
+
+    PAGE_SIZE = 30
+
+    def __init__(
+        self,
+        album_id: str,
+        *,
+        biz: str = "",
+        name: str = "",
+        timeout: float = 25.0,
+        account_name: str = "",
+        max_pages: int = 40,
+    ) -> None:
+        # ``__biz`` is accepted for URL fidelity but is not required: verified
+        # 2026-08-03 that the endpoint returns the same album for a wrong
+        # ``__biz`` and for none at all — ``album_id`` alone identifies it.
+        self.biz = biz
+        self.album_id = album_id
+        self.name = name or f"album:{album_id}"
+        self.timeout = timeout
+        self.account_name = account_name
+        self.max_pages = max_pages
+
+    def _page(self, begin_msgid: str = "", begin_itemidx: str = "") -> dict:
+        query = {
+            "__biz": self.biz,
+            "action": "getalbum",
+            "album_id": self.album_id,
+            "f": "json",
+            "count": str(self.PAGE_SIZE),
+        }
+        if begin_msgid:
+            query["begin_msgid"] = begin_msgid
+            query["begin_itemidx"] = begin_itemidx
+        url = (
+            f"https://{WECHAT_ARTICLE_HOST}/mp/appmsgalbum?"
+            + urllib.parse.urlencode(query)
+        )
+        request = urllib.request.Request(
+            url,
+            headers={
+                # The album endpoint is served to the in-app webview, so it
+                # expects a MicroMessenger UA.
+                "User-Agent": (
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) "
+                    "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 "
+                    "MicroMessenger/8.0.49(0x18003128) NetType/WIFI Language/zh_CN"
+                ),
+                "Referer": f"https://{WECHAT_ARTICLE_HOST}/",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8", "replace"))
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            raise FinerError(
+                ErrorCode.F0_EXT_001,
+                f"WeChat album listing failed: {exc}",
+                stage="F0",
+                operation="wechat_album_discovery",
+                source_channel="wechat",
+                retryable=True,
+                cause=exc,
+                details={"album_id": self.album_id},
+            ) from exc
+
+        ret = payload.get("base_resp", {}).get("ret")
+        if ret not in (0, None):
+            # 10004 is "no such album" — a permanent answer, not worth retrying.
+            raise FinerError(
+                ErrorCode.F0_EXT_002,
+                f"WeChat album listing returned ret={ret}",
+                stage="F0",
+                operation="wechat_album_discovery",
+                source_channel="wechat",
+                retryable=ret not in (10004,),
+                details={"album_id": self.album_id, "ret": ret},
+            )
+        return payload.get("getalbum_resp") or {}
+
+    def discover(self) -> list[DiscoveredArticle]:
+        found: list[DiscoveredArticle] = []
+        seen: set[str] = set()
+        begin_msgid = begin_itemidx = ""
+        account_name = self.account_name
+
+        for _ in range(self.max_pages):
+            page = self._page(begin_msgid, begin_itemidx)
+            if not account_name:
+                account_name = (page.get("base_info") or {}).get("title", "")
+            articles = page.get("article_list") or []
+            if not articles:
+                break
+
+            for item in articles:
+                url = (item.get("url") or "").replace("http://", "https://", 1)
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                published = None
+                if item.get("create_time"):
+                    try:
+                        published = datetime.fromtimestamp(
+                            int(item["create_time"]), tz=timezone.utc
+                        )
+                    except (ValueError, OSError, OverflowError):
+                        published = None
+                found.append(
+                    DiscoveredArticle(
+                        url=url,
+                        title=item.get("title", ""),
+                        published_at=published,
+                        account_name=account_name,
+                        discovery_source=self.name,
+                    )
+                )
+
+            if str(page.get("continue_flag")) != "1":
+                break
+            begin_msgid = str(articles[-1].get("msgid", ""))
+            begin_itemidx = str(articles[-1].get("itemidx", ""))
+            if not begin_msgid:
+                break
+
+        logger.info(
+            "Album %s yielded %d articles (%d directly fetchable)",
+            self.name,
+            len(found),
+            sum(1 for a in found if a.fetchable),
+        )
         return found
 
 
