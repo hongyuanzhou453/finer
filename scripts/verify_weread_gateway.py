@@ -234,7 +234,25 @@ def main() -> int:
     except GatewayError as exc:
         record("/shelf/sync", False, str(exc))
 
-    print("\n=== 5. /book/chapterinfo — is the chapter list an article list? ===")
+    print("\n=== 5. /book/info — does deepLink carry an article link? ===")
+    for bid, title in mp_book_ids[:2]:
+        if not bid:
+            continue
+        time.sleep(args.interval)
+        try:
+            info = call("/book/info", key, bookId=bid)
+            path = dump(args.outdir, f"25_bookinfo_{bid.replace('/', '_')[:40]}", info)
+            deep_link = str(info.get("deepLink", ""))
+            record(
+                f"/book/info [{title or bid}]",
+                True,
+                f"deepLink={deep_link[:80] or '(none)'} -> {path.name}",
+                info,
+            )
+        except GatewayError as exc:
+            record(f"/book/info [{title or bid}]", False, str(exc))
+
+    print("\n=== 6. /book/chapterinfo — is the chapter list an article list? ===")
     probed = 0
     for bid, title in mp_book_ids:
         if not bid or probed >= 2:
