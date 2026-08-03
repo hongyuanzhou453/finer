@@ -104,6 +104,30 @@ class ArticleState(str, Enum):
     EMPTY = "empty"
 
 
+_UNSAFE_PATH_CHARS = re.compile(r"[^A-Za-z0-9_.=+-]")
+
+
+def sanitize_path_component(value: str, *, fallback: str) -> str:
+    """Make an identifier safe to use as a single filesystem path component.
+
+    Account and article identifiers reach us from untrusted places — query
+    parameters of a URL supplied by a third-party RSS bridge, and ``var``
+    declarations scraped out of a remote page — and then become directory and
+    file names under ``data/raw/wechat/``. Without this, a feed carrying
+    ``__biz=../../../etc`` writes outside the data root entirely.
+
+    Even benign values need it: ``__biz`` is base64, whose alphabet includes
+    ``/``, which would silently split one account across nested directories.
+
+    Traversal segments are rejected outright rather than escaped, so no input
+    can produce ``.`` or ``..`` by any encoding route.
+    """
+    cleaned = _UNSAFE_PATH_CHARS.sub("_", value.strip())
+    if not cleaned or set(cleaned) <= {".", "_"}:
+        return fallback
+    return cleaned[:120]
+
+
 @dataclass(frozen=True)
 class PublicArticle:
     """One fetched public article, normalized for F0 intake."""
@@ -128,16 +152,22 @@ class PublicArticle:
 
         Falls back to the short-link token when a page omits ``mid``/``idx``
         (rare, seen on some migrated accounts) so a record can still be built.
+        Sanitized because this value becomes a filename.
         """
         if self.mid and self.idx:
-            return f"{self.mid}_{self.idx}"
+            return sanitize_path_component(f"{self.mid}_{self.idx}", fallback="unknown")
         tail = urllib.parse.urlparse(self.source_url).path.rsplit("/", 1)[-1]
-        return tail or "unknown"
+        return sanitize_path_component(tail, fallback="unknown")
 
     @property
     def account_id(self) -> str:
-        """Canonical account identity, preferring the ``gh_`` name over ``__biz``."""
-        return self.ghid or self.biz or "unknown_account"
+        """Canonical account identity, preferring the ``gh_`` name over ``__biz``.
+
+        Sanitized because this value becomes a directory name.
+        """
+        return sanitize_path_component(
+            self.ghid or self.biz, fallback="unknown_account"
+        )
 
     @property
     def ok(self) -> bool:

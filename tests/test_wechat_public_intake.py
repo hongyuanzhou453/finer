@@ -27,6 +27,7 @@ from finer.ingestion.wechat_public_article import (
     is_short_link,
     parse_bridge_article,
     parse_public_article,
+    sanitize_path_component,
     validate_article_url,
 )
 from finer.ingestion.wechat_discovery import DiscoveredArticle
@@ -230,6 +231,75 @@ class TestFetch:
 
         assert exc.value.retryable is False
         assert slept == [], "must not back off on a permanently-unfetchable form"
+
+
+class TestPathSafety:
+    """Identifiers reach us from untrusted input and become path components.
+
+    ``__biz`` is read straight out of a URL query supplied by a third-party RSS
+    bridge; ``user_name``/``mid``/``idx`` are scraped from a remote page. All of
+    them end up as directory and file names under ``data/raw/wechat/``.
+    """
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("gh_1652e0dbaabd", "gh_1652e0dbaabd"),
+            ("MzA3NTg4MDUzNQ==", "MzA3NTg4MDUzNQ=="),
+            # base64's alphabet includes '/', which would silently split one
+            # account across nested directories even with no attacker involved.
+            ("MjM5N/Tc2MDYxMw==", "MjM5N_Tc2MDYxMw=="),
+            ("../../../../tmp/pwned", ".._.._.._.._tmp_pwned"),
+            ("..", "FB"),
+            (".", "FB"),
+            ("", "FB"),
+            ("   ", "FB"),
+            ("a/b\\c:d*e?f", "a_b_c_d_e_f"),
+        ],
+    )
+    def test_sanitizer_never_yields_a_traversal_component(self, raw, expected):
+        assert sanitize_path_component(raw, fallback="FB") == expected
+
+    def test_sanitizer_bounds_length(self):
+        assert len(sanitize_path_component("a" * 500, fallback="FB")) == 120
+
+    def test_hostile_biz_cannot_escape_the_raw_archive(self, tmp_path):
+        evil = (
+            "https://mp.weixin.qq.com/s?__biz=../../../../tmp/pwned&mid=9&idx=1"
+        )
+        article = parse_bridge_article(ARTICLE_BODY, evil, title="t")
+        assert "/" not in article.account_id
+
+        outcome = import_article(
+            evil,
+            root=tmp_path,
+            article=article,
+            acquired_via="bridge_content",
+            register_index=False,
+        )
+
+        assert outcome.status == "imported"
+        raw_root = (tmp_path / "data" / "raw" / "wechat").resolve()
+        assert raw_root in outcome.raw_md_path.resolve().parents
+        for written in tmp_path.rglob("*"):
+            assert tmp_path.resolve() in written.resolve().parents
+
+    def test_short_link_tail_of_dotdot_does_not_become_the_article_id(self):
+        article = parse_public_article(
+            _page(ARTICLE_BODY).replace('var mid = "2657093642" || "";', ""),
+            "https://mp.weixin.qq.com/s/..",
+        )
+        assert article.article_id == "unknown"
+
+    def test_containment_guard_fires_if_the_sanitizer_ever_regresses(self, tmp_path):
+        # Guard the guard: bypass sanitization the way a future refactor might,
+        # and confirm the write is refused rather than silently escaping.
+        from finer.ingestion.wechat_url_intake import _assert_contained
+
+        with pytest.raises(FinerError) as exc:
+            _assert_contained(tmp_path, "../../..", "x", url=ARTICLE_URL)
+        assert exc.value.retryable is False
+        assert exc.value.stage == "F0"
 
 
 class TestUrlForm:

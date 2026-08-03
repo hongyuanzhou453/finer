@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from finer.errors import ErrorCode, FinerError
 from finer.ingestion.wechat_public_article import (
     ArticleState,
     PublicArticle,
@@ -132,6 +133,30 @@ def _build_receipt(
     )
 
 
+def _assert_contained(root: Path, account_id: str, article_id: str, *, url: str) -> None:
+    """Refuse to write outside ``{root}/data/raw/wechat/``.
+
+    A backstop behind
+    :func:`~finer.ingestion.wechat_public_article.sanitize_path_component`.
+    Both identifiers originate in untrusted input — a third-party feed's URL
+    query, or ``var`` declarations scraped from a remote page — and both become
+    path components. Sanitizing at the source is the fix; this makes a future
+    regression in that sanitizer fail loudly instead of writing to disk.
+    """
+    base = (root / "data" / "raw" / "wechat").resolve()
+    target = (base / account_id / f"{article_id}.md").resolve()
+    if base not in target.parents:
+        raise FinerError(
+            ErrorCode.F0_IO_001,
+            "Refusing to write a WeChat artifact outside the raw archive root",
+            stage="F0",
+            operation="wechat_article_archive",
+            source_channel="wechat",
+            retryable=False,
+            details={"source_url": url, "account_id": account_id, "article_id": article_id},
+        )
+
+
 def _register_f0_index(record: ContentRecord, receipt: ImportReceipt) -> bool:
     """Best-effort Project Memory registration (idempotent INSERT OR IGNORE).
 
@@ -191,6 +216,7 @@ def import_article(
     store = WeChatArtifactStore(root)
     account_id = fetched.account_id
     article_id = fetched.article_id
+    _assert_contained(root, account_id, article_id, url=url)
 
     # Probe for an existing record before writing anything. content_id is a
     # pure function of (account_id, article_id), so this is a cheap stat, not
