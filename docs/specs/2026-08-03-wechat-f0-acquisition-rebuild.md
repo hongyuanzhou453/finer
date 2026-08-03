@@ -6,7 +6,7 @@
 
 微信于 **2026-07-29** 关闭了公众平台后台「搜索其他公众号文章」的接口，48 小时内所有基于该链路的开源工具集体失效——Finer F0 依赖的 `wechat-article-exporter` 于 07-30 宣布停止维护。本次不修旧链路，而是**把 discovery 与 fetch 拆成两个独立可替换的关注点**，并落地一条零凭证、零封号风险的 fetch 路径：给定文章 URL → 完整 F0 四件套（raw archive + ContentRecord + ImportReceipt + Project Memory 索引）。
 
-已在本机真实数据上验证：12/12 篇公开文章抓取成功（26 req/min 无封禁），Wechat2RSS 实时 feed 端到端入库成功。全量测试 **3908 passed / 0 failed**，新增 78 条测试。
+已在本机真实数据上验证：12/12 篇公开文章抓取成功（26 req/min 无封禁），Wechat2RSS 实时 feed 端到端入库成功。全量测试 **3915 passed / 0 failed**，新增 85 条测试。
 
 ---
 
@@ -15,11 +15,11 @@
 | 文件 | 类型 | 说明 |
 |---|---|---|
 | `src/finer/ingestion/wechat_public_article.py` | 新增 | 公开文章页抓取与解析：身份提取、页面状态分类、限速器、URL 形式判定 |
-| `src/finer/ingestion/wechat_discovery.py` | 新增 | Discovery 抽象 + `RssDiscovery`（任意 RSS/Atom bridge）+ `StaticUrlDiscovery` |
+| `src/finer/ingestion/wechat_discovery.py` | 新增 | Discovery 抽象 + `AlbumDiscovery`（合集批量，免登录）+ `RssDiscovery`（任意 RSS/Atom bridge）+ `StaticUrlDiscovery` |
 | `src/finer/ingestion/wechat_url_intake.py` | 新增 | F0 落盘编排：四件套产出、幂等、批量、bridge 内容降级 |
 | `src/finer/services/wechat_content_record_builder.py` | 修改 | 新增 `build_public_article_record()`；补 `TYPE_CHECKING` 导入 |
 | `src/finer/cli.py` | 修改 | 新增 `wechat-import` 子命令 |
-| `tests/test_wechat_public_intake.py` | 新增 | 78 条测试，全离线 |
+| `tests/test_wechat_public_intake.py` | 新增 | 85 条测试，全离线 |
 
 未改动：`ContentRecord` schema（`wechat_article` 已在闭集内）、`contracts.ts`、数据库结构、既有 exporter 代码。
 
@@ -47,18 +47,24 @@
 
 磁盘证据：`data/F0_intake/` 下**没有 wechat 子目录**，0 条真实 ContentRecord；`data/raw/wechat/` 40 个文件全在 `test_account/` 夹具目录下。
 
-### 3. 只有短链接可抓，长链接形式被无条件挑战
+### 3. 决定能否抓取的是 `chksm` 签名，不是长短链
 
-这是本次最有架构后果的发现：
+> **本节已按后续实测更正。** 初版结论是「长链一律被拦」，这不准确——真正的分界是签名。
 
 | URL 形式 | 结果 |
 |---|---|
-| `/s/<token>`（分享短链） | HTTP 200，完整正文，稳定 |
-| `/s?__biz=&mid=&idx=&sn=`（规范长链） | 一律 302 到 `wappoc_appmsgcaptcha` 验证页 |
+| `/s/<token>`（分享短链） | HTTP 200，完整正文 |
+| `/s?__biz=&mid=&idx=&sn=&chksm=…`（**带签名**长链） | HTTP 200，完整正文（实测 3.1 MB） |
+| `/s?__biz=&mid=&idx=&sn=`（**无签名**长链） | 302 到 `wappoc_appmsgcaptcha`，17 KB 验证页 |
 
-验证方法：对**同一篇文章**，短链抓取成功后立即用长链请求 → 被拦截；换 iOS MicroMessenger、Android MicroMessenger、桌面 Chrome 三种 UA → 全部被拦截。**这是 URL 形式的属性，不是限流、不是 IP 信誉，改 header 绕不过去。**
+决定性对照：同一条 URL，带 `chksm` 返回 3.1 MB 正文，把 `chksm` 摘掉立刻变 17 KB 验证页。无签名长链在 iOS/Android MicroMessenger 与桌面 Chrome 三种 UA 下均被拦，所以那仍是 URL 属性而非限流或 IP 信誉——只是「属性」的正确定义是**有没有签名**。
 
-直接后果：**Wechat2RSS 的 feed 只发长链（实测 0 短 / 35 长），其 URL 无法回源抓取**，可用的是它 `content:encoded` 里自带的全文。
+这条更正很要紧，因为它决定一个 discovery 源是否自给自足：
+
+- **`getalbum` 返回带签名长链** → 自给自足，discovery 与 fetch 都不需要凭证（见发现 11）
+- **Wechat2RSS 的 feed 剥掉了签名**（实测 0 短 / 35 无签名长链）→ 其 URL 无法回源，只能用它 `content:encoded` 里的全文
+
+代码侧对应 `is_fetchable_url()`；`is_short_link()` 保留但只回答「是不是分享短链」这个形状问题。
 
 ### 4. 验证页有 JS 渲染变体（已修复的真缺陷）
 
@@ -137,7 +143,35 @@
 
 这对选型有直接影响——见「未解决项」第 1 条。
 
-### 10. 限速的真实边界比预想宽
+### 10. 合集（album）是唯一跑通的免登录批量路线
+
+问题起因：能不能给一个文章链接，就把该账号发过的内容全拿下来。答案是**有条件的可以**——通过合集。
+
+`mp/appmsgalbum?action=getalbum` **完全不需要 cookie 或 session**，能翻完整个合集，而且返回的每条 URL **自带 `chksm` 签名**（见发现 3），因此可以直接抓。这是目前唯一一条 discovery 与 fetch 两端都零凭证的路线，也就没有会被封的账号。
+
+实测（2026-08-03，一个真实合集）：
+
+```text
+第1页 +20  continue_flag=1  最早 2026-05-19
+第2页 +20  continue_flag=1  最早 2026-01-09
+第3页 +20  continue_flag=1  最早 2024-12-11
+第4页  +6  continue_flag=0  最早 2024-05-16
+合计 66 篇，跨度 2024-05-16 → 2026-07-28
+```
+
+`base_info.article_count` 恰为 `66`，**与实际抓到的数量精确吻合**，说明翻页没有截断。66 条 URL 全部可直接抓取；端到端导入后 `acquired_via=public_url`（一手抓取，非 bridge 二手内容），raw HTML 完整归档。
+
+**只需要 `album_id`。** 实测把 `__biz` 换成错误值、甚至留空，返回的都是同一个合集——该参数被服务端忽略。`album_id` 从合集内任意一篇文章的页面源码里取（`album_id: '…'`）。
+
+**限制是结构性的，不是技术性的：**
+
+- 合集是**作者手动整理的文件夹**，覆盖的是作者归入其中的文章，不等于该账号的全部发文
+- 没建合集的号完全无法用这条路枚举——**本次问题里给的示例账号「方伟看十年」正是这种**（其文章页 `album_info_list = []`）
+- `action=getalbumlist`（列出某账号的所有合集）**需要 session**，所以无法从账号反查合集，只能从「已知属于某合集的一篇文章」正向进入
+
+CLI：`python -m finer.cli wechat-import --album <album_id>`
+
+### 11. 限速的真实边界比预想宽
 
 本机住宅 IP + 普通 Android UA，12 篇不同文章背靠背请求，26 req/min，全部 200，无验证页。失败的 2 篇是真实内容状态（`该内容已被发布者删除` / `此内容因违规无法查看`），不是反爬。
 
@@ -201,7 +235,7 @@ record metadata 带 `acquired_via`（`public_url` / `bridge_content`）与 `disc
 
 ```bash
 pytest tests/ -q --ignore=tests/test_wechat_live.py
-# 3908 passed, 69 skipped  （新增 78 条，无回归）
+# 3915 passed, 69 skipped  （新增 85 条，无回归）
 ```
 
 真实数据端到端：
