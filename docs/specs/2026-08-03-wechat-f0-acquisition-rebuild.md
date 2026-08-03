@@ -6,7 +6,7 @@
 
 微信于 **2026-07-29** 关闭了公众平台后台「搜索其他公众号文章」的接口，48 小时内所有基于该链路的开源工具集体失效——Finer F0 依赖的 `wechat-article-exporter` 于 07-30 宣布停止维护。本次不修旧链路，而是**把 discovery 与 fetch 拆成两个独立可替换的关注点**，并落地一条零凭证、零封号风险的 fetch 路径：给定文章 URL → 完整 F0 四件套（raw archive + ContentRecord + ImportReceipt + Project Memory 索引）。
 
-已在本机真实数据上验证：12/12 篇公开文章抓取成功（26 req/min 无封禁），Wechat2RSS 实时 feed 端到端入库成功。全量测试 **3872 passed / 0 failed**，新增 42 条测试。
+已在本机真实数据上验证：12/12 篇公开文章抓取成功（26 req/min 无封禁），Wechat2RSS 实时 feed 端到端入库成功。全量测试 **3908 passed / 0 failed**，新增 78 条测试。
 
 ---
 
@@ -19,7 +19,7 @@
 | `src/finer/ingestion/wechat_url_intake.py` | 新增 | F0 落盘编排：四件套产出、幂等、批量、bridge 内容降级 |
 | `src/finer/services/wechat_content_record_builder.py` | 修改 | 新增 `build_public_article_record()`；补 `TYPE_CHECKING` 导入 |
 | `src/finer/cli.py` | 修改 | 新增 `wechat-import` 子命令 |
-| `tests/test_wechat_public_intake.py` | 新增 | 42 条测试，全离线 |
+| `tests/test_wechat_public_intake.py` | 新增 | 78 条测试，全离线 |
 
 未改动：`ContentRecord` schema（`wechat_article` 已在闭集内）、`contracts.ts`、数据库结构、既有 exporter 代码。
 
@@ -76,7 +76,19 @@
 
 修法是双层的——在身份层净化（保证路径组件与落盘 metadata 一致），并在写盘前加围栏（未来若净化逻辑回退，会响亮报错而不是落到磁盘上）。穿越段做替换而非剥离，且全由点构成的标识符退回占位符，因此没有任何编码路径能产出 `.` 或 `..`。对合法标识符净化是恒等变换：真实文章的 `content_id` 未变（已对真实数据验证），且磁盘上 0 条 wechat ContentRecord，无迁移问题。
 
-### 6. 限速的真实边界比预想宽
+### 6. 四路对抗性审查发现的其余缺陷（已修，commit `acdeccd5`）
+
+对新代码做了正确性/安全/契约/测试覆盖四个视角的对抗性审查，提出 24 条、独立复核后 20 条成立。归并后的根因：
+
+**正文边界失守（最严重）。** Python 的 `HTMLParser` 不懂 HTML5：裸 `<img>` / `<br>` 只报 start tag 没有对应 end tag，深度计数器永不回平，`#js_content` 真正的 `</div>` 因此从未被识别，**页脚（二维码、赞赏、阅读原文、广告）被当作正文归档**。更糟的是它同时击穿了长度守卫——正文只有「加载中」的页面因为拼上了泄漏的页脚而被判为 OK。这正是本模块存在的意义所要防的那件事。现在 void 标签在正文和元数据捕获两处都对称地排除出计数。
+
+**身份坍缩（数据丢失）。** `article_id` 在缺 `mid`/`idx` 时回退到 URL 路径尾巴，而长链的路径就是光秃秃的 `/s`——于是所有这类文章都拿到 `article_id="s"`，塌到同一个 `content_id`，**第二篇被当成 duplicate 静默丢弃**。现在退化的身份就等于没有身份，没有身份的页面直接跳过，绝不编造。
+
+**正文与页面状态混淆。** 那些状态标记本身就是普通中文句子。一篇讨论审查、正文里引用了「该内容已被发布者删除」的真文章，会被判定为已删除而丢掉——而这恰恰是这条流水线最想抓的内容。现在只有在找不到正文时才参考可见标记；验证页外壳标记和重定向 URL 是机器痕迹，不会出现在文章里，因此始终可信。
+
+其余：撕裂的导入不再被永久判为 duplicate（原子写 + 重复探测改到最后落盘的收据上）；限速器默认值不再意外关闭限速；bridge 标题无法伪造 provenance 行；bridge 时间戳归一到 UTC；feed URL 在日志与错误信封中脱敏（它常带 token）；二次复杂度的空白清理换成线性；未知 charset 不再以裸 `LookupError` 逃出 Line F 信封。
+
+### 7. 限速的真实边界比预想宽
 
 本机住宅 IP + 普通 Android UA，12 篇不同文章背靠背请求，26 req/min，全部 200，无验证页。失败的 2 篇是真实内容状态（`该内容已被发布者删除` / `此内容因违规无法查看`），不是反爬。
 
@@ -140,7 +152,7 @@ record metadata 带 `acquired_via`（`public_url` / `bridge_content`）与 `disc
 
 ```bash
 pytest tests/ -q --ignore=tests/test_wechat_live.py
-# 3885 passed, 69 skipped  （新增 55 条，无回归）
+# 3908 passed, 69 skipped  （新增 78 条，无回归）
 ```
 
 真实数据端到端：
