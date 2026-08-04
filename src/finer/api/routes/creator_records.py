@@ -20,6 +20,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Query
 
 from finer.credibility.record_card import build_record_cards
+from finer.projections.materializer import read_record_cards
 from finer.errors.exceptions import FinerError
 from finer.paths import DATA_ROOT
 from finer.schemas.credibility import CreatorRecordCard
@@ -38,6 +39,11 @@ def _load_cards(signal_class: Optional[str]) -> List[CreatorRecordCard]:
         hit = _cards_cache.get(key)
         if hit is not None and (now - hit[0]) < _TTL_SECONDS:
             return hit[1]
+        # 投影优先（PROJ-1）；不可用时回退扫文件活算
+        projected = read_record_cards(DATA_ROOT, signal_class)
+        if projected is not None:
+            _cards_cache[key] = (now, projected)
+            return projected
         from finer.services.repository import TradeActionRepository
 
         repo = TradeActionRepository(

@@ -45,6 +45,29 @@ def _canonical(symbol: str) -> Optional[str]:
     return parsed.symbol if parsed is not None and parsed.symbol else None
 
 
+def group_by_canonical_ticker(intents: Iterable[dict]) -> Dict[str, List[dict]]:
+    """按 canonical 符号分组（方言归一只做一遍——批量物化的性能前提）。"""
+    groups: Dict[str, List[dict]] = {}
+    for intent in intents:
+        canonical = _canonical(intent.get("target_symbol") or "")
+        if canonical is None:
+            continue
+        groups.setdefault(canonical, []).append(intent)
+    return groups
+
+
+def build_all_ticker_consensus(
+    intents: Iterable[dict],
+) -> Dict[str, TickerConsensusView]:
+    """全部标的的共识视图（PROJ-1 物化入口）。"""
+    views: Dict[str, TickerConsensusView] = {}
+    for canonical, group in group_by_canonical_ticker(intents).items():
+        view = _view_from_group(canonical, group)
+        if view is not None:
+            views[canonical] = view
+    return views
+
+
 def build_ticker_consensus(
     intents: Iterable[dict],
     ticker: str,
@@ -58,12 +81,19 @@ def build_ticker_consensus(
     canonical = _canonical(ticker)
     if canonical is None:
         return None
+    group = [
+        i for i in intents
+        if _canonical(i.get("target_symbol") or "") == canonical
+    ]
+    return _view_from_group(canonical, group)
 
+
+def _view_from_group(
+    canonical: str, group: List[dict]
+) -> Optional[TickerConsensusView]:
     by_source: Dict[str, List[dict]] = {}
     names: List[str] = []
-    for intent in intents:
-        if _canonical(intent.get("target_symbol") or "") != canonical:
-            continue
+    for intent in group:
         creator = (intent.get("creator_id") or "").strip()
         if not creator:
             continue

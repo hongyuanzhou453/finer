@@ -28,6 +28,8 @@ def client(monkeypatch):
         "finer.services.repository.TradeActionRepository",
         lambda **kw: _FakeRepo(),
     )
+    # 绕过真实投影库，强制走活算路径（投影读侧由 test_projections 覆盖）
+    monkeypatch.setattr(mod, "read_record_cards", lambda *a, **k: None)
     mod._cards_cache = {}          # 隔离 TTL 缓存
     from finer.api.server import app
     return TestClient(app, raise_server_exceptions=False)

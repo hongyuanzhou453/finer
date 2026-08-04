@@ -18,7 +18,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter
 
-from finer.credibility.consensus import build_ticker_consensus
+from finer.credibility.consensus import build_ticker_consensus, _canonical
+from finer.projections.materializer import read_consensus
 from finer.errors.exceptions import FinerError
 from finer.paths import DATA_ROOT
 from finer.schemas.credibility import TickerConsensusView
@@ -50,9 +51,13 @@ def _load_intents(data_root: Path) -> List[dict]:
 @router.get("/{symbol}/consensus")
 def get_ticker_consensus(symbol: str) -> dict:
     """这只票，谁说过什么 —— 等权共识记录（非预测，见 view.notes）。"""
-    view: Optional[TickerConsensusView] = build_ticker_consensus(
-        _load_intents(DATA_ROOT), symbol
-    )
+    # 投影优先（PROJ-1）；库缺失/未覆盖时回退活算，开发环境不依赖物化
+    view: Optional[TickerConsensusView] = None
+    canonical = _canonical(symbol)
+    if canonical is not None:
+        view = read_consensus(DATA_ROOT, canonical)
+    if view is None:
+        view = build_ticker_consensus(_load_intents(DATA_ROOT), symbol)
     if view is None:
         raise FinerError(
             "API_NTF_001",
