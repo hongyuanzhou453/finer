@@ -43,6 +43,7 @@ REGISTRY: Dict[str, Tuple[str, str, str]] = {
     "ReviewDirection": ("finer.schemas.contract", "ReviewDirection", "literal"),
     "EntryStyle": ("finer.schemas.kol_profile", "ENTRY_STYLE_LITERAL", "literal"),
     "IntentDirection": ("finer.schemas.investment_intent", "DIRECTION_LITERAL", "literal"),
+    "ConsensusDirection": ("finer.schemas.credibility", "CONSENSUS_DIRECTION_LITERAL", "literal"),
     "AnnotationTaskId": ("finer.schemas.annotation", "AnnotationTaskId", "literal"),
     "AnnotationExportMode": ("finer.schemas.annotation", "AnnotationExportMode", "literal"),
     "AnnotationItemStatus": ("finer.schemas.annotation", "AnnotationItemStatus", "literal"),

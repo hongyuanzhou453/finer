@@ -1776,3 +1776,41 @@ export type AuditTraceBundle = {
   envelope: EnvelopeContext; //                  F1/F0 source
   provenance?: AuditProvenance; //               F1.5 topic + F2 sector proxy
 };
+
+// ---------------------------------------------------------------------------
+// CRD-3 个股共识（镜像 finer.schemas.credibility；值集由 check_contract_drift 守护）
+// ---------------------------------------------------------------------------
+
+export type ConsensusDirection = "bullish" | "bearish" | "neutral" | "mixed";
+
+export type ConsensusSourceRow = {
+  creator_id: string;
+  direction: ConsensusDirection;
+  rating?: string | null;
+  target_price_value?: number | null;
+  target_price_currency?: string | null;
+  report_date?: string | null;
+  intent_id: string; // 下钻入口：F3→F2 证据原文
+  n_reports: number;
+};
+
+export type TargetPriceSummary = {
+  currency: string;
+  n: number;
+  min_value: number;
+  median_value: number;
+  max_value: number;
+  excluded_unit_ambiguous: number;
+  excluded_currency_mismatch: number;
+};
+
+export type TickerConsensusView = {
+  ticker: string;
+  target_names: string[];
+  n_sources: number;
+  direction_counts: Record<string, number>;
+  directional_agreement?: number | null;
+  latest_by_source: ConsensusSourceRow[];
+  target_prices?: TargetPriceSummary | null;
+  notes: string[]; // 口径声明，UI 必须逐条展示（CRD-2 纪律）
+};
