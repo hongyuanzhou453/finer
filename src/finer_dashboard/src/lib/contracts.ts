@@ -1814,3 +1814,53 @@ export type TickerConsensusView = {
   target_prices?: TargetPriceSummary | null;
   notes: string[]; // 口径声明，UI 必须逐条展示（CRD-2 纪律）
 };
+
+// ---------------------------------------------------------------------------
+// CRD-1 记录卡 + CRD-2 效力门（镜像 finer.schemas.credibility / significance）
+// ---------------------------------------------------------------------------
+
+export type SampleTier = "sufficient" | "provisional" | "insufficient";
+
+export type DisplayPolicy = "show" | "show_with_warning" | "count_only";
+
+export type PredictiveClaimVerdict = {
+  metric: string;
+  permitted: boolean;
+  tested_at?: string | null;
+  sample_size?: number | null;
+  evidence?: string | null;
+  summary?: string | null;
+  scope_note?: string | null;
+};
+
+export type SampleSufficiency = {
+  settled_n: number;
+  total_n: number;
+  successes: number;
+  point_estimate?: number | null;
+  wilson_low?: number | null;
+  wilson_high?: number | null;
+  ci_width?: number | null;
+  confidence: number;
+  coverage_ratio?: number | null;
+  coverage_penalised: boolean;
+  tier: SampleTier;
+  display_policy: DisplayPolicy; // 前端必须消费：count_only 时不得显示任何比率
+  predictive_claim?: PredictiveClaimVerdict | null;
+  notes: string[];
+};
+
+export type CreatorRecordCard = {
+  creator_id: string;
+  signal_class?: string | null;
+  n_total: number;
+  n_settled: number;
+  wins: number;
+  mean_return?: number | null;
+  median_return?: number | null;
+  expected_win_rate?: number | null;
+  market_mix: Record<string, number>;
+  first_action_at?: string | null;
+  last_action_at?: string | null;
+  sufficiency: SampleSufficiency;
+};

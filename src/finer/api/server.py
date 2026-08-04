@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from finer.api.routes import files, review, stats, integrations, streams, sources, enrichment, bilibili, wechat, rlhf, extraction, aggregation, system, opinions, metrics, lineage, sentiment, backtest, bbdown, text_analysis, kol, kol_style, kol_registry, f0_index, annotation, audit, ticker
+from finer.api.routes import files, review, stats, integrations, streams, sources, enrichment, bilibili, wechat, rlhf, extraction, aggregation, system, opinions, metrics, lineage, sentiment, backtest, bbdown, text_analysis, kol, kol_style, kol_registry, f0_index, annotation, audit, ticker, creator_records
 from finer.api.middleware import setup_auth_middleware
 from finer.errors import register_error_handlers
 from finer.pipeline.autodrive import PipelineAutoDriver
@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(f0_index.router)
     app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
     app.include_router(ticker.router, prefix="/api/ticker", tags=["ticker"])
+    app.include_router(creator_records.router, prefix="/api/creator", tags=["creator"])
 
     return app
 

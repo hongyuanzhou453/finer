@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Iterable, List, Optional
 
 from finer.backtest.scorecard import build_scorecard
+from finer.credibility.significance import get_significance_gate
 from finer.schemas.credibility import CreatorRecordCard
 from finer.schemas.trade_action import TradeAction
 from finer.timeline.stance_snapshot import signal_clock_of
@@ -35,14 +36,18 @@ def build_record_cards(
     all_actions = list(actions)
     card = build_scorecard(all_actions, signal_class=signal_class)
 
-    # 活动窗口：按信源收集规范信号时钟的最早/最晚值
+    # 活动窗口 + 全量计数（口径与 build_scorecard 一致：排除 superseded）
     window: dict = {}
+    totals: dict = {}
     for action in all_actions:
         if signal_class is not None and action.signal_class != signal_class:
+            continue
+        if (action.metadata or {}).get("superseded_by"):
             continue
         creator = (action.source.creator_id or "").strip()
         if not creator:
             continue
+        totals[creator] = totals.get(creator, 0) + 1
         try:
             stamp = signal_clock_of(action)
         except Exception:  # noqa: BLE001 - 时钟缺失不应挡住记录卡
@@ -69,6 +74,33 @@ def build_record_cards(
             first_action_at=lo,
             last_action_at=hi,
             sufficiency=stats.sufficiency,
+        ))
+
+    # 全未结算的信源不产生 GroupStats，但记录卡必须让它以「只显计数」出现——
+    # 消失就是幸存者偏差（只展示能结算的，恰是 CRD-2 覆盖率门要防的事）。
+    covered = {c.creator_id for c in cards}
+    gate = get_significance_gate()
+    metric = (
+        "broker_excess_win_rate"
+        if signal_class == "broker_recommendation"
+        else None
+    )
+    for creator, total in totals.items():
+        if creator in covered:
+            continue
+        lo, hi = window.get(creator, (None, None))
+        cards.append(CreatorRecordCard(
+            creator_id=creator,
+            signal_class=signal_class,
+            n_total=total,
+            n_settled=0,
+            wins=0,
+            market_mix={},
+            first_action_at=lo,
+            last_action_at=hi,
+            sufficiency=gate.assess(
+                successes=0, settled_n=0, total_n=total, metric=metric
+            ),
         ))
 
     cards.sort(key=lambda c: -c.n_settled)   # 稳定输出序（UI-1 默认序），非排名
