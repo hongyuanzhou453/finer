@@ -16,6 +16,11 @@
      阈值实测校准：0.5 恰好分开真缺陷（MSFT 0.12 / LI 0.43）与正常的
      「股价涨过目标价」（Murata 0.69、AVAV 0.97 等全部 > 0.6）。
 
+  Q3 report_date 时间戳合理性
+     未来日期（> 今天 + 3 天宽限）或早于语料起点（< 2020-01-01）。
+     来历：/discover 页如实显示了摩根士丹利一条 2026-12-16 的记录窗口
+     （T3 从报告排版抽出的未来日期，沿 F0→F5 一路传播）。
+
   Q2 thesis 与 target 归属存疑
      thesis 里出现**已知另一家公司**的名字、且 target 自己的名字/代码在
      thesis 里完全缺席。第二个条件是关键——2026-08-03 实测：只查「提到了
@@ -121,6 +126,10 @@ def main() -> int:
     stats = Counter()
     q1_findings: List[dict] = []
     q2_findings: List[dict] = []
+    q3_findings: List[dict] = []
+    today = date.today()
+    q3_future_limit = today + timedelta(days=3)
+    q3_past_limit = date(2020, 1, 1)
     series_cache: Dict[str, Tuple[Optional[str], Dict[date, float]]] = {}
 
     for path in glob.glob(str(data_root / "F3_intents" / "bri_*.json")):
@@ -178,6 +187,25 @@ def main() -> int:
                             "thesis_head": (md.get("key_thesis") or "")[:140],
                         })
 
+        # ── Q3 report_date 合理性 ────────────────────────────────────
+        if report_date:
+            stats["q3_comparable"] += 1
+            try:
+                rd = date.fromisoformat(report_date)
+            except ValueError:
+                rd = None
+            if rd is None or rd > q3_future_limit or rd < q3_past_limit:
+                stats["q3_flagged"] += 1
+                q3_findings.append({
+                    "intent_id": intent.get("intent_id"),
+                    "broker": intent.get("creator_id"),
+                    "ticker": ticker,
+                    "report_date": report_date,
+                    "reason": "unparseable" if rd is None else (
+                        "future" if rd > q3_future_limit else "too_old"
+                    ),
+                })
+
         # ── Q2 thesis 归属 ───────────────────────────────────────────
         thesis = md.get("key_thesis") or ""
         target_name = (intent.get("target_name") or "").strip()
@@ -210,17 +238,21 @@ def main() -> int:
     print(f"\n扫描 bri intent: {stats['scanned']}")
     print(f"Q1 目标价量级  可比对 {stats['q1_comparable']}  可疑 {stats['q1_flagged']}")
     print(f"Q2 thesis 归属  可比对 {stats['q2_comparable']}  可疑 {stats['q2_flagged']}")
+    print(f"Q3 时间戳合理  可比对 {stats['q3_comparable']}  可疑 {stats['q3_flagged']}")
 
-    for tag, findings in (("Q1", q1_findings), ("Q2", q2_findings)):
+    for tag, findings in (("Q1", q1_findings), ("Q2", q2_findings), ("Q3", q3_findings)):
         print(f"\n== {tag} 发现 ==")
         for f in findings[:15]:
             if tag == "Q1":
                 print(f"  {f['broker']} {f['ticker']} {f['direction']}  "
                       f"目标价 {f['target_price']} vs 收盘 {f['close_on_report_date']} "
                       f"(ratio {f['ratio']})")
-            else:
+            elif tag == "Q2":
                 print(f"  {f['broker']} target={f['ticker']}({f['target_name']}) "
                       f"但 thesis 讲 {f['thesis_names']}: {f['thesis_head'][:70]}…")
+            else:
+                print(f"  {f['broker']} {f['ticker']}  report_date={f['report_date']} "
+                      f"({f['reason']})  {f['intent_id']}")
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out = data_root / "_audit" / f"broker_data_quality_{stamp}.json"
@@ -230,6 +262,7 @@ def main() -> int:
         "stats": dict(stats),
         "q1_implausible_target": q1_findings,
         "q2_thesis_ticker_mismatch": q2_findings,
+        "q3_implausible_report_date": q3_findings,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, out)
     print(f"\n→ {out}")
