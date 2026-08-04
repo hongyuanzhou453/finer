@@ -39,3 +39,18 @@ AZN.L 正确拒绝聚合目标价并保留双方下钻。
 
 - ④ /ticker 页面与只读 API 未做（下一步）；contracts.ts 届时同步。
 - `.L` 目标价的量级归一化器（按报告日价格推断镑/便士）留给 MKT/数据修复轮。
+
+---
+
+## 附：④ /ticker 页落地（同日）
+
+- `api/routes/ticker.py`：`GET /api/ticker/{symbol}/consensus`（60s TTL intent
+  缓存过渡，PROJ-1 落地时只换数据源；未命中走 Line F envelope）
+- `dashboard /ticker` + `/ticker/[symbol]`：口径声明逐条展示、排除计数可见、
+  逐行 intent_id 下钻、页首自述「不预测谁更准」
+- contracts.ts 镜像 4 个类型，`CONSENSUS_DIRECTION_LITERAL` 进 drift REGISTRY
+  （30 枚举同步）
+
+浏览器实测：NVDA（9 源全多，205/284/350 USD）、AZN.L（分歧 + 单位排除声明 +
+拒聚合）、NOSUCH999（fix_hint 友好提示）三条路径全通，控制台零报错；
+`npm run build` 通过。消费面路线 ①-④ 全部完成。
