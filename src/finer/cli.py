@@ -116,6 +116,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dry_cmd.add_argument("--root", type=Path, default=Path.cwd())
 
+    # ── WeChat official-account intake (credential-free public path) ──
+    wechat_cmd = subparsers.add_parser(
+        "wechat-import",
+        help="Import public WeChat articles into F0 from URLs or an RSS bridge",
+    )
+    wechat_cmd.add_argument("--root", type=Path, default=Path.cwd())
+    wechat_source = wechat_cmd.add_mutually_exclusive_group(required=True)
+    wechat_source.add_argument("--url", action="append", help="Article URL (repeatable)")
+    wechat_source.add_argument(
+        "--url-file", type=Path, help="File of article URLs, one per line ('#' comments ok)"
+    )
+    wechat_source.add_argument(
+        "--feed", help="RSS/Atom bridge URL (Wechat2RSS, we-mp-rss, RSSHub, ...)"
+    )
+    wechat_source.add_argument(
+        "--album",
+        metavar="ALBUM_ID",
+        help="Bulk-import a WeChat 合集 by album_id, e.g. 3457885223537541125. "
+        "Needs no login. Find the id in the page source of any article in that "
+        "album (album_id: '...').",
+    )
+    wechat_cmd.add_argument(
+        "--discovery-source",
+        default="",
+        help="Label recorded in metadata; defaults to the feed/file it came from",
+    )
+    wechat_cmd.add_argument("--limit", type=int, help="Import at most N articles")
+    wechat_cmd.add_argument(
+        "--interval",
+        type=float,
+        default=6.0,
+        help="Seconds between fetches (default 6 = 10 req/min)",
+    )
+    wechat_cmd.add_argument("--force", action="store_true", help="Re-import existing records")
+    wechat_cmd.add_argument(
+        "--first-hand-only",
+        action="store_true",
+        help="Require pages fetched from WeChat; skip bridge-supplied bodies",
+    )
+    wechat_cmd.add_argument(
+        "--dry-run", action="store_true", help="List what would be imported, fetch nothing"
+    )
+
     # ── Feishu file management commands ────────────────────────
     feishu_sync_cmd = subparsers.add_parser(
         "feishu-sync",
@@ -243,6 +286,80 @@ def _setup_logging(verbose: bool) -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+
+def _cmd_wechat_import(args: argparse.Namespace) -> dict:
+    """Import public WeChat articles into F0 from a URL list or an RSS bridge.
+
+    Discovery (where URLs come from) and intake (what F0 does with one) are
+    separate on purpose — WeChat discovery bridges keep dying, most recently on
+    2026-07-29 when the official-account search endpoint closed. Swapping
+    ``--feed`` for a live bridge is the whole recovery procedure.
+    """
+    from dataclasses import replace
+
+    from finer.ingestion.wechat_discovery import (
+        AlbumDiscovery,
+        RssDiscovery,
+        StaticUrlDiscovery,
+    )
+    from finer.ingestion.wechat_public_article import RateLimiter
+    from finer.ingestion.wechat_url_intake import import_discovered_articles
+
+    if args.album:
+        # Accept a bare album_id, and tolerate a legacy "biz:album_id" pair.
+        biz, _, album_id = args.album.rpartition(":")
+        source = AlbumDiscovery(album_id or args.album, biz=biz)
+    elif args.feed:
+        source = RssDiscovery(args.feed)
+    elif args.url_file:
+        source = StaticUrlDiscovery.from_file(args.url_file, name=f"file:{args.url_file.name}")
+    else:
+        source = StaticUrlDiscovery(args.url, name="cli")
+
+    discovered = source.discover()
+    if args.limit:
+        discovered = discovered[: args.limit]
+    if args.discovery_source:
+        discovered = [replace(d, discovery_source=args.discovery_source) for d in discovered]
+
+    if args.dry_run:
+        return {
+            "status": "dry_run",
+            "discovery_source": source.name,
+            "discovered": len(discovered),
+            "directly_fetchable": sum(1 for d in discovered if d.fetchable),
+            "with_bridge_content": sum(1 for d in discovered if d.content_html),
+            "urls": [d.url for d in discovered],
+        }
+
+    outcomes = import_discovered_articles(
+        discovered,
+        root=args.root,
+        force=args.force,
+        limiter=RateLimiter(args.interval),
+        allow_bridge_content=not args.first_hand_only,
+    )
+
+    counts: dict[str, int] = {}
+    for outcome in outcomes:
+        counts[outcome.status] = counts.get(outcome.status, 0) + 1
+    return {
+        "status": "completed",
+        "discovery_source": source.name,
+        "discovered": len(discovered),
+        "counts": counts,
+        "imported": [
+            {"content_id": o.content_id, "url": o.source_url}
+            for o in outcomes
+            if o.imported
+        ],
+        "problems": [
+            {"url": o.source_url, "status": o.status, "reason": o.reason}
+            for o in outcomes
+            if o.status in {"failed", "skipped"}
+        ],
+    }
 
 
 def _cmd_feishu_sync(args: argparse.Namespace) -> dict:
@@ -672,6 +789,8 @@ def main() -> None:
         )
     elif args.command == "dry-run":
         result = dry_run_pipeline(args.root)
+    elif args.command == "wechat-import":
+        result = _cmd_wechat_import(args)
     elif args.command == "feishu-sync":
         result = _cmd_feishu_sync(args)
     elif args.command == "feishu-watch":
