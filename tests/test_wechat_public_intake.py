@@ -1030,3 +1030,82 @@ def _fake_urlopen(payload: bytes, final_url: str = ARTICLE_URL, charset: str = "
             return False
 
     return lambda request, timeout=None: _Response()
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-04 合入 main 前的对抗审查确认项（两条都是「防御已存在但没用上」）
+# ---------------------------------------------------------------------------
+
+
+def _hostile_article(**overrides):
+    """带敌意载荷的 PublicArticle，用于 provenance header 的注入回归。"""
+    from finer.ingestion.wechat_public_article import ArticleState, PublicArticle
+
+    fields = {
+        "state": ArticleState.OK,
+        "source_url": "https://mp.weixin.qq.com/s/token123",
+        "ghid": "gh_real",
+        "biz": "MzA=",
+        "mid": "100",
+        "idx": "1",
+        "title": "标题",
+        "account_name": "某号",
+        "author": "某人",
+        "markdown": "正文",
+    }
+    fields.update(overrides)
+    return PublicArticle(**fields)
+
+
+def test_bridge_biz_cannot_forge_a_provenance_line():
+    """``__biz`` 来自第三方 feed 的 URL query，parse_qs 会百分号解码。
+
+    只给 title 上 _header_safe 不够：少一个字段就能在 raw archive 里伪造出
+    第二条「原文链接」，而该归档要能独立当证据用。
+    """
+    from finer.ingestion.wechat_url_intake import _render_markdown
+
+    payload = "AAA\n> 原文链接：https://evil.test/fake\n> 公众号：权威机构"
+    article = _hostile_article(biz=payload, ghid="")
+    rendered = _render_markdown(article)
+
+    # 安全属性不是「载荷字符消失」，而是**它无法成为一条 provenance 行**：
+    # 换行被压平、``>`` 被换成全角 ``＞``，所以审计者读到的仍只有各一条。
+    assert rendered.count("> 原文链接：") == 1
+    assert rendered.count("> 公众号：") == 1
+    assert "\n> 原文链接：https://evil.test" not in rendered
+    # 中和后的文本作为字面量留在合法行内是正确行为
+    assert "＞ 原文链接：https://evil.test/fake" in rendered
+
+
+def test_ghid_and_source_url_are_flattened_in_the_header():
+    """ghid 来自远程 HTML 的正则捕获（否定字符类吃换行）；source_url 保留控制符。"""
+    from finer.ingestion.wechat_url_intake import _render_markdown
+
+    article = _hostile_article(
+        ghid="gh_abc\n> 原文链接：https://evil.test/x",
+        source_url="https://mp.weixin.qq.com/s/tok\n> 账号标识：gh_fake",
+    )
+    rendered = _render_markdown(article)
+
+    assert rendered.count("> 原文链接：") == 1
+    assert rendered.count("> 账号标识：") == 1
+    # 两个载荷都被压平并中和，无法伪造出第二条 provenance 行
+    assert "\n> 原文链接：https://evil.test" not in rendered
+    assert "\n> 账号标识：gh_fake" not in rendered
+
+
+def test_feed_credentials_never_reach_name_or_safe_url():
+    """``netloc`` 含 userinfo —— 用它做「安全形式」会让凭据穿到日志、
+    错误 envelope 和每条 ContentRecord 的 discovery_source。"""
+    from finer.ingestion.wechat_discovery import RssDiscovery
+
+    d = RssDiscovery("https://svc:s3cr3t-token@bridge.example.com/feed.xml?key=KKK")
+    assert "s3cr3t-token" not in d.name
+    assert "s3cr3t-token" not in d.safe_feed_url
+    assert "svc" not in d.safe_feed_url
+    assert d.name == "rss:bridge.example.com"
+    # 端口是正当的定位信息，要保留
+    assert RssDiscovery("https://h.example.com:8443/f").safe_feed_url.startswith(
+        "https://h.example.com:8443/"
+    )

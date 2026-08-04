@@ -321,3 +321,34 @@ python -m finer.cli wechat-import --feed 'https://wechat2rss.xlab.app/feed/<id>.
 6. **不建议**：Wechat2RSS 私有部署（150 元/年但要交出微信读书账号，与「介意封号」冲突）；we-mp-rss weread 模式（同样交账号，且 8-01 已有 -2041 风控报告）；任何 Hook / iPad 协议 / 群控 SDK；修旧的 fakeid 链路（已死）；微信读书官方 Gateway（已实测证伪）。
 
 架构上已经为「多源冗余 + 按 content_id 去重」准备好了。这次断供说明单一 discovery 源不是过度设计问题，多源是这个领域的最低生存配置。
+
+---
+
+## 合入 main 的独立复核（2026-08-04）
+
+分支 12 commits 以 `--no-ff` 合入 main（8 个文件与 main 侧改动**零交集**）。
+合并后跑全量 pytest（**4,110 passed**，+89 全绿）并做四维对抗审查
+（安全 / 身份 / F0 边界 / 解析器），每条发现走独立对抗核验（默认拒真）。
+
+### 确认并修复的 2 个缺陷
+
+两条形状完全一样：**防御已经写好了，只是没用到全部字段上。**
+
+| # | 位置 | 缺陷 |
+|---|---|---|
+| 1 | `wechat_url_intake.py:450-451` | `_render_markdown` 的五个 provenance 字段里，`title`/`account_name`/`author` 过了 `_header_safe`，而 `原文链接`/`账号标识` 是裸插值。`__biz` 来自第三方 feed 的 URL query 而 `parse_qs` 会百分号解码（`%0A` → 真换行），`ghid` 来自远程 HTML 的正则捕获（否定字符类吃换行）——两者都能在 raw archive 里伪造出第二条「原文链接」。核验方用真实 `RssDiscovery.discover()` + 敌意 RSS 复现出了伪造行。 |
+| 2 | `wechat_discovery.py:156,170` | `safe_feed_url` 的整个存在理由是剥掉 feed 凭据，却用 `netloc` 重建——**`netloc` 含 userinfo**。`https://svc:token@host/…` 的凭据原样穿过「安全形式」，流进错误 envelope（`_SENSITIVE_KEYS` 按键名脱敏，`feed_url` 不在表内）、日志、以及每条 ContentRecord 的 `discovery_source`。 |
+
+修复：① 五个字段一律过 `_header_safe`；② 新增 `_safe_host()` 用 `hostname`(+port)
+重建，畸形 URL 返回 `invalid-host` 而**不回退成原串**。3 条回归测试钉住
+（`tests/test_wechat_public_intake.py`，88 passed）。
+
+写测试时自己也踩了一次：第一版断言「行内不得含 evil.test」是错的——
+`_header_safe` 把 `>` 换成全角 `＞` 并压平换行后，载荷作为**字面量**留在合法
+行内是正确行为。真正的安全属性是「它无法成为一条 provenance 行」，断言据此改写。
+
+### 未完成的核验
+
+另有 14 条发现（解析器 HTML5 边界、身份分裂、provenance 诚实性等）因会话额度
+中断未走完对抗核验，**既未确认也未排除**。它们不阻塞合并（全量测试绿、
+两条确认项已修），但下轮碰微信链路时应先跑完这批核验。

@@ -447,9 +447,13 @@ def _render_markdown(article: PublicArticle) -> str:
         f"> 公众号：{_header_safe(article.account_name) or article.account_id}",
         f"> 作者：{_header_safe(article.author) or '未知'}",
         f"> 发布时间：{published}",
-        f"> 原文链接：{article.source_url}",
-        f"> 账号标识：{article.ghid or article.biz}",
-        f"> 文章标识：{article.article_id}",
+        # source_url / ghid / biz 与 title 同样不可信：biz 来自第三方 feed 的
+        # URL query（parse_qs 会百分号解码，%0A 变成真换行），ghid 来自远程
+        # HTML 的正则捕获（否定字符类会吃掉换行）。少一个 _header_safe 就够
+        # 伪造出第二条「原文链接」——而 raw archive 要能独立当证据用。
+        f"> 原文链接：{_header_safe(article.source_url)}",
+        f"> 账号标识：{_header_safe(article.ghid or article.biz)}",
+        f"> 文章标识：{_header_safe(article.article_id)}",
         "",
         "---",
         "",

@@ -133,6 +133,17 @@ def _localname(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _safe_host(url: str) -> str:
+    """host[:port]，剥掉 userinfo —— 凭据不进日志/错误/记录（见 safe_feed_url）。"""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname or ""
+        return f"{host}:{parsed.port}" if parsed.port else host
+    except ValueError:
+        # 畸形 URL（如非法端口）本身可能夹带凭据，绝不回退成原串
+        return "invalid-host"
+
+
 class RssDiscovery:
     """Discovery from any RSS/Atom feed whose entries link to WeChat articles.
 
@@ -153,7 +164,7 @@ class RssDiscovery:
         account_name: str = "",
     ) -> None:
         self.feed_url = feed_url
-        self.name = name or f"rss:{urllib.parse.urlparse(feed_url).netloc}"
+        self.name = name or f"rss:{_safe_host(feed_url)}"
         self.timeout = timeout
         self.account_name = account_name
 
@@ -165,9 +176,13 @@ class RssDiscovery:
         (and the path itself can be a capability id). Line F forbids secrets in
         error details, and a log line is just as durable — so anything
         user-facing gets scheme+host only.
+
+        用 ``hostname``（+port）而**不是** ``netloc``：后者含 userinfo，
+        ``https://svc:token@host/…`` 的凭据会原样穿过这个「安全形式」，流进
+        错误 envelope、日志，以及每条 ContentRecord 的 discovery_source。
         """
         parsed = urllib.parse.urlparse(self.feed_url)
-        return f"{parsed.scheme}://{parsed.netloc}/…"
+        return f"{parsed.scheme}://{_safe_host(self.feed_url) or parsed.scheme}/…"
 
     def _fetch(self) -> str:
         parsed = urllib.parse.urlparse(self.feed_url)
