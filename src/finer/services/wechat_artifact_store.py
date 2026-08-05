@@ -26,6 +26,10 @@ class ArticleArtifacts:
     html_sha256: Optional[str]
     md_sha256: str
     sidecar_path: Path
+    #: ``ContentRecord.raw_path`` 要的形式：相对 ``data/`` 的路径（如
+    #: ``raw/wechat/gh_x/100_1.md``）。schema 字段说明写的就是「relative path
+    #: …under data/raw/」，而只有 store 知道 root，所以在这里算好带出去。
+    raw_md_rel: str = ""
 
 
 class WeChatArtifactStore:
@@ -93,12 +97,14 @@ class WeChatArtifactStore:
 
         logger.info(f"Saved artifacts for {account_id}/{article_id}")
 
+        raw_md_rel = str(md_path.relative_to(self._root / "data"))
         return ArticleArtifacts(
             raw_html_path=html_path,
             raw_md_path=md_path,
             html_sha256=html_sha256,
             md_sha256=md_sha256,
             sidecar_path=sidecar_path,
+            raw_md_rel=raw_md_rel,
         )
 
     def _sync_state_path(self, account_id: str) -> Path:

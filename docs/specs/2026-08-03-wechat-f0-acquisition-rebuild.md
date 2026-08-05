@@ -352,3 +352,51 @@ python -m finer.cli wechat-import --feed 'https://wechat2rss.xlab.app/feed/<id>.
 另有 14 条发现（解析器 HTML5 边界、身份分裂、provenance 诚实性等）因会话额度
 中断未走完对抗核验，**既未确认也未排除**。它们不阻塞合并（全量测试绿、
 两条确认项已修），但下轮碰微信链路时应先跑完这批核验。
+
+### 14 条待核验发现的补跑（2026-08-05）
+
+前一轮因会话额度中断的 14 条全部走完对抗核验（7 组分头核验 + 裁决）。
+**13 条机制为真，其中 3 条实测判为 severity `none`**（机制存在但不可达或无害：
+未闭合内联标签、13 位毫秒时间戳截断、协议相对图片 URL），1 条被否
+（legacy exporter builder 缺 `acquired_via`——该路径已不可产出记录）。
+
+**已修 8 条**，按形状归为三类：
+
+**A. 解析器正文边界（#9/#10/#11）——一次性换成标签栈**
+
+`_content_depth` 计数器换成标签名栈。#9 是前一会话修 void 标签那个 bug 的
+**另一半**：`HTMLParser` 不是 HTML5-aware，void 标签与可选结束标签是同一个
+盲区的两种表现，上次只补了一半。实测 7 个边界案例修前 4 个泄漏、修后零泄漏。
+
+> **核验方的重要校准**：它把解析器跑过仓库里 25 份**真实微信样本页**——零泄漏、
+> 标签全平衡，且 bridge 路径结构上免疫（`parse_bridge_article` 的 wrapper
+> 后面没有内容）。因此 #9 从 high 降为 **medium：这是对页面结构漂移的潜在
+> 防御缺口，不是当前正在发生的缺陷**。修仍值得（页面结构会变），但不该按
+> 「线上正在丢数据」计。
+
+**B. 「不变量写明了但某处没守」（#13/#6/#0/#2）**
+
+| 缺陷 | 仓库自己写明的不变量 | 没守的地方 |
+|---|---|---|
+| `poc_token` 误判 | `_is_structural_block` docstring：这些标记「不可能出现在散文里」 | 裸 `poc_token` 是普通标识符 |
+| 身份坍缩 | `_PAGE_VARS` 取 mid/idx 要求纯数字 | `identity_from_url` 从 URL 取时不校验 |
+| `raw_path` 绝对 | schema 字段：「Relative path…under data/raw/」 | builder 存绝对路径 |
+| 伪造发布时间 | schema `Optional`「may be unknown」+ 测试名 `test_missing_publish_time_is_none_not_now` | builder 填 `now()` |
+
+伪造发布时间那条核验方**上调**了严重度：F5 的执行时钟正是从 `published_at`
+推出来的，填 `now()` 等于让导入时刻冒充发布时刻——与本轮早先做过的全语料
+时钟修复是同一类错。改为留 `None`，让下游 `timing_builder` 显式报错：
+**响亮地失败好过静默用错基准**。
+
+**C. 错误信封（#3）** — 归档写失败（磁盘满/只读挂载）以裸 `OSError` 逃出，
+绕开 Line F。F0 其余写点都用 `F0_IO_001`，补齐。
+
+### 仍未修（2 条，均为设计决策而非补丁）
+
+- **#7 短链 token 做身份不唯一**：同一篇文章经不同短链会得到两个
+  `article_id`。修法要改 Project Memory 的 `stable_key` 口径（改用
+  `(account_id, title, published_at)` 或正文哈希），属身份设计变更。
+- **#8 带签名长链缺 mid/idx 被跳过**：可从 URL 回填身份（`parse_bridge_article`
+  已经这么信任 URL 了），但会把「跳过」变「导入」，属召回口径变更。
+
+验证：`pytest tests/test_wechat_public_intake.py` **107 passed**（+19），全量见提交。

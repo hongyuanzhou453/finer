@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -1219,3 +1220,69 @@ def test_identity_from_url_requires_numeric_mid_idx(query, expected):
     )
     assert biz == "MzA=="
     assert (mid, idx) == expected
+
+
+# ---------------------------------------------------------------------------
+# ContentRecord 契约（2026-08-05 核验 #0/#2/#3）
+# ---------------------------------------------------------------------------
+
+
+def test_raw_path_is_relative_to_data_root(tmp_path, monkeypatch):
+    """schema 明写「Relative path…under data/raw/」，与 broker 侧同口径。
+
+    绝对路径会让归档在换机器 / 换 data_root 之后失效。
+    """
+    monkeypatch.setattr(
+        "finer.ingestion.wechat_public_article.urllib.request.urlopen",
+        _fake_urlopen(_page(ARTICLE_BODY).encode("utf-8")),
+    )
+    outcome = import_article(ARTICLE_URL, root=tmp_path, limiter=None)
+
+    assert outcome.imported
+    raw_path = outcome.record.raw_path
+    assert not Path(raw_path).is_absolute()
+    assert raw_path.startswith("raw/wechat/")
+    assert (tmp_path / "data" / raw_path).is_file()
+
+
+def test_missing_publish_time_stays_none_in_the_record(tmp_path, monkeypatch):
+    """发布时间未知就留 None——填 now() 会让导入时刻冒充发布时刻。
+
+    F5 的执行时钟正是从 published_at 推出来的；解析器那侧已有
+    test_missing_publish_time_is_none_not_now，记录这侧必须守同一条。
+    """
+    page = _page(ARTICLE_BODY).replace('var ct = "1717063839";', "")
+    monkeypatch.setattr(
+        "finer.ingestion.wechat_public_article.urllib.request.urlopen",
+        _fake_urlopen(page.encode("utf-8")),
+    )
+    outcome = import_article(ARTICLE_URL, root=tmp_path, limiter=None)
+
+    assert outcome.imported
+    assert outcome.record.published_at is None
+    assert outcome.record.metadata["published_at_missing"] is True
+
+
+def test_archive_write_failure_carries_the_line_f_envelope(tmp_path, monkeypatch):
+    """磁盘满 / 只读挂载不能以裸 OSError 逃出去——Import Console 只剩 traceback。"""
+    monkeypatch.setattr(
+        "finer.ingestion.wechat_public_article.urllib.request.urlopen",
+        _fake_urlopen(_page(ARTICLE_BODY).encode("utf-8")),
+    )
+
+    def _boom(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(
+        "finer.services.wechat_artifact_store.WeChatArtifactStore.save_article_artifacts",
+        _boom,
+    )
+
+    with pytest.raises(FinerError) as exc:
+        import_article(ARTICLE_URL, root=tmp_path, limiter=None)
+
+    assert exc.value.stage == "F0"
+    assert exc.value.source_channel == "wechat"
+    assert exc.value.retryable is True
+    # fix_hint 走 **context，落在 details 里（错误信封渲染时读的就是这里）
+    assert exc.value.details.get("fix_hint")

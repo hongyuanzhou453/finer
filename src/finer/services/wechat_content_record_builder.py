@@ -109,7 +109,10 @@ def build_content_record(
         external_source_id=article_id,
         dedupe_fingerprint=dedupe_fingerprint,
         metadata=metadata,
-        raw_path=str(artifacts.raw_md_path),
+        # schema: 「Relative path to the raw material file under data/raw/」；
+        # 与 broker_research_intake 的 raw_path_rel 同口径。绝对路径会让归档
+        # 在换机器/换 data_root 后失效。
+        raw_path=artifacts.raw_md_rel or str(artifacts.raw_md_path),
         file_type="text",
     )
 
@@ -142,15 +145,21 @@ def build_public_article_record(
     ).hexdigest()[:16]
 
     published_at_missing = article.published_at is None
-    published_at = article.published_at or datetime.now(timezone.utc)
-    # Bridge feeds report local offsets (Wechat2RSS emits +0800). Every
-    # timestamp crossing a contract boundary must be aware UTC, and a naive
-    # value is assumed to already be UTC rather than shifted.
-    published_at = (
-        published_at.astimezone(timezone.utc)
-        if published_at.tzinfo
-        else published_at.replace(tzinfo=timezone.utc)
-    )
+    # 发布时间未知就留 None——schema 说它 optional「may be unknown」，解析器
+    # 那侧还有个测试就叫 test_missing_publish_time_is_none_not_now。填 now()
+    # 会让导入时刻冒充发布时刻，而 F5 的执行时钟正是从它推出来的（本轮早先
+    # 刚做过一次全语料时钟修复，同一类错）。下游 timing_builder 遇到 None 会
+    # 显式报错——响亮地失败好过静默用错基准。
+    published_at = article.published_at
+    if published_at is not None:
+        # Bridge feeds report local offsets (Wechat2RSS emits +0800). Every
+        # timestamp crossing a contract boundary must be aware UTC, and a naive
+        # value is assumed to already be UTC rather than shifted.
+        published_at = (
+            published_at.astimezone(timezone.utc)
+            if published_at.tzinfo
+            else published_at.replace(tzinfo=timezone.utc)
+        )
     now = datetime.now(timezone.utc)
 
     metadata = {
@@ -188,6 +197,9 @@ def build_public_article_record(
         external_source_id=article_id,
         dedupe_fingerprint=dedupe_fingerprint,
         metadata=metadata,
-        raw_path=str(artifacts.raw_md_path),
+        # schema: 「Relative path to the raw material file under data/raw/」；
+        # 与 broker_research_intake 的 raw_path_rel 同口径。绝对路径会让归档
+        # 在换机器/换 data_root 后失效。
+        raw_path=artifacts.raw_md_rel or str(artifacts.raw_md_path),
         file_type="text",
     )

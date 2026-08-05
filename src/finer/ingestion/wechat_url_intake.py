@@ -287,12 +287,27 @@ def import_article(
             reason="import receipt already on disk",
         )
 
-    artifacts = store.save_article_artifacts(
-        account_id=account_id,
-        article_id=article_id,
-        html=fetched.html,
-        markdown=_render_markdown(fetched),
-    )
+    try:
+        artifacts = store.save_article_artifacts(
+            account_id=account_id,
+            article_id=article_id,
+            html=fetched.html,
+            markdown=_render_markdown(fetched),
+        )
+    except OSError as exc:
+        # 磁盘满 / 权限 / 只读挂载。裸 OSError 会绕开 Line F 信封，Import
+        # Console 就只剩一句 traceback——F0 的其余写点都用 F0_IO_001。
+        raise FinerError(
+            ErrorCode.F0_IO_001,
+            f"Failed to archive article {article_id!r}: {exc}",
+            stage="F0",
+            operation="wechat_article_archive",
+            source_channel="wechat",
+            content_id=content_id,
+            retryable=True,
+            fix_hint="检查 data/raw/wechat 的磁盘空间与写权限后重试导入",
+            cause=exc,
+        ) from exc
 
     record = build_public_article_record(
         fetched,
