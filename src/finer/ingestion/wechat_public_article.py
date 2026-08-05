@@ -82,6 +82,27 @@ _VOID_TAGS = {
     "link", "meta", "param", "source", "track", "wbr",
 }
 
+# 同一个盲区的第二半：HTML5 允许省略这些元素的结束标签，浏览器按「隐式闭合」
+# 处理。计数器修了 void 标签仍会被 ``<p>甲<p>乙`` 顶穿——正文边界失守，页脚
+# 被当正文归档（2026-08-04 实测 <p>/<li>/<td>/<tr> 三类均泄漏）。计数器天然
+# 修不了这个：得知道**栈里是什么**才能判断新标签隐式闭合了谁。
+#
+# 键 = 新开的标签，值 = 它会隐式闭合的栈顶标签集合。
+_IMPLIED_CLOSES: dict[str, frozenset] = {
+    "li": frozenset({"li"}),
+    "dt": frozenset({"dt", "dd"}),
+    "dd": frozenset({"dt", "dd"}),
+    "td": frozenset({"td", "th"}),
+    "th": frozenset({"td", "th"}),
+    "tr": frozenset({"td", "th", "tr"}),
+    "thead": frozenset({"td", "th", "tr"}),
+    "tbody": frozenset({"td", "th", "tr"}),
+    "tfoot": frozenset({"td", "th", "tr"}),
+    "option": frozenset({"option"}),
+}
+# 任何块级元素都会隐式闭合一个未关闭的 <p>。
+_CLOSES_OPEN_P = _BLOCK_TAGS | {"li", "dt", "dd", "h1", "h2", "h3", "h4", "h5", "h6"}
+
 # Page-state markers, checked before parsing. WeChat serves these as HTTP 200
 # with a ~32KB body, so status code alone cannot distinguish them.
 _DELETED_MARKERS = ("该内容已被发布者删除", "已被发布者删除")
@@ -266,12 +287,31 @@ class _ArticleParser(HTMLParser):
         self.parts: list[str] = []
         self.images: list[str] = []
         self.content_seen = False
-        self._content_depth = 0
+        #: 正文内已打开的标签栈（栈底是 #js_content 那个 div）。用栈而非计数器：
+        #: 隐式闭合与游离的结束标签都只能靠「栈里是什么」判断。
+        self._content_stack: list[str] = []
         self._skip_depth = 0
         self._link_stack: list[str] = []
         self._capture: Optional[str] = None
         self._capture_depth = 0
         self._capture_parts: list[str] = []
+
+    @property
+    def _content_depth(self) -> int:
+        return len(self._content_stack)
+
+    def _apply_implied_closes(self, tag: str) -> None:
+        """按 HTML5 隐式闭合规则弹栈（``<p>甲<p>乙`` / ``<li>甲<li>乙``）。"""
+        implied = _IMPLIED_CLOSES.get(tag)
+        while len(self._content_stack) > 1:
+            top = self._content_stack[-1]
+            if implied and top in implied:
+                self._content_stack.pop()
+                continue
+            if top == "p" and tag in _CLOSES_OPEN_P:
+                self._content_stack.pop()
+                continue
+            break
 
     @staticmethod
     def _as_dict(items: list[tuple[str, Optional[str]]]) -> dict[str, str]:
@@ -300,16 +340,21 @@ class _ArticleParser(HTMLParser):
             self._capture_depth = 1
             self._capture_parts = []
 
-        if self._content_depth == 0:
-            if tag == "div" and (
-                attrs.get("id") == "js_content" or "rich_media_content" in classes
+        if not self._content_stack:
+            # ``not self.content_seen``：正文只认第一段。页面后面再出现一个
+            # rich_media_content（推荐位/相关阅读）会把页脚重新当正文收进来。
+            if (
+                not self.content_seen
+                and tag == "div"
+                and (attrs.get("id") == "js_content" or "rich_media_content" in classes)
             ):
-                self._content_depth = 1
+                self._content_stack.append(tag)
                 self.content_seen = True
             return
 
+        self._apply_implied_closes(tag)
         if tag not in _VOID_TAGS:
-            self._content_depth += 1
+            self._content_stack.append(tag)
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
             return
@@ -354,10 +399,14 @@ class _ArticleParser(HTMLParser):
                 self._capture = None
                 self._capture_parts = []
 
-        if self._content_depth == 0:
+        if not self._content_stack:
             return
-        if self._content_depth == 1:
-            self._content_depth = 0
+        if tag not in self._content_stack:
+            # 游离/错配的结束标签：栈里没有它就不动栈，否则一个 ``</span>``
+            # 就能把正文提前截断。
+            return
+        if len(self._content_stack) == 1:
+            self._content_stack.clear()
             return
 
         if tag in _SKIP_TAGS and self._skip_depth:
@@ -376,7 +425,10 @@ class _ArticleParser(HTMLParser):
                 )
             elif tag in _BLOCK_TAGS or re.fullmatch(r"h[1-6]", tag):
                 self.parts.append("\n\n")
-        self._content_depth -= 1
+        # 弹到匹配标签为止：中间那些是被隐式闭合的（``<ul><li>甲</ul>``）。
+        while self._content_stack:
+            if self._content_stack.pop() == tag:
+                break
 
     def handle_data(self, data: str) -> None:
         if self._capture is not None:

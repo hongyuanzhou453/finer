@@ -1109,3 +1109,63 @@ def test_feed_credentials_never_reach_name_or_safe_url():
     assert RssDiscovery("https://h.example.com:8443/f").safe_feed_url.startswith(
         "https://h.example.com:8443/"
     )
+
+
+# ---------------------------------------------------------------------------
+# 正文边界：HTML5 隐式闭合（2026-08-05 核验确认，与 void 标签同源的第二半）
+# ---------------------------------------------------------------------------
+
+_FOOTER = "页脚绝不该进正文"
+
+
+def _boundary_page(body: str, *, second_content: bool = False) -> str:
+    tail = (
+        f'<div class="rich_media_content">{_FOOTER}</div>'
+        if second_content
+        else f'<div id="js_pc_qr_code">{_FOOTER}</div>'
+    )
+    return (
+        '<html><body><h1 class="rich_media_title">标题</h1>'
+        f'<div id="js_content">{body}</div>{tail}</body></html>'
+    )
+
+
+@pytest.mark.parametrize(
+    "name,body",
+    [
+        ("规范闭合", "<p>正文一</p><p>正文二</p>"),
+        ("未闭合 p", "<p>正文一<p>正文二"),
+        ("未闭合 li", "<ul><li>甲<li>乙</ul>"),
+        ("未闭合 td/tr", "<table><tr><td>甲<td>乙<tr><td>丙</table>"),
+        ("未闭合 dt/dd", "<dl><dt>甲<dd>乙<dt>丙</dl>"),
+        ("深层嵌套+未闭合", "<div><section><p>甲<p>乙</section></div>"),
+    ],
+)
+def test_optional_end_tags_do_not_leak_the_footer(name, body):
+    """HTML5 允许省略 p/li/td/tr/dt/dd 的结束标签。
+
+    计数器天然修不了这类：得知道**栈里是什么**才能判断新标签隐式闭合了谁。
+    顶穿的后果是页脚被当正文归档——F0 的 raw archive 是要当证据用的。
+    """
+    article = parse_public_article(_boundary_page(body), "https://mp.weixin.qq.com/s/tok")
+    assert _FOOTER not in (article.markdown or ""), name
+    assert (article.markdown or "").strip()
+
+
+def test_stray_close_tag_does_not_truncate_the_body():
+    """栈里没有的结束标签不动栈，否则一个 </span> 就能提前截断正文。"""
+    article = parse_public_article(
+        _boundary_page("<p>正文一</p></span><p>正文二</p>"),
+        "https://mp.weixin.qq.com/s/tok",
+    )
+    assert "正文一" in article.markdown and "正文二" in article.markdown
+    assert _FOOTER not in article.markdown
+
+
+def test_second_rich_media_content_does_not_reopen_the_body():
+    """页面后段的推荐位同样带 rich_media_content —— 正文只认第一段。"""
+    article = parse_public_article(
+        _boundary_page("<p>正文</p>", second_content=True),
+        "https://mp.weixin.qq.com/s/tok",
+    )
+    assert article.markdown.strip() == "正文"
