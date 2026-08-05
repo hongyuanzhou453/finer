@@ -118,8 +118,13 @@ _CAPTCHA_MARKERS = (
     "wappoc_appmsgcaptcha",
     "secitptpage/verify.html",
     "mmbizwap:secitptpage",
-    "poc_token",
 )
+
+# ``poc_token`` 单独拿出来：上面三个是微信特有的机器串，散文里不可能出现；
+# 而 ``poc_token`` 本身是个普通标识符——一篇讲安全测试的文章提到它就会被判成
+# BLOCKED，然后作为「被限流」静默搁置。因此只认赋值/JSON 键这类散文产不出的
+# 语法上下文。（验证页 URL 里的 ``?poc_token=`` 另有 final_url 检查覆盖。）
+_CAPTCHA_TOKEN_RE = re.compile(r"""poc_token\s*[=:]|["']poc_token["']""")
 
 
 class ArticleState(str, Enum):
@@ -465,6 +470,8 @@ def _is_structural_block(source: str, final_url: str = "") -> bool:
     """
     if any(marker in source for marker in _CAPTCHA_MARKERS):
         return True
+    if _CAPTCHA_TOKEN_RE.search(source):
+        return True
     return bool(final_url) and "wappoc_appmsgcaptcha" in final_url
 
 
@@ -621,12 +628,23 @@ def identity_from_url(url: str) -> tuple[str, str, str]:
     The long form is unfetchable but still self-describing, which is what makes
     a bridge-sourced import auditable: identity comes from the WeChat URL,
     only the body comes from the bridge.
+
+    ``mid``/``idx`` 必须是纯数字——``_PAGE_VARS`` 从页面取它们时就是这么要求的
+    （纯数字捕获组），从 URL 取时同样得守。放行任意串会让两篇不同文章在
+    ``sanitize_path_component`` 之后塌成同一个 ``article_id``（``_`` 连接位
+    可被载荷伪造），而第二篇会被当 duplicate 静默丢弃。拿不到就返回空，让
+    ``import_article`` 报一条可见的 skipped。
     """
     query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+
+    def _numeric(key: str) -> str:
+        value = (query.get(key) or [""])[0]
+        return value if re.fullmatch(r"\d+", value) else ""
+
     return (
         (query.get("__biz") or [""])[0],
-        (query.get("mid") or [""])[0],
-        (query.get("idx") or [""])[0],
+        _numeric("mid"),
+        _numeric("idx"),
     )
 
 

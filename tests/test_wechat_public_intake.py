@@ -1169,3 +1169,53 @@ def test_second_rich_media_content_does_not_reopen_the_body():
         "https://mp.weixin.qq.com/s/tok",
     )
     assert article.markdown.strip() == "正文"
+
+
+def test_poc_token_in_prose_is_not_a_captcha():
+    """``poc_token`` 是普通标识符，散文里提到它不该被判成验证页。
+
+    误判的代价是单向的：BLOCKED 意味着「被限流、稍后重试」，文章会被静默
+    搁置——一篇讲安全测试的文章会永远进不来。真验证页里它出现在赋值 /
+    JSON 键 / URL 参数里，那才是散文产不出的语法上下文。
+    """
+    body = "<p>本文讨论安全测试中的 poc_token 机制及其局限。</p>"
+    article = parse_public_article(_boundary_page(body), "https://mp.weixin.qq.com/s/t")
+    assert article.state is ArticleState.OK
+    assert "poc_token" in article.markdown
+
+
+@pytest.mark.parametrize(
+    "shell",
+    [
+        '<script>var poc_token = "abc";</script>',
+        '<script>{"poc_token":"abc"}</script>',
+        '<script>location="/mp/x?poc_token=Y"</script>',
+    ],
+)
+def test_poc_token_in_machine_context_still_blocks(shell):
+    article = parse_public_article(
+        _boundary_page(f"<p>x</p>{shell}"), "https://mp.weixin.qq.com/s/t"
+    )
+    assert article.state is ArticleState.BLOCKED
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        ("&mid=2657093642&idx=1", ("2657093642", "1")),
+        ("&mid=abc_1&idx=1", ("", "1")),          # 非数字 mid 不得进身份
+        ("&mid=100&idx=1%2F..%2Fx", ("100", "")),  # 带路径载荷的 idx
+        ("&idx=1", ("", "1")),
+    ],
+)
+def test_identity_from_url_requires_numeric_mid_idx(query, expected):
+    """页面侧取 mid/idx 时就要求纯数字，URL 侧同样得守。
+
+    放行任意串会让两篇不同文章在 sanitize_path_component 之后塌成同一个
+    article_id（``_`` 连接位可被载荷伪造），第二篇被当 duplicate 静默丢弃。
+    """
+    biz, mid, idx = identity_from_url(
+        "https://mp.weixin.qq.com/s?__biz=MzA%3D%3D" + query
+    )
+    assert biz == "MzA=="
+    assert (mid, idx) == expected
