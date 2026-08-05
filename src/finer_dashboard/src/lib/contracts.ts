@@ -1804,8 +1804,13 @@ export type TargetPriceSummary = {
   excluded_currency_mismatch: number;
 };
 
+export type Staleness = "current" | "aging" | "stale" | "archival";
+
 export type TickerConsensusView = {
   ticker: string;
+  latest_report_date?: string | null;
+  as_of_days?: number | null; // 读取时算，不物化
+  staleness?: Staleness | null;
   target_names: string[];
   n_sources: number;
   direction_counts: Record<string, number>;

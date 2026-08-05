@@ -148,3 +148,55 @@ def test_card_activity_window_is_populated():
     card = build_record_cards([_action("A") for _ in range(3)])[0]
     assert card.first_action_at is not None
     assert card.last_action_at >= card.first_action_at
+
+
+# ---------------------------------------------------------------------------
+# 陈旧度标注（语料是静态档案，不标注就会被读成「当前共识」）
+# ---------------------------------------------------------------------------
+
+
+def _view(latest_date):
+    from finer.credibility.consensus import build_ticker_consensus
+    return build_ticker_consensus(
+        [_intent("高盛", "NVDA", date=latest_date)], "NVDA"
+    )
+
+
+def test_latest_report_date_is_the_max_across_sources():
+    view = build_ticker_consensus([
+        _intent("高盛", "NVDA", date="2025-11-01"),
+        _intent("瑞银", "NVDA", date="2026-03-15"),
+    ], "NVDA")
+    assert view.latest_report_date == "2026-03-15"
+
+
+@pytest.mark.parametrize(
+    "days,band",
+    [(10, "current"), (120, "aging"), (300, "stale"), (500, "archival")],
+)
+def test_staleness_bands(days, band):
+    from datetime import date, timedelta
+    from finer.credibility.consensus import with_staleness
+
+    today = date(2026, 8, 5)
+    v = with_staleness(_view((today - timedelta(days=days)).isoformat()), today=today)
+    assert v.staleness == band and v.as_of_days == days
+    assert any("本页记录截至" in n for n in v.notes)
+
+
+def test_staleness_is_not_materialized_into_the_view():
+    """未经 with_staleness 的视图不带天数——物化固化第二天就是错的。"""
+    v = _view("2026-01-01")
+    assert v.latest_report_date == "2026-01-01"
+    assert v.as_of_days is None and v.staleness is None
+
+
+def test_view_without_any_report_date_is_left_alone():
+    from finer.credibility.consensus import with_staleness
+
+    view = build_ticker_consensus(
+        [{"intent_id": "x", "creator_id": "a", "target_symbol": "NVDA",
+          "direction": "bullish", "metadata": {}}], "NVDA"
+    )
+    out = with_staleness(view)
+    assert out.staleness is None and not any("截至" in n for n in out.notes)

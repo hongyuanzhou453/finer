@@ -18,7 +18,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter
 
-from finer.credibility.consensus import build_ticker_consensus, _canonical
+from finer.credibility.consensus import (
+    _canonical,
+    build_ticker_consensus,
+    with_staleness,
+)
 from finer.projections.materializer import read_consensus
 from finer.errors.exceptions import FinerError
 from finer.paths import DATA_ROOT
@@ -58,6 +62,9 @@ def get_ticker_consensus(symbol: str) -> dict:
         view = read_consensus(DATA_ROOT, canonical)
     if view is None:
         view = build_ticker_consensus(_load_intents(DATA_ROOT), symbol)
+    if view is not None:
+        # 读取时算陈旧度：距今天数每天在变，物化固化第二天就是错的。
+        view = with_staleness(view)
     if view is None:
         raise FinerError(
             "API_NTF_001",

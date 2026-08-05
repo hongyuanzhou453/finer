@@ -11,7 +11,11 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2, ScrollText } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ConsensusDirection, TickerConsensusView } from "@/lib/contracts";
+import type {
+  ConsensusDirection,
+  Staleness,
+  TickerConsensusView,
+} from "@/lib/contracts";
 import { apiFetch } from "@/lib/api-client";
 
 const DIRECTION_LABEL: Record<ConsensusDirection, string> = {
@@ -26,6 +30,22 @@ const DIRECTION_STYLE: Record<ConsensusDirection, string> = {
   bearish: "bg-green-50 text-green-700 border-green-200",
   neutral: "bg-zinc-100 text-zinc-600 border-zinc-200",
   mixed: "bg-amber-50 text-amber-700 border-amber-200",
+};
+
+/** 陈旧度是页头的显性状态，不是埋在脚注里的小字——语料是静态档案，
+ *  不标注就会被读成「当前共识」。 */
+const STALENESS_STYLE: Record<Staleness, string> = {
+  current: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  aging: "border-amber-200 bg-amber-50 text-amber-800",
+  stale: "border-orange-200 bg-orange-50 text-orange-800",
+  archival: "border-zinc-300 bg-zinc-100 text-zinc-700",
+};
+
+const STALENESS_LABEL: Record<Staleness, string> = {
+  current: "近期记录",
+  aging: "已有一段时间未更新",
+  stale: "记录较旧",
+  archival: "档案级记录",
 };
 
 function fmtPrice(v?: number | null, cur?: string | null): string {
@@ -79,6 +99,22 @@ export default function TickerConsensusPage({
           共识记录 · 谁说过什么
         </span>
       </h1>
+
+      {view?.staleness && view.latest_report_date && (
+        <div
+          className={cn(
+            "mt-3 rounded border px-3 py-2 text-sm",
+            STALENESS_STYLE[view.staleness],
+          )}
+        >
+          本页记录截至 <strong>{view.latest_report_date}</strong>
+          {view.as_of_days != null && <>（距今 {view.as_of_days} 天）</>} ·{" "}
+          {STALENESS_LABEL[view.staleness]}
+          <div className="mt-0.5 text-xs opacity-80">
+            语料为静态档案，不代表此刻的市场共识。
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="mt-12 flex items-center gap-2 text-zinc-500">

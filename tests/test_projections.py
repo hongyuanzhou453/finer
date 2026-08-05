@@ -77,3 +77,24 @@ def test_rematerialize_replaces_atomically(data_root):
 def test_unknown_signal_class_returns_none(data_root):
     materialize_projections(data_root)
     assert read_record_cards(data_root, "kol_statement") is None
+
+
+def test_stale_schema_version_falls_back_instead_of_serving_old_payload(data_root):
+    """投影 schema 版本落后时必须回退活算，不能静默供缺字段的旧 payload。
+
+    2026-08-05 实测踩到：加了 latest_report_date 后忘记重跑物化，
+    /ticker 的陈旧度横幅一直不出现——而 API 与前端都「正常」，
+    因为缺失字段的 None 是合法值。宁可慢也不能供错。
+    """
+    import sqlite3
+
+    materialize_projections(data_root)
+    assert read_consensus(data_root, "NVDA") is not None
+
+    conn = sqlite3.connect(projection_path(data_root))
+    conn.execute("UPDATE projection_meta SET value='0' WHERE key='schema_version'")
+    conn.commit()
+    conn.close()
+
+    assert read_consensus(data_root, "NVDA") is None
+    assert read_record_cards(data_root, "broker_recommendation") is None

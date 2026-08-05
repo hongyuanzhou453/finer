@@ -13,12 +13,16 @@ report_date）在 F3 最完整；F5 action 是它的执行投影。
   一律标 GBP），聚合会产生 100 倍错——排除并计数，比错误的中位数诚实。
 - 共识描述**谁说了什么**，不判断谁说得对——共识方向是否有预测力是
   EXT-2 前置门待检验的假设（configs/significance.yaml: consensus_direction）。
+- **语料是静态档案，不是活水**。视图只存 ``latest_report_date`` 这个不变事实；
+  「距今多少天 / 陈旧到什么程度」由 :func:`with_staleness` 在**读取时**算——
+  物化时算好存起来，第二天就是错的。
 """
 
 from __future__ import annotations
 
 import statistics
 from collections import Counter
+from datetime import date
 from typing import Dict, Iterable, List, Optional
 
 from finer.enrichment.ticker_normalization import normalize_broker_ticker
@@ -32,6 +36,9 @@ _DIRECTIONAL = ("bullish", "bearish")
 
 #: 单位可疑的市场后缀（镑/便士混存已实测；先只收录有实证的）。
 _UNIT_AMBIGUOUS_SUFFIXES = (".L",)
+
+#: 陈旧度阈值（天）。取自研报的实际节奏：券商对同一标的通常按季度更新。
+_STALENESS_BANDS = ((90, "current"), (180, "aging"), (365, "stale"))
 
 _METHOD_NOTES = [
     "共识为等权聚合，每个信源只计其最新一篇报告的立场；不按 conviction 加权。",
@@ -172,8 +179,10 @@ def _view_from_group(
         )
 
     rows.sort(key=lambda r: r.report_date or "", reverse=True)
+    dates = [r.report_date for r in rows if r.report_date]
     return TickerConsensusView(
         ticker=canonical,
+        latest_report_date=max(dates) if dates else None,
         target_names=names,
         n_sources=len(rows),
         direction_counts=dict(direction_counts),
@@ -182,3 +191,40 @@ def _view_from_group(
         target_prices=summary,
         notes=notes,
     )
+
+
+def with_staleness(
+    view: TickerConsensusView, *, today: Optional[date] = None
+) -> TickerConsensusView:
+    """按当天补上 ``as_of_days`` / ``staleness`` 并追加一条声明。
+
+    **必须在读取时调用，不能在物化时固化**：距今天数每天都在变，存进投影
+    第二天就是错的。``latest_report_date`` 才是可以物化的不变事实。
+
+    这个标注不是装饰：实测中位标的的最新报告是 8 个月前、70% 的标的三个月
+    以上无更新（2026-08-05）。不标截止日期，用户会把陈旧记录读成「当前共识」。
+    """
+    if not view.latest_report_date:
+        return view
+    try:
+        latest = date.fromisoformat(view.latest_report_date)
+    except ValueError:
+        return view
+
+    days = ((today or date.today()) - latest).days
+    band = next((name for limit, name in _STALENESS_BANDS if days <= limit), "archival")
+    label = {
+        "current": "近期记录",
+        "aging": "已有一段时间未更新",
+        "stale": "记录较旧",
+        "archival": "档案级记录",
+    }[band]
+
+    updated = view.model_copy(deep=True)
+    updated.as_of_days = days
+    updated.staleness = band
+    updated.notes = list(view.notes) + [
+        f"本页记录截至 {view.latest_report_date}（距今 {days} 天，{label}）；"
+        "语料为静态档案，不代表此刻的市场共识。"
+    ]
+    return updated

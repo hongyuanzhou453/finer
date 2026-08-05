@@ -19,6 +19,10 @@ from finer.schemas.significance import SampleSufficiency
 #: 共识方向档。模块级常量，供 contracts.ts 镜像与 drift REGISTRY 引用。
 CONSENSUS_DIRECTION_LITERAL = Literal["bullish", "bearish", "neutral", "mixed"]
 
+#: 记录陈旧度。阈值取自研报的实际节奏：券商对同一标的通常按季度更新，
+#: 所以 90 天内算「近期」，一年以上算「档案」。
+STALENESS_LITERAL = Literal["current", "aging", "stale", "archival"]
+
 
 class CreatorRecordCard(BaseModel):
     """一个信源的历史记录卡（CRD-1）。
@@ -89,6 +93,19 @@ class TickerConsensusView(BaseModel):
     """一只标的的共识记录（CRD-3）：谁说了什么，不判断谁说得对。"""
 
     ticker: str = Field(description="canonical 符号")
+    #: 语料是静态档案而非活水（2026-08-05 实测：中位标的最新报告为 2025-12，
+    #: 70% 的标的三个月以上无更新）。不标注截止日期，用户会把陈旧记录读成
+    #: 「当前共识」——那是本页最容易产生的误导。
+    latest_report_date: Optional[str] = Field(
+        default=None, description="本页所有立场里最新的一篇报告日期（YYYY-MM-DD）"
+    )
+    as_of_days: Optional[int] = Field(
+        default=None, description="最新一篇距今天数；None 表示无日期可判"
+    )
+    staleness: Optional[STALENESS_LITERAL] = Field(
+        default=None,
+        description="陈旧度分档，前端据此决定提示强度；None 表示无日期可判",
+    )
     target_names: List[str] = Field(default_factory=list, description="出现过的公司名写法")
 
     n_sources: int = Field(description="有立场的信源数（每源只计最新一篇）")

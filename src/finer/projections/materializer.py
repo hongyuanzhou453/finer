@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import glob
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime
@@ -28,7 +29,15 @@ from finer.credibility.consensus import build_all_ticker_consensus
 from finer.credibility.record_card import build_record_cards
 from finer.schemas.credibility import CreatorRecordCard, TickerConsensusView
 
+logger = logging.getLogger(__name__)
+
 PROJECTION_FILENAME = "projections.sqlite3"
+
+#: 投影 payload 的 schema 版本。**改了 CRD 视图的字段就要 +1。**
+#: 没有它的话，加字段后忘记重跑物化，读侧会静默返回缺字段的旧 payload——
+#: 2026-08-05 实测踩到：加了 latest_report_date 后 /ticker 的陈旧度横幅
+#: 一直不出现，而 API 与前端都「正常」，因为 None 是合法值。
+PROJECTION_SCHEMA_VERSION = "2"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS creator_record_cards (
@@ -107,6 +116,7 @@ def materialize_projections(
         conn.executemany(
             "INSERT INTO projection_meta VALUES (?, ?)",
             [
+                ("schema_version", PROJECTION_SCHEMA_VERSION),
                 ("computed_at", computed_at),
                 ("source_intents", str(len(intents))),
                 ("source_actions", str(len(actions))),
@@ -130,13 +140,37 @@ def materialize_projections(
 # ---------------------------------------------------------------------------
 
 
+def _schema_current(conn: sqlite3.Connection) -> bool:
+    """投影 payload 版本是否与当前代码一致；不一致视同不可用，回退活算。
+
+    宁可慢也不能供错——缺字段的旧 payload 在 schema 上完全合法，
+    只会让新功能静默失效。
+    """
+    try:
+        row = conn.execute(
+            "SELECT value FROM projection_meta WHERE key = 'schema_version'"
+        ).fetchone()
+    except sqlite3.Error:
+        return False
+    if row is None or row[0] != PROJECTION_SCHEMA_VERSION:
+        logger.warning(
+            "投影 schema 版本为 %s，当前代码需要 %s —— 回退活算。"
+            "请跑 scripts/materialize_projections.py 重建。",
+            row[0] if row else "(缺失)", PROJECTION_SCHEMA_VERSION,
+        )
+        return False
+    return True
+
+
 def read_consensus(data_root: Path, canonical: str) -> Optional[TickerConsensusView]:
-    """从投影读一只标的；库不存在/无此行返回 None（调用方回退活算）。"""
+    """从投影读一只标的；库不存在/版本过期/无此行返回 None（调用方回退活算）。"""
     path = projection_path(data_root)
     if not path.exists():
         return None
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
+        if not _schema_current(conn):
+            return None
         row = conn.execute(
             "SELECT payload FROM ticker_consensus WHERE ticker = ?", (canonical,)
         ).fetchone()
@@ -156,6 +190,8 @@ def read_record_cards(
         return None
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
+        if not _schema_current(conn):
+            return None
         rows = conn.execute(
             "SELECT payload FROM creator_record_cards WHERE signal_class = ?",
             (signal_class or "",),
