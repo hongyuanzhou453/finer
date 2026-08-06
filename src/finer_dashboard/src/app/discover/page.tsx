@@ -63,14 +63,25 @@ function CardBody({ card }: { card: CreatorRecordCard }) {
   );
 }
 
+/** 口径切换：券商对个股的评级与对板块的看法基准率不同，不得混算（R6）。 */
+const SCOPES = [
+  { key: "broker_recommendation", label: "个股评级" },
+  { key: "broker_sector_view", label: "板块观点" },
+] as const;
+
 export default function DiscoverPage() {
   const [cards, setCards] = useState<CreatorRecordCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [scope, setScope] = useState<string>(SCOPES[0].key);
 
   useEffect(() => {
     let alive = true;
-    apiFetch<{ cards: CreatorRecordCard[] }>("/api/creator/records")
+    setLoading(true);
+    setError(null);
+    apiFetch<{ cards: CreatorRecordCard[] }>(
+      `/api/creator/records?signal_class=${encodeURIComponent(scope)}`,
+    )
       .then((data) => {
         if (alive) setCards(data.cards);
       })
@@ -83,7 +94,7 @@ export default function DiscoverPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [scope]);
 
   const claim = cards[0]?.sufficiency.predictive_claim;
 
@@ -93,6 +104,26 @@ export default function DiscoverPage() {
       <p className="mt-2 text-sm text-zinc-500">
         每张卡是一份历史记录，不是推荐。默认按已结算样本量排列——不是排名。
       </p>
+
+      <div className="mt-4 flex gap-2">
+        {SCOPES.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setScope(s.key)}
+            className={cn(
+              "rounded border px-3 py-1 text-sm",
+              scope === s.key
+                ? "border-zinc-800 bg-zinc-900 text-white"
+                : "border-zinc-300 text-zinc-600 hover:bg-zinc-50",
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
+        <span className="self-center text-xs text-zinc-400">
+          两种口径基准率不同，不可跨口径比较
+        </span>
+      </div>
 
       {claim && !claim.permitted && (
         <div className="mt-4 rounded border border-zinc-200 bg-zinc-50 p-3 text-xs leading-5 text-zinc-600">

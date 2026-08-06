@@ -91,7 +91,14 @@ INSTRUMENT_TYPE_LITERAL = Literal[
 # statement/opinion; 'broker_recommendation' = a declarative institutional
 # rating (broker research). Derived at the single F5 construction point from
 # the intent's actionability, so downstream never re-parses free-text.
-SIGNAL_CLASS_LITERAL = Literal["kol_statement", "broker_recommendation"]
+#: 信号性质。**不同性质的信号不得混在同一张记分卡里比较**（R6 隔离原则）：
+#: ``broker_recommendation`` 是券商对**个股**的评级，``broker_sector_view``
+#: 是它对**板块**的看法（经 ETF 代理成交）。两者基准率不同，混算等于把
+#: 「选股」和「押赛道」平均掉——2026-08-06 驱动 2026 段 T9 前发现，
+#: 不隔离的话板块观点会占到券商记分卡的 ~14%。
+SIGNAL_CLASS_LITERAL = Literal[
+    "kol_statement", "broker_recommendation", "broker_sector_view"
+]
 
 
 class ValidationStatus(str, Enum):

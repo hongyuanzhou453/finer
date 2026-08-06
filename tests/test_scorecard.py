@@ -224,3 +224,20 @@ def test_markdown_carries_the_volatility_caveat():
 def test_markdown_marks_thin_markets():
     md = render_markdown(build_scorecard([_action("a1")]))
     assert "\\*" in md and f"n < {MIN_RANKED_N}" in md
+
+
+def test_sector_views_are_isolated_from_stock_recommendations():
+    """券商对板块的看法不得混进个股评级的记分卡。
+
+    两者基准率不同——混算等于把「选股」和「押赛道」平均掉。
+    2026-08-06 驱动 2026 段 T9 前发现：不隔离的话板块观点会占到
+    券商记分卡的约 14%。
+    """
+    stock = [
+        _action(f"s{i}", signal_class="broker_recommendation") for i in range(30)
+    ]
+    sector = [
+        _action(f"v{i}", signal_class="broker_sector_view") for i in range(30)
+    ]
+    card = build_scorecard(stock + sector, signal_class="broker_recommendation")
+    assert sum(s.n for s in card.by_creator) == 30

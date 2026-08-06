@@ -772,6 +772,12 @@ def _parse_date_arg(value: str) -> "date":
 
 
 def main() -> None:
+    # 先载 .env 再做任何事：模型注册表在 import 期就读密钥，晚一步就拿不到。
+    # 已存在的环境变量优先，文件只是兜底。
+    from finer.ops.env_bootstrap import load_env_file
+
+    load_env_file()
+
     parser = build_parser()
     args = parser.parse_args()
     _setup_logging(getattr(args, "verbose", False))

@@ -1636,7 +1636,12 @@ export type InstrumentType =
 
 /** What kind of signal a TradeAction encodes (mirrors
  *  schemas/trade_action.py:SIGNAL_CLASS_LITERAL; guarded by check_contract_drift). */
-export type SignalClass = "kol_statement" | "broker_recommendation";
+// broker_sector_view = 券商对**板块**的看法（ETF 代理成交），与对个股的
+// 评级基准率不同，不得混在同一张记分卡里比较（R6 隔离）。
+export type SignalClass =
+  | "kol_statement"
+  | "broker_recommendation"
+  | "broker_sector_view";
 
 export type SourceInfo = {
   creator_id?: string;

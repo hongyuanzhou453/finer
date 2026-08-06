@@ -78,7 +78,8 @@ def test_improving_cycle_becomes_bullish_sector_intent():
     assert intent.envelope_id == ENV_ID
     assert intent.creator_id == "高盛"
     assert intent.intent_id.startswith("t9i_")
-    assert intent.metadata["signal_class"] == "broker_recommendation"
+    # 板块观点自成一档：与个股评级基准率不同，不得混进同一张记分卡（R6）
+    assert intent.metadata["signal_class"] == "broker_sector_view"
 
 
 def test_deteriorating_becomes_bearish_and_stable_neutral():

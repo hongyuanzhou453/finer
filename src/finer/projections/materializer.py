@@ -66,7 +66,7 @@ def projection_path(data_root: Path) -> Path:
 def materialize_projections(
     data_root: Path,
     *,
-    signal_classes: tuple = ("broker_recommendation",),
+    signal_classes: tuple = ("broker_recommendation", "broker_sector_view"),
 ) -> Dict[str, int]:
     """从文件真值重建全部投影。返回各表行数（供 CLI 报告与断言）。"""
     from finer.services.repository import TradeActionRepository

@@ -86,7 +86,15 @@ def derive_signal_class(intent: NormalizedInvestmentIntent) -> str:
     own trading statement. This structured derivation replaces re-parsing the
     free-text institutional marker out of policy risk_notes (C7).
     """
-    return "broker_recommendation" if intent.actionability == "recommendation" else "kol_statement"
+    if intent.actionability != "recommendation":
+        return "kol_statement"
+    # 板块观点与个股评级分档：两者基准率不同，混在同一张记分卡里比较等于
+    # 把「选股」和「押赛道」平均掉（R6 隔离原则的同一条推论）。
+    return (
+        "broker_sector_view"
+        if intent.target_type == "sector"
+        else "broker_recommendation"
+    )
 
 
 def build_action_metadata(

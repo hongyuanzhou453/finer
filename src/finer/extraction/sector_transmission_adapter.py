@@ -223,7 +223,7 @@ def adapt_t9_record(
             "t9_theme_window": extraction.get("theme_window"),
             "t9_policy_dependency": extraction.get("policy_dependency"),
             "t9_source_filepath": filepath,
-            "signal_class": "broker_recommendation",
+            "signal_class": "broker_sector_view",
         },
         created_at=datetime.now(),
     )
