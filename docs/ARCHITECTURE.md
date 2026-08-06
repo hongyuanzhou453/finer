@@ -598,6 +598,9 @@ F0 ContentRecord
                       └→ F3 NormalizedInvestmentIntent
                            └→ F4 PolicyMappingResult
                                 └→ F5 TradeAction (+intent_id, +policy_id, +evidence_span_ids, +execution_timing)
+                                     └→ CRD 消费层（只读投影，非 F-stage）
+                                          CreatorRecordCard / TickerConsensusView
+                                          （必带 SampleSufficiency 效力门）
                                      └→ F6 RLHFFeedback (人工修正)
                                           └→ F7 KOLTimeline / ViewpointState / TargetOpinionGraph
                                                └→ F8 BacktestResult / KOLScore
@@ -724,6 +727,61 @@ const WORKFLOW_VIEWS: WorkflowView[] = [
 | `configs/*.yaml` | 服务配置（飞书、Finance-Skills） | commit |
 | `configs/*.yaml.example` | 配置模板 | commit |
 | `src/finer/config.py` | 配置加载器 | commit |
+
+---
+
+## 8.5 CRD 可信度消费层（2026-08）
+
+**不是 F-stage。** 它只读 F5/F8 产物，产出面向用户的记录视图；投影可随时
+从文件真值重建，删掉不丢任何真值。
+
+### 定位前提（必须先读，否则会把它当成评分系统）
+
+2026-08-02 的跨期持续性检验结论是**「前提未获支持」**：券商的历史超额胜率
+**不能**预测其未来超额（两个指标、六个切分点、预声明判据双双不成立，见
+`docs/specs/2026-07-30-credibility-persistence-test.md` 附录 B）。因此本层的
+产出是**历史记录**，不是预测；产品定位相应从「预测谁更准」转为
+「审计谁说过什么」（`docs/specs/2026-08-02-positioning-pivot-proposal.md`）。
+
+### 模块
+
+| 模块 | 职责 |
+|---|---|
+| `credibility/significance.py` | **CRD-2 统计效力门**。两道**相互独立**的门：样本充分性（Wilson 区间 + 分档 + 结算覆盖率）与预测性主张许可。阈值真相源 = `configs/significance.yaml` |
+| `credibility/record_card.py` | **CRD-1 信源历史记录卡**。复用 `backtest/scorecard.py` 聚合，不重算统计；`sufficiency` 为 schema 必填 |
+| `credibility/consensus.py` | **CRD-3 个股共识**。等权、仅方向、每源只计最新一篇；陈旧度由 `with_staleness()` 在**读取时**算 |
+| `credibility/divergence.py` | **CRD-4 言行不一**。逻辑就位但**当前语料不足以对外**（`explicit_action` 仅 100 条、可归属信源 1 个），见 `2026-08-02-crd4-feasibility.md` |
+| `projections/materializer.py` | **PROJ-1 读模型物化** → `data/projections.sqlite3` |
+
+### 两条不可绕过的纪律
+
+1. **样本充分 ≠ 可以预测。** `tier` 与 `predictive_claim.permitted` 是两个
+   独立字段。瑞银 n=435 的历史超额估得很准（门 1 过），但不能预测未来
+   （门 2 不过）。**未检验的指标一律不许可**——「没有证据说它不行」不是
+   「有证据说它行」。
+2. **口径隔离（R6 推论）。** `signal_class` 是隔离键：
+   `broker_recommendation`（个股评级）/ `broker_sector_view`（板块观点，
+   ETF 代理成交）/ `kol_statement`。三者基准率不同，**不得混在同一张
+   记分卡里比较**——混算等于把「选股」和「押赛道」平均掉。
+
+### 投影表（2026-08-04 用户授权新建）
+
+```
+data/projections.sqlite3
+  creator_record_cards(creator_id, signal_class, payload, computed_at)
+  ticker_consensus(ticker, payload, computed_at)
+  projection_meta(key, value)   -- schema_version 水印 + 来源计数
+```
+
+`payload` 存 pydantic JSON 整体——表不复刻字段结构，schema 演进只发生在
+`schemas/credibility.py` 一处。写入走 tmp + `os.replace`，读方任一时刻打开的
+都是完整一致的库。
+
+**`PROJECTION_SCHEMA_VERSION` 必须随 CRD 视图字段变更 +1**：缺字段的旧
+payload 在 schema 上完全合法，只会让新功能**静默失效**（2026-08-05 实测踩到）。
+版本不符时读侧回退活算并告警——宁可慢也不能供错。
+
+重建：`python scripts/materialize_projections.py`
 
 ---
 

@@ -28,6 +28,13 @@ OKF concept 只放别处没有的东西：关系、status、「为什么」、�
 | Schema | [schemas/](schemas/index.md) | 核心 Pydantic 模型依赖链 + 文件位置 |
 | Known Issue | [known-issues/](known-issues/) | 已知架构断点 |
 | Playbook | [playbooks/](playbooks/) | 可复用流程（OKF 唯一持有正文的类别） |
+| CRD 消费层 | [ARCHITECTURE.md §8.5](../../docs/ARCHITECTURE.md) | 可信度/共识只读视图 + 投影（**非 F-stage**） |
+
+> **动 CRD 或任何面向用户的数字前，先读定位前提**：跨期持续性检验结论为
+> 「券商历史超额不能预测未来超额」，产品定位是「审计谁说过什么」而非
+> 「预测谁更准」。两条硬纪律（样本充分 ≠ 可以预测；`signal_class` 口径隔离）
+> 见 [CLAUDE.md](../../CLAUDE.md) 与
+> [2026-08-02-positioning-pivot-proposal.md](../../docs/specs/2026-08-02-positioning-pivot-proposal.md)。
 
 ## OKF vs memory 边界
 

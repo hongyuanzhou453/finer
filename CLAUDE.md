@@ -76,6 +76,29 @@ F0 (Intake) → F1 (Standardize) → F1.5 (Topic Assembly) → F2 (Anchor) → F
 
 ---
 
+## 定位前提（2026-08-02 转向，动 CRD/UI 前必读）
+
+跨期持续性检验结论：**券商的历史超额胜率不能预测其未来超额**（两个指标、
+六个切分点、预声明判据双双不成立）。产品定位相应转为
+**「不告诉你谁更准，让你查得清谁说过什么」**。
+
+由此产生两条硬纪律，写代码时不得绕过：
+
+1. **样本充分 ≠ 可以预测。** `SampleSufficiency.tier` 与
+   `predictive_claim.permitted` 是两个独立的门。任何比率离开后端**必须**
+   携带 `sufficiency`；前端按 `display_policy` 呈现，`count_only` 时
+   **不得渲染任何比率**。未检验的指标一律 `permitted=false`。
+2. **口径隔离。** `signal_class` 三值——`broker_recommendation`（个股评级）/
+   `broker_sector_view`（板块观点）/ `kol_statement`——基准率不同，
+   **不得混在同一张记分卡里比较**。
+3. **排行榜不按超额排序。** 默认序 = 已结算样本量；超额列保留但强制并排
+   95% 区间与「不构成对未来的预测」声明。禁止「Top 券商」式文案。
+
+相关：`docs/specs/2026-08-02-positioning-pivot-proposal.md`（定位与模块判定）、
+`2026-08-02-crd2-significance-gate.md`（效力门）、`docs/ARCHITECTURE.md` §8.5。
+
+---
+
 ## 错误反馈系统 (Line F)
 
 新建或改动的 API 错误必须使用 canonical error envelope（见 `src/finer/errors/`）。每个错误必须携带 `request_id`、`stage`、`operation`、`retryable`、`fix_hint`；F0 导入错误还必须携带 `source_channel`。
@@ -265,6 +288,12 @@ cd src/finer_dashboard && npm run build
 
 # 类型检查（如有配置）
 cd src/finer_dashboard && npx tsc --noEmit
+
+# 审计闭环（改动 F3/F4/F5 后必跑，必须 100%）
+python scripts/audit_trace_integrity.py
+
+# 读模型投影重建（改动 CRD 视图字段后必跑，否则页面静默用旧 payload）
+python scripts/materialize_projections.py
 ```
 
 ---
@@ -285,6 +314,18 @@ cd src/finer_dashboard && npx tsc --noEmit
 - 新增配置项先加到 `config.py` 的 dataclass，再写 YAML
 - 敏感值（key、token、secret）只放 `.env`，代码中通过 `os.environ` 读取
 - `configs/` 下的 YAML 可提交，但不含真实密钥
+
+### `.env` 加载（2026-08-06 补）
+
+`finer.cli.main()` 在做任何事之前调用 `ops/env_bootstrap.load_env_file()`——
+模型注册表在 import 期就读密钥，晚一步就拿不到。此前整条流水线路径**没有
+任何地方加载 `.env`**，能跑通全靠启动 shell 恰好 export 过；换 shell 或换
+launchd 任务就报「模型没配」，与真因隔着一层。
+
+两条约束：**已存在的环境变量优先**（文件是兜底不是权威）；标准库实现，
+不引 `python-dotenv`（它没在 `pyproject.toml` 里声明）。
+
+直接 `import` 模块而不走 CLI 的脚本，需要自己调一次 `load_env_file()`。
 
 ---
 

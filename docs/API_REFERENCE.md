@@ -11,6 +11,7 @@
 - [认证](#认证)
 - [文件管理](#文件管理)
 - [F2 富化/锚定层](#f2-富化锚定层)
+- [可信度与共识（CRD）](#可信度与共识crd)
 - [复核系统](#复核系统)
 - [RLHF 反馈](#rlhf-反馈)
 - [集成接口](#集成接口)
@@ -360,6 +361,94 @@ file: <binary>
   "indexed_content": 15
 }
 ```
+
+---
+
+## 可信度与共识（CRD）
+
+> **口径纪律。** 这两组接口返回的是**历史记录**，不是预测。跨期持续性检验
+> （`docs/specs/2026-07-30-credibility-persistence-test.md` 附录 B）结论为
+> 「前提未获支持」，因此响应恒带 `predictive_claim.permitted=false` 与口径
+> `notes`，**前端必须逐条展示，不得折叠或省略**。
+
+### 个股共识记录
+
+**GET** `/api/ticker/{symbol}/consensus`
+
+聚合某标的下所有信源的**最新**立场。`symbol` 接受任意方言写法
+（`AZN.LN` / `AZN.L` 归一为同一视图）。
+
+```bash
+curl http://localhost:8000/api/ticker/NVDA/consensus
+```
+
+```json
+{
+  "ok": true,
+  "data": {
+    "ticker": "NVDA",
+    "latest_report_date": "2026-06-03",
+    "as_of_days": 63,
+    "staleness": "current",
+    "n_sources": 9,
+    "direction_counts": {"bullish": 9},
+    "directional_agreement": 1.0,
+    "latest_by_source": [
+      {
+        "creator_id": "摩根士丹利",
+        "direction": "bullish",
+        "rating": "Overweight",
+        "target_price_value": 288.0,
+        "target_price_currency": "USD",
+        "report_date": "2026-06-03",
+        "intent_id": "bri_711f84f1f010804ff02b7ba2",
+        "n_reports": 4
+      }
+    ],
+    "target_prices": {
+      "currency": "USD", "n": 8,
+      "min_value": 205.0, "median_value": 284.0, "max_value": 350.0,
+      "excluded_unit_ambiguous": 0, "excluded_currency_mismatch": 0
+    },
+    "notes": ["共识为等权聚合……", "本视图描述已发生的声明记录……"]
+  }
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `staleness` | `current` / `aging` / `stale` / `archival`（90/180/365 天分档）。**读取时计算**，不物化——距今天数每天都在变 |
+| `as_of_days` | `latest_report_date` 距今天数 |
+| `n_reports` | 该信源对此标的的历史报告数（共识只计最新一篇，防高频覆盖霸占共识） |
+| `intent_id` | 下钻入口 → F3 → F2 证据原文 |
+| `target_prices` | 只聚合同币种；`.L` 标的因镑/便士混存显式排除并计数 |
+
+未找到标的返回 404 canonical error envelope（含 `fix_hint`）。
+
+### 信源历史记录卡
+
+**GET** `/api/creator/records?signal_class=broker_recommendation`
+
+**GET** `/api/creator/{creator_id}/record?signal_class=...`
+
+`signal_class` 是**口径隔离键**。不同口径的基准率不同，**不可跨口径比较**：
+
+| 值 | 含义 |
+|---|---|
+| `broker_recommendation`（默认） | 券商对**个股**的评级 |
+| `broker_sector_view` | 券商对**板块**的看法（ETF 代理成交） |
+| `kol_statement` | KOL 自述仓位 |
+
+每张卡**必带** `sufficiency`（CRD-2 统计效力门），前端按 `display_policy`
+呈现，不得绕过：
+
+| `display_policy` | 前端义务 |
+|---|---|
+| `show` | 命中率必须与 95% Wilson 区间并排展示 |
+| `show_with_warning` | 加「样本偏少」提示 |
+| `count_only` | **不得渲染任何比率**，只显计数 |
+
+列表顺序 = 已结算样本量降序。这是**稳定输出序，不是排名**。
 
 ---
 
@@ -857,4 +946,4 @@ const resp = await fetch('/api/rlhf/submit', {
 
 ---
 
-*最后更新: 2026-04-29 (同步至 F0-F8 命名)*
+*最后更新: 2026-08-06 (新增 CRD 可信度与共识接口)*
