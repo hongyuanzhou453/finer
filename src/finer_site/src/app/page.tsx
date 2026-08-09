@@ -33,11 +33,59 @@ import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
   { href: "#pipeline", label: "流水线" },
+  { href: "#records", label: "记录与共识" },
   { href: "#demo", label: "在线演示" },
-  { href: "#proof", label: "回测证据" },
+  { href: "#proof", label: "结算记录" },
   { href: "#capabilities", label: "能力" },
   { href: "#human-loop", label: "标注训练" },
   { href: "#engineering", label: "技术" },
+];
+
+const RECORD_VIEWS = [
+  {
+    src: "/landing/record-discover.png",
+    alt: "Finer OS /discover 信源记录卡：按已结算样本量排列的记录卡与口径开关（真实语料）",
+    label: "finer.os / discover",
+    title: "/discover · 信源记录卡",
+    tagline: "每张卡是一份历史记录，不是推荐。",
+    points: [
+      "默认按已结算样本量排列——是稳定的输出序，不是排名",
+      "命中率并排 95% 区间；样本不足只报计数",
+      "个股评级 / 板块观点两种口径不混算（口径开关）",
+      "页头常驻持续性检验声明",
+    ],
+  },
+  {
+    src: "/landing/record-ticker.png",
+    alt: "Finer OS /ticker 个股共识：NVDA 多源记录、目标价区间与陈旧度横幅（真实语料）",
+    label: "finer.os / ticker/NVDA",
+    title: "/ticker · 个股共识",
+    tagline: "谁说过什么，截至哪一天。",
+    points: [
+      "等权聚合，每个信源只计最新一篇",
+      "目标价给最低 / 中位 / 最高；NVDA 9 家信源（USD 205/284/350）",
+      "陈旧度横幅置于页头，逐行 intent_id 下钻",
+      "无法诚实聚合时显式拒绝——AZN.L 因镑/便士单位混存拒绝聚合目标价",
+    ],
+  },
+  {
+    src: "/landing/record-audit.png",
+    alt: "Finer OS /audit 证据审计：TradeAction 到原文证据片段的全链下钻（真实语料）",
+    label: "finer.os / audit",
+    title: "/audit · 证据审计",
+    tagline: "每个数字回到原文。",
+    points: [
+      "TradeAction → F3 意图 → F4 策略 trace → F2 证据片段字符区间 → 原文",
+      "canonical_trace_status 全链校验",
+      "每个数字 3 次点击内到达原文证据",
+    ],
+  },
+];
+
+const RECORD_STATS = [
+  { k: "研报 PDF 静态档案", v: "28,565 份" },
+  { k: "canonical TradeAction · 三向审计 100%", v: "4,919 条" },
+  { k: "evidence span 证据片段", v: "128,905 个" },
 ];
 
 const CAPABILITIES = [
@@ -45,7 +93,7 @@ const CAPABILITIES = [
     icon: Radio,
     stage: "F0 · F1",
     title: "采集与归一化",
-    body: "飞书、微信公众号、B站等多源 KOL 内容统一接入，标准化为 ContentEnvelope + ContentBlock，保留来源锚点与原始归档。",
+    body: "飞书、B站、券商研报 PDF 等多源内容统一接入（微信为存量归档），标准化为 ContentEnvelope + ContentBlock，保留来源锚点与原始归档。",
   },
   {
     icon: Network,
@@ -62,8 +110,8 @@ const CAPABILITIES = [
   {
     icon: LineChart,
     stage: "F8",
-    title: "回测与评分",
-    body: "把语言观点映射到市场结果，模拟完全跟单者的收益曲线，输出夏普、回撤、胜率等可审计绩效指标。",
+    title: "回测与结算记录",
+    body: "把观点落成可结算、可下钻的记录；比率一律携带样本充分性判定，样本不足只报计数，不构成对未来的预测。",
   },
 ];
 
@@ -101,7 +149,7 @@ const ROADMAP_NODES: { label: string; done: boolean }[] = [
   { label: "DPO 数据导出", done: true },
   { label: "Prompt 工程", done: false },
   { label: "插件 / 工具调用", done: false },
-  { label: "模型微调", done: false },
+  { label: "模型微调", done: true },
 ];
 
 const ROADMAP_PLANNED = [
@@ -117,8 +165,8 @@ const ROADMAP_PLANNED = [
   },
   {
     icon: Cpu,
-    title: "模型微调",
-    body: "三指标评测器、训练脚本与百炼 ChatML 转换已就绪；等待真实 DPO-LoRA 实跑，回填微调前后对比数字。",
+    title: "模型微调 · 扩量第二轮",
+    body: "第一轮 DPO-LoRA 已实跑（小样本方向验证，数字见 /case）；扩量第二轮规划中。",
   },
 ];
 
@@ -133,19 +181,19 @@ export default function LandingPage() {
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div>
             <div className="text-[12px] font-bold uppercase tracking-[0.22em] text-morningstar-red">
-              AI-NATIVE 投研自动化流水线
+              AI-NATIVE 投研审计流水线
             </div>
             <h1 className="mt-5 text-[40px] font-bold leading-[1.12] tracking-tight text-foreground lg:text-[52px]">
-              把财经 KOL 的内容，
+              不告诉你谁更准。
               <br />
-              变成可回测、可审计的
+              让你查得清，
               <br />
-              投资事件。
+              谁说过什么。
             </h1>
             <p className="mt-6 max-w-xl text-[16px] leading-7 text-[var(--ink-soft)]">
-              Finer OS 沿 F0-F8 流水线，将任意平台的 KOL 社交媒体内容
-              转化为结构化投资意图、可执行交易动作，并以完全跟单者视角回测，
-              验证「跟随这个 KOL」的真实收益与市场表现。
+              Finer 不告诉你谁更准。它让你查得清每一句话是谁在什么时候说的、
+              后来发生了什么、以及说的和做的是否一致。F0-F8 流水线把 KOL
+              与券商研报内容变成带证据链的结构化记录。
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -156,16 +204,16 @@ export default function LandingPage() {
                 <ArrowUpRight className="h-4 w-4" strokeWidth={2} />
               </Link>
               <a
-                href="#proof"
+                href="#records"
                 className="inline-flex items-center gap-2 rounded-sm border border-[var(--table-border)] bg-white px-5 py-3 text-[14px] font-semibold text-foreground transition-colors hover:border-foreground/30"
               >
-                看回测证据
+                看记录与共识
               </a>
             </div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-foreground/45">
-              <span>证据链可追溯</span>
+              <span>每个数字 3 次点击到原文证据</span>
               <span className="h-1 w-1 rounded-full bg-foreground/20" />
-              <span>AI 抽取 · 人工裁决</span>
+              <span>样本不足就说不足</span>
               <span className="h-1 w-1 rounded-full bg-foreground/20" />
               <span>F0-F8 canonical pipeline</span>
             </div>
@@ -198,6 +246,82 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ===== Records & consensus — real-corpus read-only views ===== */}
+      <section id="records" className="mx-auto max-w-[1200px] px-6 py-16 lg:py-20">
+        <div className="mb-10 max-w-2xl">
+          <div className="text-[12px] font-bold uppercase tracking-[0.2em] text-morningstar-red">
+            RECORDS &amp; CONSENSUS
+          </div>
+          <h2 className="mt-4 text-[26px] font-bold tracking-tight text-foreground">
+            记录与共识：真实语料上的三个只读视图
+          </h2>
+          <p className="mt-3 text-[15px] leading-7 text-[var(--ink-soft)]">
+            下面三个视图消费的是真实语料，不是演示数据。它们各自回答一个问题：
+            这家信源说过什么、这只标的被谁说过、这个数字从哪里来。
+          </p>
+        </div>
+
+        <div className="grid gap-8 lg:grid-cols-3 lg:gap-6">
+          {RECORD_VIEWS.map((v) => (
+            <div key={v.title} className="flex flex-col">
+              <ProductFrame
+                src={v.src}
+                alt={v.alt}
+                width={1440}
+                height={900}
+                label={v.label}
+              />
+              <h3 className="mt-4 text-[16px] font-bold tracking-tight text-foreground">
+                {v.title}
+              </h3>
+              <p className="mt-1 text-[13px] font-medium text-morningstar-red">{v.tagline}</p>
+              <ul className="mt-3 space-y-2 text-[13px] leading-6 text-[var(--ink-soft)]">
+                {v.points.map((p) => (
+                  <li key={p} className="flex items-start gap-2.5">
+                    <span className="mt-[8px] h-1.5 w-1.5 shrink-0 rounded-full bg-morningstar-red" />
+                    <span>{p}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {/* numbers strip */}
+        <div className="mt-10 grid gap-px overflow-hidden rounded-sm border border-[var(--table-border)] bg-[var(--table-border)] sm:grid-cols-3">
+          {RECORD_STATS.map((s) => (
+            <div key={s.k} className="bg-white px-6 py-5">
+              <div className="tabular-nums text-[26px] font-bold tracking-tight text-foreground">
+                {s.v}
+              </div>
+              <div className="mt-1 text-[12px] leading-5 text-[var(--ink-soft)]">{s.k}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* honest statistics */}
+        <div className="mt-6 border-t-2 border-morningstar-red bg-white p-6 shadow-[var(--shadow-soft)]">
+          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-morningstar-red">
+            诚实的统计
+          </div>
+          <p className="mt-3 max-w-3xl text-[14px] leading-7 text-[var(--ink-soft)]">
+            我们在 2,983 条已结算 action 上检验过「券商历史超额能否预测未来超额」：
+            两个指标、六个切分点、预声明判据，双双不成立。判据先于结果写死在
+            <span className="font-mono text-[13px] text-foreground/80">
+              {" "}scripts/test_credibility_persistence.py{" "}
+            </span>
+            里。我们把这个否定结果公开，并据此把产品改写为如实记录。
+          </p>
+          <p className="mt-3 max-w-3xl text-[13px] leading-6 text-foreground/70">
+            本平台未观测到信源历史表现的跨期持续性；所有比率均为历史记录，不构成对未来的预测。
+          </p>
+        </div>
+
+        <div className="mt-4 text-[12px] text-foreground/45">
+          真实语料 · 2026-08-10 截图 · 页头陈旧度横幅为产品功能：语料是静态档案，记录截至哪一天就标注到哪一天
+        </div>
+      </section>
+
       {/* ===== Interactive demo entry ===== */}
       <section id="demo" className="mx-auto max-w-[1200px] px-6 py-16 lg:py-20">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center">
@@ -212,15 +336,16 @@ export default function LandingPage() {
             </h2>
             <p className="mt-5 text-[15px] leading-7 text-[var(--ink-soft)]">
               不用注册、不用部署。打开在线演示，亲手点一条 KOL 观点如何逐层变成
-              可溯源的交易动作，看回测曲线如何生成。界面与真实产品一致，
-              但所有数据均为演示数据，不连接真实后端。
+              可溯源的交易动作，看回测曲线如何生成。演示展示 F0-F8 流水线能力；
+              当前产品消费面以「记录与共识」的三个只读视图为准。
+              所有数据均为演示数据，不连接真实后端。
             </p>
             <ul className="mt-6 space-y-3 text-[14px] text-foreground/80">
               {[
                 "F0-F8 流水线逐阶段走查",
-                "KOL 研究视图 + 评分与累计收益曲线",
+                "KOL 记录视图 + 已结算样本与累计收益曲线（演示数据）",
                 "点 TradeAction 高亮回溯到原文证据",
-                "回测曲线、夏普、最大回撤、胜率",
+                "回测曲线、夏普、最大回撤、胜率（历史记录口径）",
               ].map((t) => (
                 <li key={t} className="flex items-start gap-2.5">
                   <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-morningstar-red" />
@@ -271,20 +396,22 @@ export default function LandingPage() {
                 F8 BACKTEST AUDIT
               </div>
               <h2 className="mt-4 text-[28px] font-bold leading-snug tracking-tight text-foreground">
-                收益曲线背后，
+                收益曲线是历史记录，
                 <br />
-                是完整的证据链
+                不是承诺
               </h2>
               <p className="mt-5 text-[15px] leading-7 text-[var(--ink-soft)]">
                 每条进入回测的 TradeAction 都满足 canonical 契约：可反查到 F3 投资意图、
                 F4 策略映射、F2 证据片段，以及四个明确区分的执行时钟。
+                曲线与比率呈现的是「后来发生了什么」，不构成对未来的预测。
               </p>
               <ul className="mt-6 space-y-3 text-[14px] text-foreground/80">
                 {[
-                  "累计收益、年化、夏普、最大回撤、胜率全部可审计",
+                  "累计收益、年化、夏普、最大回撤逐笔可审计",
+                  "比率随样本充分性呈现——样本不足只报计数",
                   "次开盘成交模型 + 显式费用/滑点假设",
                   "intent_id / policy_id / evidence_span_ids 全程贯穿",
-                  "每个数字可回溯到原始 KOL 内容",
+                  "每个数字可回溯到原始内容，不构成对未来的预测",
                 ].map((t) => (
                   <li key={t} className="flex items-start gap-2.5">
                     <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-morningstar-red" />
@@ -335,9 +462,10 @@ export default function LandingPage() {
               AI 抽取，人类裁决，反馈成为训练数据
             </h2>
             <p className="mt-3 text-[15px] leading-7 text-[var(--ink-soft)]">
-              AI 在每个阶段做具体可验证的事；每一条 AI 输出在进入回测前都必须经过
-              F6 复核台被人类裁决；裁决以结构化字段记录，导出为 DPO
-              训练数据——这是 Finer 对「黑箱 AI」最具体的反话术。
+              AI 在每个阶段做具体可验证的事；进入回测的硬门是三向审计闭环
+              （intent / policy / evidence 100% 可反查）；F6 人工裁决按需、抽样进行，
+              以结构化字段记录并沉淀为 DPO 训练数据——这是 Finer
+              对「黑箱 AI」最具体的反话术。
             </p>
           </div>
 
@@ -439,8 +567,9 @@ export default function LandingPage() {
                 人在哪儿介入
               </h3>
               <p className="mt-3 text-[13px] leading-6 text-[var(--ink-soft)]">
-                <span className="font-mono text-foreground/80">F6</span> RLHF 复核台。每条进入回测的
-                TradeAction 都必须经过：
+                <span className="font-mono text-foreground/80">F6</span> RLHF
+                复核台。进入回测的硬门是三向审计闭环；人工裁决按需、抽样进行，
+                每条裁决包含：
               </p>
               <ul className="mt-2 space-y-2 text-[13px] leading-6 text-[var(--ink-soft)]">
                 <li>整体 1-5 星评分 + <span className="font-mono">is_correct</span> 判断</li>
@@ -467,7 +596,11 @@ export default function LandingPage() {
                   <span className="font-mono">GET /api/rlhf/export</span> 导出为 DPO 训练数据
                 </li>
                 <li>
-                  偏好对流水线与三指标评测器已建成，真实微调待实跑——
+                  第一轮微调已实跑，前后对比见
+                  <Link href="/case" className="font-semibold text-morningstar-red hover:underline">
+                    /case
+                  </Link>
+                  ；
                   <Link href="/training" className="font-semibold text-morningstar-red hover:underline">
                     训练数据页
                   </Link>
@@ -515,8 +648,8 @@ export default function LandingPage() {
               ))}
             </div>
             <div className="mt-3 text-[11px] leading-5 text-[var(--ink-soft)]">
-              DPO 数据格式、导出 API、偏好对流水线与三指标评测器已实现；真实模型微调待实跑。
-              我们更愿意把已建成与未建成都说清楚。
+              DPO 数据格式、导出 API、偏好对流水线与三指标评测器已实现；第一轮微调已实跑
+              （小样本方向验证，数字见 /case），扩量轮待做。我们更愿意把已建成与未建成都说清楚。
             </div>
           </div>
 
@@ -670,7 +803,7 @@ export default function LandingPage() {
             <div className="border-t border-[var(--grid-line)] bg-[var(--surface-muted)] px-6 py-3 text-[12px] leading-6 text-[var(--ink-soft)]">
               <span className="font-semibold text-foreground">RLHFFeedback 记录、DPO 数据导出与评测/训练脚本地基已实现</span>
               ；Prompt 工程、插件调用为规划中，模型微调
-              <strong className="text-foreground">待真实实跑、尚无成绩</strong>
+              <strong className="text-foreground">第一轮已出小样本结果（见 /case），扩量第二轮规划中</strong>
               。完整现状见
               <Link href="/training" className="font-semibold text-morningstar-red hover:underline">
                 训练数据页

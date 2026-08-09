@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 const SITE_URL = "https://finer.t800.click";
-const TITLE = "Finer OS — AI-native 投研自动化流水线";
+const TITLE = "Finer OS — 谁说过什么，后来发生了什么";
 const DESCRIPTION =
-  "把财经 KOL 的社交媒体内容转化为结构化、可回测、可审计的投资事件。F0-F8 canonical pipeline，证据链可追溯。";
+  "Finer 不告诉你谁更准。它让你查得清每一句话是谁在什么时候说的、后来发生了什么、以及说的和做的是否一致。可下钻的记录 · 诚实的统计 · 言行一致性核查。";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -17,6 +17,9 @@ export const metadata: Metadata = {
     "Finer OS",
     "投研自动化",
     "KOL",
+    "信源记录",
+    "共识",
+    "审计",
     "投资回测",
     "证据链",
     "AI-native",
@@ -37,7 +40,7 @@ export const metadata: Metadata = {
         url: "/og/finer-social-preview.png",
         width: 1280,
         height: 670,
-        alt: "Finer OS — 把 KOL 内容变成可回测、可审计的投资事件",
+        alt: "Finer OS — 谁说过什么，后来发生了什么",
       },
     ],
   },

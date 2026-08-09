@@ -36,7 +36,7 @@ import {
 //   docs/specs/2026-06-10-annotation-workbench.md
 //   docs/specs/2026-06-12-rlvr-guided-dpo-task-card.md（RLHF × RLVR 协同，rev2）
 //   src/finer/schemas/{annotation,trade_action}.py
-// 红线：不编造模型提升数字。真实微调数字留待百炼实跑回填。
+// 红线：不编造模型提升数字。第一轮真实数字已由百炼实跑回填（见 /case）。
 // 标注工作台是内部工具，本页 CTA 指向在线演示（F6 复核模拟）与 GitHub。
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -144,8 +144,8 @@ const STAGES = [
   { stage: "地基②", deliver: "eval_compare.py 三指标评测器", status: "done", detail: "--demo dry-run 走通（枚举真相源未漂移）" },
   { stage: "地基③", deliver: "train_dpo.py --smoke-test", status: "done", detail: "tiny 模型 + CPU + 2 步，训练循环可运行" },
   { stage: "数据②", deliver: "to_bailian.py 百炼 ChatML 转换", status: "done", detail: "格式已核实 + Qwen3-8B 支持 DPO LoRA" },
-  { stage: "数据①", deliver: "harvest rejected → 校准 chosen", status: "active", detail: "152 对 qwen3-8b 真实 draft 已生成，HQ 全量人工审核进行中" },
-  { stage: "实跑", deliver: "百炼上传 / 训练 / 部署 / 评测", status: "user", detail: "真实微调与评测，回填 after.jsonl 出真实数字" },
+  { stage: "数据①", deliver: "harvest rejected → 校准 chosen", status: "done", detail: "偏好对资产已落库；第一轮训练用 20 条 registry-验证精选偏好对" },
+  { stage: "实跑", deliver: "百炼上传 / 训练 / 部署 / 评测", status: "done", detail: "第一轮 DPO-LoRA 已实跑并评测（held-out n=29，小样本方向验证），数字见 /case" },
   { stage: "v2", deliver: "RLVR-guided k-best 采样构对", status: "locked", detail: "任务卡 rev2 已锁定，baseline 出数后启动（rewards.py 统一奖励真相源）" },
 ];
 
@@ -858,7 +858,8 @@ export default function TrainingPage() {
             </h2>
             <p className="mt-3 text-[15px] leading-7 text-[var(--ink-soft)]">
               目标：在阿里云百炼对 Qwen3-8B 跑通真实 DPO-LoRA，产出微调前/后可量化对比。
-              地基与数据脚本已就绪并验证；真实实跑尚未发生。已建成与未建成，都说清楚。
+              第一轮已实跑并出小样本对比数字（见 /case）；扩量第二轮尚未发生。
+              已建成与未建成，都说清楚。
             </p>
           </div>
 
@@ -939,7 +940,9 @@ export default function TrainingPage() {
               <p className="mt-3 text-[13px] leading-6 text-[var(--ink-soft)]">
                 合成 bootstrap 只能证明「管线通 + 原则可学」，不能当质量提升。
                 真实的微调前/后数字，只来自百炼实跑后用同一评测集跑出的
-                <span className="font-mono"> eval_compare </span>结果——这一格目前留白，待实跑回填。
+                <span className="font-mono"> eval_compare </span>结果——第一轮已回填：
+                偏好胜率 87.1%（胜13/平14/负2）、编造率 66.7%→22.2%、证据挂靠
+                33.3%→77.8%，held-out n=29。小样本方向验证，非最终水平，完整拆解见 /case。
               </p>
               <p className="mt-3 text-[12px] leading-5 text-foreground/50">
                 密钥不进代码、不进日志；harvest / 推理失败如实报告，不用 mock 数据冒充真实结果。

@@ -5,7 +5,7 @@ const SITE_URL = "https://finer.t800.click";
 export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const lastModified = "2026-06-03";
+  const lastModified = "2026-08-10";
   return [
     {
       url: SITE_URL,
@@ -21,7 +21,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
     {
       url: `${SITE_URL}/training`,
-      lastModified: "2026-06-11",
+      lastModified,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
+      url: `${SITE_URL}/case`,
+      lastModified,
       changeFrequency: "monthly",
       priority: 0.7,
     },

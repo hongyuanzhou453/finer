@@ -163,7 +163,7 @@ function KolList({
             <div className="flex items-center justify-between gap-2">
               <span className="text-[13px] font-bold text-foreground">{k.name}</span>
               <span className="tabular-nums text-[13px] font-bold text-morningstar-red">
-                {k.rating.toFixed(1)}
+                n={k.trade_actions.length}
               </span>
             </div>
             <div className="mt-0.5 font-mono text-[10px] text-foreground/45">{k.handle}</div>
@@ -470,10 +470,11 @@ export function DemoWorkbench({
                 <p className="mt-1 text-[13px] text-[var(--ink-soft)]">{kol.blurb}</p>
               </div>
               <div className="text-right">
-                <div className="text-[11px] text-foreground/45">综合回测评分</div>
+                <div className="text-[11px] text-foreground/45">已结算样本（演示）</div>
                 <div className="tabular-nums text-[30px] font-bold leading-none text-morningstar-red">
-                  {kol.rating.toFixed(1)}
+                  {kol.trade_actions.length}
                 </div>
+                <div className="mt-1 text-[10px] text-foreground/40">不构成对未来的预测</div>
               </div>
             </div>
 
@@ -484,7 +485,7 @@ export function DemoWorkbench({
                 { k: "年化", v: pct(m.annualized), red: true },
                 { k: "夏普", v: m.sharpe.toFixed(2) },
                 { k: "最大回撤", v: pct(m.max_drawdown), green: true },
-                { k: "胜率", v: `${(m.win_rate * 100).toFixed(1)}%` },
+                { k: "胜率（历史记录）", v: `${(m.win_rate * 100).toFixed(1)}% · n=${m.signal_count}` },
                 { k: "信号数", v: String(m.signal_count) },
               ].map((cell) => (
                 <div
@@ -514,7 +515,7 @@ export function DemoWorkbench({
                 </span>
                 <div className="flex items-center gap-3 text-[10px] text-[var(--ink-soft)]">
                   <span className="inline-flex items-center gap-1">
-                    <span className="h-0.5 w-3 bg-[var(--chart-up)]" /> 跟单收益
+                    <span className="h-0.5 w-3 bg-[var(--chart-up)]" /> 跟单模拟（演示）
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <span className="h-0.5 w-3 bg-[var(--chart-peer)]" /> 沪深300

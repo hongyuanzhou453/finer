@@ -13,7 +13,7 @@ const STAGES: Stage[] = [
   { id: "F5", name: "Execute",     desc: "TradeAction",    role: "AI" },
   { id: "F6", name: "Review",      desc: "人工复核",       role: "人" },
   { id: "F7", name: "Timeline",    desc: "观点编年史",     role: "规则" },
-  { id: "F8", name: "Backtest",    desc: "回测评分",       role: "规则" },
+  { id: "F8", name: "Backtest",    desc: "回测结算",       role: "规则" },
 ];
 
 const ROLE_STYLE: Record<Role, string> = {

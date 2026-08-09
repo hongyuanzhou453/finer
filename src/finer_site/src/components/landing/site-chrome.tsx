@@ -76,8 +76,8 @@ export function SiteFooter() {
               </span>
             </div>
             <p className="mt-3 text-[13px] leading-6 text-[var(--ink-soft)]">
-              AI-native 投研自动化流水线。把 KOL 内容转化为结构化、可回测、
-              可审计的投资事件。
+              Finer 不告诉你谁更准。它让你查得清每一句话是谁在什么时候说的、
+              后来发生了什么、以及说的和做的是否一致。
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-12 gap-y-2 text-[13px]">
@@ -85,6 +85,9 @@ export function SiteFooter() {
               <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/40">
                 产品
               </div>
+              <Link href="/#records" className="block text-foreground/70 hover:text-morningstar-red">
+                记录与共识
+              </Link>
               <Link href="/demo" className="block text-foreground/70 hover:text-morningstar-red">
                 在线演示
               </Link>
@@ -92,7 +95,7 @@ export function SiteFooter() {
                 训练数据
               </Link>
               <Link href="/#proof" className="block text-foreground/70 hover:text-morningstar-red">
-                回测证据
+                结算记录
               </Link>
               <Link href="/#capabilities" className="block text-foreground/70 hover:text-morningstar-red">
                 能力
@@ -120,7 +123,8 @@ export function SiteFooter() {
           </div>
         </div>
         <div className="mt-8 border-t border-[var(--grid-line)] pt-5 text-[12px] text-foreground/40">
-          内部研究系统原型 · 数据与回测结果仅供研究，不构成投资建议。
+          内部研究系统原型 · 数据与回测结果仅供研究，不构成投资建议 ·
+          所有比率与曲线均为历史记录，不构成对未来的预测。
         </div>
       </div>
     </footer>

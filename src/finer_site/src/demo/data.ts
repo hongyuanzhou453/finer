@@ -1099,8 +1099,8 @@ export const STAGE_DETAILS: StageDetail[] = [
     id: "F8",
     name: "Backtest",
     role: "规则",
-    headline: "回测评分",
-    what: "以完全跟单者视角回测，次开盘成交、显式费用/滑点，输出可审计绩效，并回算 KOL 评分。",
+    headline: "回测结算",
+    what: "以完全跟单者视角回测，次开盘成交、显式费用/滑点，落成可审计的结算记录，供记录卡与审计页下钻。",
     output: [
       { k: "return_pct", v: "+12.3%" },
       { k: "holding_days", v: "35" },
