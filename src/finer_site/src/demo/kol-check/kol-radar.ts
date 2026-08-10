@@ -1,12 +1,13 @@
 /**
- * Types + pure derivations for the KOL scorecard (信誉分 / 命中率 / 收益榜 / net stance).
+ * Types + pure derivations for the KOL settlement record (结算记录 / 命中率 / 跟单收益汇总 / net stance).
  * Ported verbatim from the Finer OS dashboard radar fixtures — only the fabricated
  * multi-persona sample data was removed; every derivation takes a `data: KOLRadarData`
  * argument, so the retail demo passes a FROZEN ANONYMIZED single-KOL snapshot built
  * from real F5 canonical TradeActions (see ./data.json).
  *
- * 信誉分 (0–99): hit rate shrunk toward a 0.5 prior by sample size (see
- *   deriveCredibilityBoard) — a small record can't outrank a long consistent one.
+ * credibility (0–99): hit rate shrunk toward a 0.5 prior by sample size (see
+ *   deriveCredibilityBoard) — kept for data compatibility; the /kol-check page
+ *   no longer renders it as a score.
  * return_pct semantics: F8 完全跟单 P&L, already direction-adjusted (正=判断对/盈,
  *   负=判断错/亏). A bearish call that correctly called a drop has positive return_pct.
  */
@@ -32,7 +33,7 @@ export type ChangeType =
   | "new_high_conviction" // 新高信念 call
   | "new_call" // 新增观点
   | "stop_loss" // 旧 call 触发止损
-  | "score_change" // 信誉分变动
+  | "score_change" // credibility 变动（数据兼容保留，不再作评价口径渲染）
   | "consensus_alert"; // 标的出现共识/分歧异动
 
 export interface RadarChangeEvent {
@@ -432,7 +433,7 @@ export function deriveTickerConsensus(data: KOLRadarData): ConsensusRow[] {
   );
 }
 
-// ---- F. Earnings board (收益榜 · TOP EARNERS) --------------------------------
+// ---- F. Earnings aggregation (跟单收益汇总 · 回测记账口径) --------------------
 
 export interface EarningsRow {
   kolId: string;

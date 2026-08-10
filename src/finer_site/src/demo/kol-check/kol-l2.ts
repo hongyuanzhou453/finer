@@ -31,7 +31,7 @@ function narrativeFor(kol: RadarKOL): string {
   }
   if (highlights.bestReturn && highlights.bestReturn.returnPct != null) {
     parts.push(
-      `最佳兑现 ${highlights.bestReturn.companyName} ${fmtPctSigned(highlights.bestReturn.returnPct)}`,
+      `单笔最高兑现 ${highlights.bestReturn.companyName} ${fmtPctSigned(highlights.bestReturn.returnPct)}`,
     );
   }
   // Only call it a 教训 when there's an actual loss — an all-winning KOL has none.
