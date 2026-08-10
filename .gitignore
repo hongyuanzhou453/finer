@@ -28,6 +28,8 @@ trader韭菜*/
 *.json
 !pyproject.toml
 !src/finer_dashboard/package-lock.json
+!src/finer_site/package.json
+!src/finer_site/package-lock.json
 !tests/fixtures/kol-backtest-mvp/**/*.json
 !scripts/wx_channels_download/**/*.json
 !src/finer_site/src/demo/kol-check/data.json
