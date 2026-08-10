@@ -1,73 +1,95 @@
-# Finer OS 宣传站 — 部署指南（Cloudflare Pages）
+# Finer OS 宣传站 — 部署指南（Cloudflare Worker）
 
-> 目标：把静态产物 `out/` 部署到 Cloudflare Pages，绑定 **finer.t800.click**。
-> 你的域名已在 Cloudflare 同一账户，绑定会**自动**配好 DNS + HTTPS，无需手填记录。
-> 全程不需要把任何 API Token / Zone ID 交给 AI。
+> finer.t800.click 由**静态资源 Worker `finer-site`** 服务（assets-only，无服务端脚本）。
+>
+> ⚠️ 本文档旧版描述的 Cloudflare Pages 路线（`wrangler pages deploy out --project-name finer-site`）
+> 已于 2026-08-10 实测无效：账户内不存在任何 Pages 项目。按那条路线部署只会
+> 新建一个与线上域名无关的 Pages 项目，线上站点不会更新。不要再用。
 
 ---
 
-## 第 0 步：生成最新产物
+## 标准更新流程（实测有效）
 
 ```bash
+# ① 仓库根目录：取回 /kol-check 页面源码（只在 feat/kol-check-demo 分支，见下方陷阱一）
+git checkout feat/kol-check-demo -- \
+  src/finer_site/src/app/kol-check \
+  src/finer_site/src/components/kol-check \
+  src/finer_site/src/demo/kol-check
+
+# ② 构建 + 部署（wrangler 读取同目录 wrangler.jsonc）
 cd src/finer_site
-npm run build          # 产物输出到 src/finer_site/out/
+npm run build && npx wrangler@latest deploy
 ```
 
-`out/` 是纯静态站（HTML/CSS/JS + 图片），无后端，demo 全部前端 mock。
+首次使用需 `npx wrangler login`（浏览器授权一次，凭证只在本机 `~/.wrangler`，不经过 AI）。
+
+部署完成后抽查线上路由全部 200：`/`、`/demo`、`/training`、`/kol-check`。
 
 ---
 
-## 方式 A1：后台拖拽上传（推荐，零 CLI）
+## 部署配置：wrangler.jsonc
 
-1. 登录 Cloudflare Dashboard → 左侧 **Workers & Pages** → **Create** → 选 **Pages** → **Upload assets**
-2. 项目名填 `finer-site`（或自定义）
-3. 把 `src/finer_site/out/` 文件夹**里的内容**拖进上传区
-   - 提示：拖的是 `out/` 内部的文件，不是 `out` 这个文件夹本身
-   - 嫌麻烦可先打包：`cd out && zip -r ../finer-site.zip .`，上传 zip
-4. 点 **Deploy site**，几秒后得到一个 `finer-site-xxx.pages.dev` 临时地址 → 先打开确认页面正常、demo 能点
-5. 进项目 → **Custom domains** → **Set up a custom domain** → 输入 `finer.t800.click`
-   - 域名已在你的 Cloudflare，会**自动添加 CNAME**，无需手填 DNS
-6. 等 1–5 分钟 SSL 证书签发（状态变 **Active**）→ 访问 https://finer.t800.click
+`src/finer_site/wrangler.jsonc`。`name` 必须是 `finer-site`——对应线上已存在、
+绑定了 finer.t800.click 的 Worker；`assets.directory` 指向 `next build` 的静态导出产物：
+
+```jsonc
+{
+  // finer.t800.click 实际由静态资源 Worker（finer-site）服务，非 Pages 项目
+  "name": "finer-site",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./out"
+  }
+}
+```
+
+- 根 `.gitignore` 的 `*.json` 规则**不匹配** `.jsonc`，该文件可正常入 git。
+  目前 tracked 版本在 `feat/kol-check-demo` 分支上（随该分支合入 main 收编）；
+  若工作区里找不到，按上面内容原样重建即可。
+- 域名绑定（finer.t800.click → Worker）配置在 Cloudflare 后台该 Worker 的
+  **Custom Domains**，不在 wrangler.jsonc 里；`wrangler deploy` 只更新静态资源，
+  不影响域名绑定。
 
 ---
 
-## 方式 A2：wrangler CLI（可复用，每次一条命令）
+## 陷阱一：/kol-check 源码只在 feat/kol-check-demo 分支
 
-需要先登录（浏览器授权一次，凭证只在你本机，不经过 AI）：
-
-```bash
-cd src/finer_site
-npx wrangler login                                          # 浏览器授权
-npx wrangler pages deploy out --project-name finer-site     # 首次会提示创建项目
-```
-
-之后每次更新只需：
+- main 上**没有** `/kol-check` 页面源码。从 main 直接 `npm run build` 再部署，
+  新产物会整体覆盖线上资源 → **线上 /kol-check 变 404**。
+- 所以从 main 部署前必须先执行标准流程第 ① 步的 `git checkout feat/kol-check-demo -- …`。
+- 该 checkout 会把文件同时写入工作区和暂存区。部署后如需还原：
 
 ```bash
-npm run build && npx wrangler pages deploy out --project-name finer-site
+git reset -- src/finer_site/src/app/kol-check src/finer_site/src/components/kol-check src/finer_site/src/demo/kol-check
+rm -rf src/finer_site/src/app/kol-check src/finer_site/src/components/kol-check src/finer_site/src/demo/kol-check
 ```
 
-绑定自定义域名同 A1 的第 5–6 步（或在 Pages 后台 Custom domains 里操作）。
+- **根治方案 = 把 feat/kol-check-demo 合入 main。** 2026-08-10 实测
+  `git merge-tree --write-tree main feat/kol-check-demo` 无冲突（该分支只领先
+  一个提交 5687a4dd）。合并顺带解决三件事：kol-check 源码进 main、
+  `wrangler.jsonc` 进 tracked、`data.json` 的 .gitignore 定向 negation 进 main。
+  注意：合并前先移走主仓工作区里**未提交**的 `wrangler.jsonc` 副本（与分支版
+  内容不同，git 会拒绝用 tracked 文件覆盖 untracked 文件）。合并后本节的
+  checkout / 还原步骤全部作废。
 
 ---
 
-## 更新站点
+## 陷阱二：package.json 不在 git 里
 
-改完代码后重新构建并重新部署：
-
-```bash
-npm run build
-# A1：把新的 out/ 再拖一次到 Pages 项目（会生成新 deployment）
-# A2：npx wrangler pages deploy out --project-name finer-site
-```
+根 `.gitignore` 的 `*.json` 把 `src/finer_site/package.json`、`package-lock.json`
+也忽略了——fresh clone / 新 worktree 里**没有这两个文件**，无法 `npm install`。
+需从既有主仓工作区复制（连同 `node_modules` 一起 `cp -R` 实体复制，
+Turbopack 拒绝 symlink）。
 
 ---
 
 ## 排查
 
-- **页面 404 / 样式丢失**：确认上传的是 `out/` 内部内容，不是整个 `src/finer_site/`。
-- **自定义域名一直 Pending**：等几分钟；若超过 15 分钟，去 DNS 面板确认 `finer.t800.click` 的 CNAME 指向 `finer-site.pages.dev`。
-- **og 预览图不显示**：社媒抓取有缓存，用对应平台的 debug 工具刷新即可（图在 `/og/finer-social-preview.png`）。
+- **构建产物缺页面**：部署前确认 `out/` 里存在 `kol-check/` 目录；缺了说明第 ① 步没执行。
+- **线上没更新**：确认部署输出的 Worker 名是 `finer-site`（错名字会部署到别的 Worker）。
+- **og 预览图不显示**：社媒抓取有缓存，用对应平台的 debug 工具刷新即可
+  （图在 `/og/finer-social-preview.png`）。
 
 ---
 
