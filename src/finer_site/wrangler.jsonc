@@ -3,7 +3,7 @@
   // Updates the existing `finer-site` Worker bound to finer.t800.click.
   // No server script — assets-only deployment.
   "name": "finer-site",
-  "compatibility_date": "2026-06-12",
+  "compatibility_date": "2026-08-01",
   "assets": {
     "directory": "./out"
   }
