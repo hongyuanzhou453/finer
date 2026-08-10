@@ -11,13 +11,7 @@
 ## 标准更新流程（实测有效）
 
 ```bash
-# ① 仓库根目录：取回 /kol-check 页面源码（只在 feat/kol-check-demo 分支，见下方陷阱一）
-git checkout feat/kol-check-demo -- \
-  src/finer_site/src/app/kol-check \
-  src/finer_site/src/components/kol-check \
-  src/finer_site/src/demo/kol-check
-
-# ② 构建 + 部署（wrangler 读取同目录 wrangler.jsonc）
+# 构建 + 部署（wrangler 读取同目录 wrangler.jsonc）
 cd src/finer_site
 npm run build && npx wrangler@latest deploy
 ```
@@ -30,48 +24,28 @@ npm run build && npx wrangler@latest deploy
 
 ## 部署配置：wrangler.jsonc
 
-`src/finer_site/wrangler.jsonc`。`name` 必须是 `finer-site`——对应线上已存在、
-绑定了 finer.t800.click 的 Worker；`assets.directory` 指向 `next build` 的静态导出产物：
+`src/finer_site/wrangler.jsonc`（已 tracked；根 `.gitignore` 的 `*.json` 规则
+**不匹配** `.jsonc`）：
 
-```jsonc
-{
-  // finer.t800.click 实际由静态资源 Worker（finer-site）服务，非 Pages 项目
-  "name": "finer-site",
-  "compatibility_date": "2026-08-01",
-  "assets": {
-    "directory": "./out"
-  }
-}
-```
-
-- 根 `.gitignore` 的 `*.json` 规则**不匹配** `.jsonc`，该文件可正常入 git。
-  目前 tracked 版本在 `feat/kol-check-demo` 分支上（随该分支合入 main 收编）；
-  若工作区里找不到，按上面内容原样重建即可。
+- `"name": "finer-site"` —— 必须对应线上已存在、绑定 finer.t800.click 的
+  Worker；错名字会部署出一个与线上无关的新 Worker。
+- `"assets": { "directory": "./out" }` —— 指向 `next build` 的静态导出产物；
+  assets-only，无服务端脚本。
 - 域名绑定（finer.t800.click → Worker）配置在 Cloudflare 后台该 Worker 的
   **Custom Domains**，不在 wrangler.jsonc 里；`wrangler deploy` 只更新静态资源，
   不影响域名绑定。
 
 ---
 
-## 陷阱一：/kol-check 源码只在 feat/kol-check-demo 分支
+## 陷阱一（已根治）：/kol-check 源码曾只在 feat/kol-check-demo 分支
 
-- main 上**没有** `/kol-check` 页面源码。从 main 直接 `npm run build` 再部署，
-  新产物会整体覆盖线上资源 → **线上 /kol-check 变 404**。
-- 所以从 main 部署前必须先执行标准流程第 ① 步的 `git checkout feat/kol-check-demo -- …`。
-- 该 checkout 会把文件同时写入工作区和暂存区。部署后如需还原：
+2026-08-10 前 `/kol-check` 源码只在 `feat/kol-check-demo` 分支上，从 main
+直接构建部署会让线上 `/kol-check` 404（新产物整体覆盖线上资源）。当时的
+补救是部署前 `git checkout feat/kol-check-demo -- src/finer_site/src/{app,components,demo}/kol-check`。
 
-```bash
-git reset -- src/finer_site/src/app/kol-check src/finer_site/src/components/kol-check src/finer_site/src/demo/kol-check
-rm -rf src/finer_site/src/app/kol-check src/finer_site/src/components/kol-check src/finer_site/src/demo/kol-check
-```
-
-- **根治方案 = 把 feat/kol-check-demo 合入 main。** 2026-08-10 实测
-  `git merge-tree --write-tree main feat/kol-check-demo` 无冲突（该分支只领先
-  一个提交 5687a4dd）。合并顺带解决三件事：kol-check 源码进 main、
-  `wrangler.jsonc` 进 tracked、`data.json` 的 .gitignore 定向 negation 进 main。
-  注意：合并前先移走主仓工作区里**未提交**的 `wrangler.jsonc` 副本（与分支版
-  内容不同，git 会拒绝用 tracked 文件覆盖 untracked 文件）。合并后本节的
-  checkout / 还原步骤全部作废。
+该分支已于 2026-08-10 合入 main（merge commit ab5f32dc，无冲突），从 main
+构建即含 `/kol-check`，checkout 步骤作废。仅当从早于该合并的旧提交构建部署时
+才会复现——部署前确认 `out/kol-check/` 存在即可兜底。
 
 ---
 
@@ -86,7 +60,8 @@ Turbopack 拒绝 symlink）。
 
 ## 排查
 
-- **构建产物缺页面**：部署前确认 `out/` 里存在 `kol-check/` 目录；缺了说明第 ① 步没执行。
+- **构建产物缺页面**：部署前确认 `out/` 里存在 `kol-check/` 目录；缺了说明构建自
+  早于 2026-08-10 合并（ab5f32dc）的旧提交。
 - **线上没更新**：确认部署输出的 Worker 名是 `finer-site`（错名字会部署到别的 Worker）。
 - **og 预览图不显示**：社媒抓取有缓存，用对应平台的 debug 工具刷新即可
   （图在 `/og/finer-social-preview.png`）。
