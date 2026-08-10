@@ -88,6 +88,9 @@ export function SiteFooter() {
               <Link href="/#records" className="block text-foreground/70 hover:text-morningstar-red">
                 记录与共识
               </Link>
+              <Link href="/records" className="block text-foreground/70 hover:text-morningstar-red">
+                信源记录
+              </Link>
               <Link href="/demo" className="block text-foreground/70 hover:text-morningstar-red">
                 在线演示
               </Link>

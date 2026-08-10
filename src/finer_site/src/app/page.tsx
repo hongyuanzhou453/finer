@@ -41,9 +41,18 @@ const NAV_LINKS = [
   { href: "#engineering", label: "技术" },
 ];
 
-const RECORD_VIEWS = [
+const RECORD_VIEWS: {
+  src: string;
+  alt: string;
+  label: string;
+  title: string;
+  tagline: string;
+  points: string[];
+  href?: string;
+}[] = [
   {
     src: "/landing/record-discover.png",
+    href: "/records",
     alt: "Finer OS /discover 信源记录卡：按已结算样本量排列的记录卡与口径开关（真实语料）",
     label: "finer.os / discover",
     title: "/discover · 信源记录卡",
@@ -264,13 +273,26 @@ export default function LandingPage() {
         <div className="grid gap-8 lg:grid-cols-3 lg:gap-6">
           {RECORD_VIEWS.map((v) => (
             <div key={v.title} className="flex flex-col">
-              <ProductFrame
-                src={v.src}
-                alt={v.alt}
-                width={1440}
-                height={900}
-                label={v.label}
-              />
+              {v.href ? (
+                <Link href={v.href} className="group block">
+                  <ProductFrame
+                    src={v.src}
+                    alt={v.alt}
+                    width={1440}
+                    height={900}
+                    label={v.label}
+                    className="transition-transform duration-200 group-hover:-translate-y-0.5"
+                  />
+                </Link>
+              ) : (
+                <ProductFrame
+                  src={v.src}
+                  alt={v.alt}
+                  width={1440}
+                  height={900}
+                  label={v.label}
+                />
+              )}
               <h3 className="mt-4 text-[16px] font-bold tracking-tight text-foreground">
                 {v.title}
               </h3>
@@ -285,6 +307,20 @@ export default function LandingPage() {
               </ul>
             </div>
           ))}
+        </div>
+
+        {/* /records CTA */}
+        <div className="mt-8 flex flex-wrap items-center gap-4">
+          <Link
+            href="/records"
+            className="inline-flex items-center gap-2 rounded-sm bg-morningstar-red px-6 py-3 text-[14px] font-semibold text-white transition-colors hover:bg-morningstar-red/90"
+          >
+            点开每家信源的完整记录
+            <ArrowRight className="h-4 w-4" strokeWidth={2} />
+          </Link>
+          <span className="text-[12px] text-foreground/45">
+            冻结快照 · 2026-08-10 · 含每条记录的评级、目标价与结算结果
+          </span>
         </div>
 
         {/* numbers strip */}

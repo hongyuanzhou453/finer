@@ -32,6 +32,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.7,
     },
     {
+      url: `${SITE_URL}/records`,
+      lastModified: "2026-08-10",
+      changeFrequency: "monthly",
+      priority: 0.8,
+    },
+    {
       url: `${SITE_URL}/kol-check`,
       lastModified: "2026-07-14",
       changeFrequency: "monthly",

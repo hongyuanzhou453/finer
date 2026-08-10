@@ -88,7 +88,7 @@ flowchart LR
 
 ## Records & Consensus: Three Read-Only Views on the Real Corpus
 
-All three read-only views consume the real corpus: **28,565** foreign-broker research PDFs (73GB, a **static archive** covering roughly 10 months, 2025-09 ~ 2026-06), yielding **4,919** canonical `TradeAction` records with **100%** three-way audit coverage across **128,905** evidence spans.
+All three read-only views consume the real corpus: **28,565** foreign-broker research PDFs (73GB, a **static archive** covering roughly 10 months, 2025-09 ~ 2026-06), yielding **4,919** canonical `TradeAction` records with **100%** three-way audit coverage across **128,905** evidence spans. On the marketing site you can open each source's frozen snapshot directly: [finer.t800.click/records](https://finer.t800.click/records) (frozen 2026-08-10, with each record's rating, target price, and settlement result).
 
 | View | In one line | Highlights |
 |:---|:---|:---|
