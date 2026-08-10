@@ -1,0 +1,10 @@
+{
+  // Static-assets Worker that serves the finer_site static export (out/).
+  // Updates the existing `finer-site` Worker bound to finer.t800.click.
+  // No server script — assets-only deployment.
+  "name": "finer-site",
+  "compatibility_date": "2026-06-12",
+  "assets": {
+    "directory": "./out"
+  }
+}

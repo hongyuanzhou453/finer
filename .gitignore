@@ -30,6 +30,7 @@ trader韭菜*/
 !src/finer_dashboard/package-lock.json
 !tests/fixtures/kol-backtest-mvp/**/*.json
 !scripts/wx_channels_download/**/*.json
+!src/finer_site/src/demo/kol-check/data.json
 scripts/wx_channels_download/**/*.log
 scripts/wx_channels_download/**/*.db
 scripts/wx_channels_download/**/*.key
