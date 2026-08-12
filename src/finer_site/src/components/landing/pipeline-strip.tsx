@@ -28,10 +28,14 @@ const ROLE_STYLE: Record<Role, string> = {
 /** Canonical F0-F8 pipeline as a compact editorial strip with role labels. */
 export function PipelineStrip() {
   return (
-    <div className="overflow-x-auto finer-scrollbar">
-      <ol className="flex min-w-[820px] items-stretch">
+    // 移动端：3×3 网格，9 个阶段全部可见。
+    // 桌面端（md+）：恢复原来的一条横排 + 箭头。
+    // 改动原因：375px 下横滑容器只露出 F0/F1/F2，且 .finer-scrollbar 只设了 width
+    // 未设 height，移动端 overlay 滚动条不滑完全不可见——用户不知道右边还有 6 个阶段。
+    <div className="finer-scrollbar md:overflow-x-auto">
+      <ol className="grid grid-cols-3 gap-px md:flex md:min-w-[820px] md:items-stretch md:gap-0">
         {STAGES.map((stage, i) => (
-          <li key={stage.id} className="flex flex-1 items-stretch">
+          <li key={stage.id} className="flex md:flex-1 md:items-stretch">
             <div className="flex-1 border-t-2 border-[var(--foreground)] bg-[var(--surface-strong)] px-3 py-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] font-bold tabular-nums tracking-[0.16em] text-morningstar-red">
@@ -53,8 +57,9 @@ export function PipelineStrip() {
                 {stage.desc}
               </div>
             </div>
+            {/* 箭头只在桌面横排下有意义；3×3 网格里方向是错的，移动端隐藏 */}
             {i < STAGES.length - 1 && (
-              <div className="flex items-center px-0.5 text-foreground/25">
+              <div className="hidden items-center px-0.5 text-foreground/25 md:flex">
                 <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
               </div>
             )}

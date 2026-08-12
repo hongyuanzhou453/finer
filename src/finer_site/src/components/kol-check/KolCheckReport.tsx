@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * 单个真实（匿名化）KOL 的「晨星式体检报告」— 散户向自助单页。
+ * 单个真实（匿名化）KOL 的公开记录核查页 — 散户向自助单页。
+ * 不是评级、不是排名：只回答「说过什么、后来发生了什么、说的和做的是否一致」。
  * 数据 = 冻结的真实 F5 canonical TradeActions（见 @/demo/kol-check/data.json）：
  * 真实标的/时序/原话/回测保真，KOL 身份匿名化。全前端、不连后端。
  */
@@ -25,6 +26,28 @@ import { DirectionTag, ReturnChip, SectionHeader, fmtPct } from "./primitives";
 function isSettled(v: SnapshotViewpoint): boolean {
   return v.returnPct !== null && (v.holdingDays ?? 0) > 0;
 }
+
+/**
+ * Wilson score 95% 区间——与 /records 侧同一口径（见 components/records/primitives）。
+ * CLAUDE.md「定位前提」第 1 条：比率不得裸奔。n=29/8 时区间是 15%–46%，
+ * 宽 31 个百分点、跨过 50% 两侧——点估计单独呈现等于误导。
+ */
+const WILSON_Z95 = 1.959964;
+
+function wilson95(successes: number, n: number): { low: number; high: number } | null {
+  if (n <= 0) return null;
+  const p = successes / n;
+  const z2 = WILSON_Z95 * WILSON_Z95;
+  const denom = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / denom;
+  const half = (WILSON_Z95 * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / denom;
+  return { low: Math.max(0, center - half), high: Math.min(1, center + half) };
+}
+
+/** 样本充分性下限：低于此值只报计数，不呈现任何比率。 */
+const RATIO_MIN_N = 10;
+
+const asPct = (v: number) => `${Math.round(v * 100)}%`;
 
 function MetricTile({
   value,
@@ -77,6 +100,12 @@ export function KolCheckReport() {
 
   const settledRotation = rotation.filter((r) => r.avgReturn !== null);
 
+  // 样本充分性判定：settled < RATIO_MIN_N 时全页降级为只报计数。
+  const ratioAllowed = settled.length >= RATIO_MIN_N;
+  const ci = wilson95(wins, settled.length);
+  const hitRatePct = asPct(hl.hitRate ?? 0);
+  const ciLabel = ci ? `95% 区间 ${asPct(ci.low)}–${asPct(ci.high)}` : null;
+
   return (
     <div className="mx-auto w-full max-w-[880px] px-5 py-10 sm:py-14">
       {/* sample-data banner */}
@@ -98,7 +127,7 @@ export function KolCheckReport() {
       <header className="mb-8">
         <div className="flex items-baseline gap-3">
           <span className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent-gold)]">
-            KOL 晨星 · 体检报告
+            单信源记录 · KOL 口径
           </span>
         </div>
         <h1 className="mt-2 text-[28px] leading-tight sm:text-[34px]">
@@ -119,9 +148,16 @@ export function KolCheckReport() {
           className="mt-5 rounded-sm border-l-4 bg-[var(--surface-muted)] px-4 py-3 text-[13px] leading-relaxed text-[var(--foreground)]"
           style={{ borderColor: avgReturn > 0 ? "var(--chart-up)" : "var(--chart-down)" }}
         >
-          <span className="font-semibold">体检结论：</span>
-          已结算 {settled.length} 笔 · 命中 {wins} 笔（
-          {Math.round((hl.hitRate ?? 0) * 100)}%），等权每笔均值 {fmtPct(avgReturn)}
+          <span className="font-semibold">记录摘要：</span>
+          已结算 {settled.length} 笔 · 命中 {wins} 笔
+          {ratioAllowed ? (
+            <>
+              （{hitRatePct}，{ciLabel}）
+            </>
+          ) : (
+            <>（样本不足 {RATIO_MIN_N} 笔，不呈现比率）</>
+          )}
+          ，等权每笔均值 {fmtPct(avgReturn)}
           {styleConflict ? "，且自述入场风格与实盘行为存在冲突" : ""}。
           这是一份历史记录：说过什么、后来发生了什么、说的和做的是否一致。
           本页不构成建议，也不构成对未来的预测。
@@ -135,13 +171,17 @@ export function KolCheckReport() {
             sub={`命中 ${wins} 笔${cred.lowSample ? " · 样本偏少" : ""}`}
           />
           <MetricTile
-            value={`${Math.round((hl.hitRate ?? 0) * 100)}%`}
+            value={ratioAllowed ? hitRatePct : "—"}
             label="结算命中率"
-            sub={`${wins} 胜 / ${losses} 负`}
+            sub={
+              ratioAllowed
+                ? `${ciLabel} · ${wins} 胜 / ${losses} 负`
+                : `样本不足 · ${wins} 胜 / ${losses} 负`
+            }
           />
           <MetricTile
             value={<span style={{ color: avgReturn > 0 ? "var(--chart-up)" : "var(--chart-down)" }}>{fmtPct(avgReturn)}</span>}
-            label="平均每笔跟单"
+            label="平均每笔结算"
             sub="等权 · 方向已校正"
           />
           <MetricTile
@@ -190,7 +230,7 @@ export function KolCheckReport() {
                 <th className="py-2 pr-3 font-normal">最新立场</th>
                 <th className="py-2 pr-3 font-normal">观点数</th>
                 <th className="py-2 pr-3 font-normal">已结算</th>
-                <th className="py-2 pr-3 text-right font-normal">均值跟单收益</th>
+                <th className="py-2 pr-3 text-right font-normal">均值结算收益</th>
               </tr>
             </thead>
             <tbody>
@@ -224,7 +264,7 @@ export function KolCheckReport() {
       <section className="mb-9">
         <SectionHeader
           index="03"
-          title="真实战绩时间线"
+          title="观点记录时间线"
           en="EVIDENCE · AUDIT TRAIL"
           note={<span>每条可展开 F3→F4→F5→F8 溯源</span>}
         />
