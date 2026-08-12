@@ -28,6 +28,16 @@ import { PipelineRail } from "./pipeline-rail";
 const pct = (v: number, sign = true) =>
   `${sign && v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
 
+// ---- 样本充分性门 -----------------------------------------------------------
+// CLAUDE.md「定位前提」第 1 条：任何比率必须携带样本充分性判定；样本不足时
+// 只报计数，不得渲染任何比率。演示 fixture 的 signal_count 低至 2——n=2 在算术上
+// 只能产出 0% / 50% / 100%，任何其他胜率都是不可能的数字；夏普与年化同样无意义。
+const SUFFICIENCY_MIN_N = 10;
+
+type MetricCell = { k: string; v: string; red?: boolean; green?: boolean };
+
+const isThinSample = (m: { signal_count: number }) => m.signal_count < SUFFICIENCY_MIN_N;
+
 export const DIRECTION_META: Record<TradeDirection, { label: string; cls: string }> = {
   bullish: { label: "看多", cls: "bg-[rgba(225,27,34,0.1)] text-morningstar-red" },
   bearish: { label: "看空", cls: "bg-[rgba(16,185,129,0.12)] text-[#0f9b6c]" },
@@ -478,16 +488,29 @@ export function DemoWorkbench({
               </div>
             </div>
 
-            {/* metrics row */}
-            <div className="mt-4 grid grid-cols-3 overflow-hidden rounded-sm border border-[var(--table-border)] sm:grid-cols-6">
-              {[
-                { k: "累计收益", v: pct(m.cum_return), red: true },
-                { k: "年化", v: pct(m.annualized), red: true },
-                { k: "夏普", v: m.sharpe.toFixed(2) },
-                { k: "最大回撤", v: pct(m.max_drawdown), green: true },
-                { k: "胜率（历史记录）", v: `${(m.win_rate * 100).toFixed(1)}% · n=${m.signal_count}` },
-                { k: "信号数", v: String(m.signal_count) },
-              ].map((cell) => (
+            {/* metrics row — 样本充分性门：n < SUFFICIENCY_MIN_N 时只报计数，不渲染任何比率。
+                见 CLAUDE.md「定位前提」第 1 条：样本充分 ≠ 可以预测，count_only 时不得渲染比率。 */}
+            <div
+              className={cn(
+                "mt-4 grid grid-cols-3 overflow-hidden rounded-sm border border-[var(--table-border)]",
+                !isThinSample(m) && "sm:grid-cols-6",
+              )}
+            >
+              {((isThinSample(m)
+                ? [
+                    { k: "已结算样本", v: `${m.signal_count} 笔` },
+                    { k: "样本充分性", v: `不足（n < ${SUFFICIENCY_MIN_N}）` },
+                    { k: "胜率 / 夏普 / 年化", v: "不呈现" },
+                  ]
+                : [
+                    { k: "累计收益", v: pct(m.cum_return), red: true },
+                    { k: "年化", v: pct(m.annualized), red: true },
+                    { k: "夏普", v: m.sharpe.toFixed(2) },
+                    { k: "最大回撤", v: pct(m.max_drawdown), green: true },
+                    { k: "胜率（历史记录）", v: `${(m.win_rate * 100).toFixed(1)}% · n=${m.signal_count}` },
+                    { k: "信号数", v: String(m.signal_count) },
+                  ]) as MetricCell[]
+              ).map((cell) => (
                 <div
                   key={cell.k}
                   className="border-r border-[var(--grid-line)] bg-white px-3 py-2.5 last:border-r-0"
