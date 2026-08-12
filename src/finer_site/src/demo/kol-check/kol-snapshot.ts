@@ -158,9 +158,9 @@ export interface TickerRotationRow {
 }
 
 /**
- * Per-ticker stance + realized performance ("标的兑现榜"), the KOL analogue of
- * the reference report's sector rotation / net-inflow ranking. Settled tickers
- * rank by avg realized return (winners first); unsettled tickers sink to the end.
+ * Per-ticker stance + realized performance ("标的结算记录"). Stable output
+ * order, not a ranking: settled tickers first by settled count desc (avg
+ * realized return only breaks ties); unsettled tickers sink to the end.
  */
 export function deriveTickerRotation(
   viewpoints: SnapshotViewpoint[],
@@ -201,10 +201,11 @@ export function deriveTickerRotation(
   }
 
   return rows.sort((a, b) => {
-    // settled first, ranked by avg return desc; unsettled last by count desc
+    // stable output order (not a ranking): settled first by settled count desc,
+    // avg return only as a tie-breaker; unsettled last by count desc
     if (a.avgReturn === null && b.avgReturn === null) return b.count - a.count;
     if (a.avgReturn === null) return 1;
     if (b.avgReturn === null) return -1;
-    return b.avgReturn - a.avgReturn;
+    return b.settledCount - a.settledCount || b.avgReturn - a.avgReturn;
   });
 }

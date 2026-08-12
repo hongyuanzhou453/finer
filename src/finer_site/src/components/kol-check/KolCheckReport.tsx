@@ -68,13 +68,6 @@ export function KolCheckReport() {
   const losses = settled.length - wins;
   const avgReturn = earn?.avgReturn ?? 0;
 
-  const credTone =
-    cred.credibility >= 70
-      ? "var(--chart-up)"
-      : cred.credibility >= 55
-        ? "var(--accent-gold)"
-        : "var(--morningstar-red)";
-
   const styleConflict =
     TRADING_STYLE.declared?.entry_style &&
     TRADING_STYLE.observed?.entry_style_observed &&
@@ -92,6 +85,13 @@ export function KolCheckReport() {
         <span>
           数据为 Finer OS 对一位真实 KOL 内容跑出的真实 canonical 结果（标的/时序/原话/回测保真），身份已匿名。演示用途，非实时行情、非投资建议。
         </span>
+      </div>
+
+      {/* persistence-boundary statement（页头声明，非脚注） */}
+      <div className="mb-6 rounded-sm border border-[var(--table-border)] border-l-4 border-l-[var(--accent-gold)] bg-[var(--surface-muted)] px-3 py-2 text-[11px] leading-relaxed text-[var(--foreground)]">
+        <span className="font-semibold">持续性边界：</span>
+        持续性检验在券商层级得到否定结果（判据先于结果预声明）；KOL
+        层级样本不足、未检验。本页所有数字为历史记录，不构成对未来的预测。
       </div>
 
       {/* hero */}
@@ -117,24 +117,22 @@ export function KolCheckReport() {
         {/* verdict banner */}
         <div
           className="mt-5 rounded-sm border-l-4 bg-[var(--surface-muted)] px-4 py-3 text-[13px] leading-relaxed text-[var(--foreground)]"
-          style={{ borderColor: credTone }}
+          style={{ borderColor: avgReturn > 0 ? "var(--chart-up)" : "var(--chart-down)" }}
         >
           <span className="font-semibold">体检结论：</span>
-          信誉分 {cred.credibility}/99，{settled.length} 笔已结算跟单命中{" "}
-          {Math.round((hl.hitRate ?? 0) * 100)}%、等权每笔均值 {fmtPct(avgReturn)}
+          已结算 {settled.length} 笔 · 命中 {wins} 笔（
+          {Math.round((hl.hitRate ?? 0) * 100)}%），等权每笔均值 {fmtPct(avgReturn)}
           {styleConflict ? "，且自述入场风格与实盘行为存在冲突" : ""}。
-          {cred.credibility < 55
-            ? "历史跟单为负，参考其观点需自行验证，不建议无脑跟单。"
-            : "跟单前建议结合下方逐条证据链自行判断。"}
+          这是一份历史记录：说过什么、后来发生了什么、说的和做的是否一致。
+          本页不构成建议，也不构成对未来的预测。
         </div>
 
         {/* metric tiles */}
         <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-4">
           <MetricTile
-            value={`${cred.credibility}`}
-            label="信誉分 / 99"
-            sub={`样本收缩后 · ${cred.lowSample ? "样本偏少" : `${settled.length} 笔结算`}`}
-            tone={credTone}
+            value={`${settled.length}`}
+            label="已结算笔数"
+            sub={`命中 ${wins} 笔${cred.lowSample ? " · 样本偏少" : ""}`}
           />
           <MetricTile
             value={`${Math.round((hl.hitRate ?? 0) * 100)}%`}
@@ -176,13 +174,13 @@ export function KolCheckReport() {
         <TradingStyleCard profile={TRADING_STYLE} />
       </section>
 
-      {/* 02 标的兑现榜 */}
+      {/* 02 标的结算记录 */}
       <section className="mb-9">
         <SectionHeader
           index="02"
-          title="标的兑现榜"
-          en="PER-TICKER REALIZED"
-          note={<span>已结算按均值跟单收益排序</span>}
+          title="标的结算记录"
+          en="PER-TICKER SETTLED"
+          note={<span>按已结算笔数的稳定输出序，不是排名</span>}
         />
         <div className="finer-scrollbar mt-3 overflow-x-auto">
           <table className="w-full min-w-[520px] border-collapse text-[12px]">
@@ -218,7 +216,7 @@ export function KolCheckReport() {
           </table>
         </div>
         <p className="mt-2 text-[11px] text-[var(--ink-soft)]">
-          仅列出至少一笔已结算的标的；未触发/观望类不计入收益排序。
+          仅列出至少一笔已结算的标的；未触发/观望类不计入结算统计。
         </p>
       </section>
 
@@ -241,10 +239,11 @@ export function KolCheckReport() {
       <footer className="mt-10 border-t border-[var(--grid-line)] pt-4 text-[11px] leading-relaxed text-[var(--ink-soft)]">
         <p>
           <span className="font-semibold text-[var(--foreground)]">口径与边界。</span>{" "}
-          信誉分 = 结算命中率按样本量向 0.5 先验收缩（4 笔伪观测），单一 KOL、
-          {settled.length} 笔已结算，非行业横评。跟单收益为完全跟单、方向已校正的
-          F8 回测（含止损/止盈/最长持有），不含手续费滑点以外的资金管理。观点原话来自
-          内容转写，可能含口语噪声。全部为演示快照，不构成投资建议。
+          单一 KOL、{settled.length} 笔已结算，非行业横评；所有比率均并排样本量，
+          样本偏少时明确标注。跟单收益为完全跟单、方向已校正的 F8 回测
+          （含止损/止盈/最长持有）——这是描述记账方法的机械口径，不含手续费滑点
+          以外的资金管理。观点原话来自内容转写，可能含口语噪声。全部为演示快照、
+          历史记录，不构成投资建议，也不构成对未来的预测。
         </p>
       </footer>
     </div>
