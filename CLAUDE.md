@@ -188,6 +188,10 @@ ContentRecord (F0)
 
 模型注册表在 `model_config.py`。F1 vision/OCR 当前固定为 `mimo-v2.5`，不启用视觉模型 fallback。
 
+**调用 MiMo 前必读 `docs/mimo-integration-guide.md`**（端点按 key 前缀分流否则 401、
+`max_completion_tokens` 字段名、`thinking:{"type":"disabled"}` 省 89-97% token、
+429 的三种含义与判据、批量作业骨架）。该指南的结论均有实测背书，勿凭记忆重新发明。
+
 ### Prompt 管理
 
 - Prompt 模板写在**调用方模块内**，不单独抽文件
