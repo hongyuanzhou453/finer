@@ -82,6 +82,9 @@ REGISTRY: Dict[str, Tuple[str, str, str]] = {
 # enum shows up and prompts a decision (register it, or add it here).
 UI_ONLY_TS_ENUMS: Set[str] = {
     "WeChatLoginStatus",  # frontend polling state, not a persisted contract
+    # M2 抽取置信度：刻意不建 pydantic 字段（intent.metadata 里的 sidecar 事实）。
+    # Python 侧真相源 = scripts/backfill_extraction_confidence.py VALID_TIERS。
+    "ExtractionConfidenceTier",
 }
 
 
