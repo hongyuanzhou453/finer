@@ -17,6 +17,7 @@ import {
 import { ActionList } from "@/components/audit/action-list";
 import { TraceTimeline } from "@/components/audit/trace-timeline";
 import { EvidenceSource } from "@/components/audit/evidence-source";
+import { DeepSummaryPanel } from "@/components/audit/deep-summary";
 import { ExecutionClocks } from "@/components/audit/execution-clocks";
 import { TraceStatusBadge } from "@/components/audit/trace-status-badge";
 
@@ -229,6 +230,11 @@ export default function AuditPage() {
                   activeSpanId={activeSpanId}
                   onHoverSpan={setActiveSpanId}
                 />
+                {/* M3: 研报深摘要 —— 「这份研报当时到底说了什么」。
+                    未命中时组件自己渲染「未生成深摘要」，不静默隐藏。 */}
+                <div className="mt-5">
+                  <DeepSummaryPanel summary={bundle.deep_summary} />
+                </div>
               </>
             ) : (
               <div className="flex h-64 flex-col items-center justify-center gap-3 text-foreground/30">

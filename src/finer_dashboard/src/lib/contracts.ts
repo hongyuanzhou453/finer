@@ -1780,6 +1780,31 @@ export type AuditTraceBundle = {
   evidence_spans: EvidenceSpan[]; //             F2
   envelope: EnvelopeContext; //                  F1/F0 source
   provenance?: AuditProvenance; //               F1.5 topic + F2 sector proxy
+  deep_summary?: DeepSummary | null; //          M3；null = 该报告未生成深摘要
+};
+
+// ─── M3: 研报深摘要（T8 烧录产物）──────────────────────────────────────────────
+//
+// ⚠️ 这是 LLM 从研报原文**生成**的摘要，不是券商原文，也不是投资建议。
+// 渲染时必须同时展示 `disclaimer` 与 `generated_by`/`report_date`。
+// 覆盖是部分的：未命中时必须显示「未生成深摘要」，**不得**降级用短摘要冒充，
+// 也不得按「有无深摘要」排序/筛选（那会让覆盖偏差伪装成质量差异）。
+// 真相源：scripts/ingest_deep_summaries.py
+export type DeepSummary = {
+  schema_version: string;
+  report_id: number;
+  summary: string; //        markdown，八小节结构
+  n_chars: number;
+  broker: string | null;
+  report_date: string | null;
+  stock_code: string | null;
+  company_name: string | null;
+  filename: string | null;
+  source_schema: string;
+  generated_by: string; //   生成模型，如 mimo-v2.5
+  slice_chars: number | null;
+  text_length: number | null;
+  disclaimer: string; //     必须展示
 };
 
 // ---------------------------------------------------------------------------
@@ -1874,3 +1899,49 @@ export type CreatorRecordCard = {
   last_action_at?: string | null;
   sufficiency: SampleSufficiency;
 };
+
+// ─── M2: 抽取置信度（T7x 五票投票）─────────────────────────────────────────────
+//
+// ⚠️ 语义边界：衡量「我们把这条记录**抽对**的把握」，**不是**「信源有多准」。
+// 属管道质量指标，禁止进入任何信源评分 / 排序 / 记分卡。
+// 真相源：scripts/backfill_extraction_confidence.py 的 VALID_TIERS
+// （刻意不建 pydantic schema 字段——它是 intent.metadata 里的 sidecar 事实，
+//   故登记在 check_contract_drift.py 的 UI_ONLY_TS_ENUMS）。
+export type ExtractionConfidenceTier = "unanimous" | "strong" | "majority" | "disputed";
+
+export type ExtractionConfidence = {
+  rating: ExtractionConfidenceTier;
+  rating_votes: number;
+  target: ExtractionConfidenceTier;
+  target_votes: number;
+  total_votes: number;
+  source: string;
+  note: string;
+};
+
+const EXTRACTION_TIERS: ReadonlySet<string> = new Set([
+  "unanimous",
+  "strong",
+  "majority",
+  "disputed",
+]);
+
+/** 从 intent.metadata 安全读取抽取置信度；结构不符一律返回 null（不猜）。 */
+export function readExtractionConfidence(
+  metadata: Record<string, unknown> | null | undefined,
+): ExtractionConfidence | null {
+  const raw = metadata?.["extraction_confidence"];
+  if (!raw || typeof raw !== "object") return null;
+  const v = raw as Record<string, unknown>;
+  if (typeof v.rating !== "string" || !EXTRACTION_TIERS.has(v.rating)) return null;
+  if (typeof v.target !== "string" || !EXTRACTION_TIERS.has(v.target)) return null;
+  return {
+    rating: v.rating as ExtractionConfidenceTier,
+    rating_votes: typeof v.rating_votes === "number" ? v.rating_votes : 0,
+    target: v.target as ExtractionConfidenceTier,
+    target_votes: typeof v.target_votes === "number" ? v.target_votes : 0,
+    total_votes: typeof v.total_votes === "number" ? v.total_votes : 5,
+    source: typeof v.source === "string" ? v.source : "",
+    note: typeof v.note === "string" ? v.note : "",
+  };
+}

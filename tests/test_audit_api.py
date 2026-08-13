@@ -323,6 +323,7 @@ def test_trace_bundle_canonical(client: TestClient) -> None:
         "evidence_spans",
         "envelope",
         "provenance",
+        "deep_summary",  # M3：研报深摘要（无覆盖时为 None，键恒在）
     }
     assert data["trade_action"]["canonical_trace_status"] == "canonical"
     assert data["intent"]["intent_id"] == "intent-canonical"
@@ -659,6 +660,7 @@ def test_real_f5_executed_wrappers_are_served() -> None:
         "evidence_spans",
         "envelope",
         "provenance",
+        "deep_summary",  # M3：研报深摘要（无覆盖时为 None，键恒在）
     }
 
 
