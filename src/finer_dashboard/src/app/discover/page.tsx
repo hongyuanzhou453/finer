@@ -97,6 +97,12 @@ export default function DiscoverPage() {
   }, [scope]);
 
   const claim = cards[0]?.sufficiency.predictive_claim;
+  // 默认渲染免责声明，**仅**在后端明确许可时才撤下。
+  // 原条件是 `claim && !claim.permitted`——claim 为 null 时整块消失，而 null
+  // 恰恰意味着「该指标没登记过 / 没检验过」，是最该出声明的情形。板块口径的
+  // 24 张卡就是这样静默失去声明的（后端已修，但已物化的旧 payload 仍是 null，
+  // 且这道门本就不该依赖上游永不缺字段）。
+  const predictionPermitted = claim?.permitted === true;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
@@ -125,11 +131,15 @@ export default function DiscoverPage() {
         </span>
       </div>
 
-      {claim && !claim.permitted && (
+      {!predictionPermitted && (
         <div className="mt-4 rounded border border-zinc-200 bg-zinc-50 p-3 text-xs leading-5 text-zinc-600">
           🚫 本页数字描述已发生的事实，不构成对未来的预测。
-          {claim.summary && <> 跨期持续性检验：{claim.summary}</>}
-          {claim.evidence && (
+          {claim?.summary ? (
+            <> 跨期持续性检验：{claim.summary}</>
+          ) : (
+            <> 该口径的跨期持续性尚未检验——未检验一律按不许可处理。</>
+          )}
+          {claim?.evidence && (
             <span className="ml-1 font-mono text-zinc-400">{claim.evidence}</span>
           )}
         </div>

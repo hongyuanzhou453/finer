@@ -10,11 +10,15 @@ from __future__ import annotations
 import pytest
 import yaml
 
+from typing import get_args
+
 from finer.credibility.significance import (
     SignificanceGate,
     get_significance_gate,
+    metric_for_signal_class,
     wilson_interval,
 )
+from finer.schemas.trade_action import SIGNAL_CLASS_LITERAL
 
 
 @pytest.fixture
@@ -212,3 +216,45 @@ def test_repo_config_disallows_broker_prediction():
 def test_repo_config_thresholds_are_loadable():
     r = get_significance_gate().assess(successes=200, settled_n=435)
     assert r.tier == "sufficient" and r.confidence == 0.95
+
+
+# ---------------------------------------------------------------------------
+# signal_class → 指标名映射（门 2 的挂载点）
+# ---------------------------------------------------------------------------
+
+
+def test_every_signal_class_maps_to_a_registered_metric():
+    """每个 signal_class 都必须映射到一个**已在 yaml 登记**的指标。
+
+    回归：两处调用点曾写成 ``"broker_excess_win_rate" if signal_class ==
+    "broker_recommendation" else None``，于是板块口径拿到 metric=None，
+    ``assess()`` 返回 ``predictive_claim=None``，而前端的横幅条件是
+    ``claim && !claim.permitted`` —— 结果是 24 张板块卡**整块免责声明消失**。
+    缺口的表现恰好是声明不见了，是最坏的失效方向。
+
+    这条钉的是内容不是行为：逐个喂契约取值，新增第四个取值时会失败。
+    """
+    gate = get_significance_gate()
+    for signal_class in get_args(SIGNAL_CLASS_LITERAL):
+        metric = metric_for_signal_class(signal_class)
+        assert metric is not None, f"{signal_class} 未映射指标名"
+        verdict = gate.predictive_claim(metric)
+        # 已登记的条目一定带 summary；未登记会退到「该指标未在…登记」的兜底文案。
+        assert verdict.summary and "未在 configs/significance.yaml 登记" not in verdict.summary, (
+            f"{metric} 未在 configs/significance.yaml 的 predictive_claim 段登记"
+        )
+        assert verdict.permitted is False, (
+            f"{metric} 被标为许可——只有通过预声明判据的持续性检验才能翻 true"
+        )
+
+
+def test_assess_attaches_claim_for_every_signal_class():
+    """比率离开后端时，三个口径都必须带上 predictive_claim（不得为 None）。"""
+    gate = get_significance_gate()
+    for signal_class in get_args(SIGNAL_CLASS_LITERAL):
+        result = gate.assess(
+            successes=2, settled_n=11, total_n=53,
+            metric=metric_for_signal_class(signal_class),
+        )
+        assert result.predictive_claim is not None, f"{signal_class} 的声明缺席"
+        assert result.predictive_claim.permitted is False

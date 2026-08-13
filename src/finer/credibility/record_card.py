@@ -16,7 +16,10 @@ from __future__ import annotations
 from typing import Iterable, List, Optional
 
 from finer.backtest.scorecard import build_scorecard
-from finer.credibility.significance import get_significance_gate
+from finer.credibility.significance import (
+    get_significance_gate,
+    metric_for_signal_class,
+)
 from finer.schemas.credibility import CreatorRecordCard
 from finer.schemas.trade_action import TradeAction
 from finer.timeline.stance_snapshot import signal_clock_of
@@ -80,11 +83,7 @@ def build_record_cards(
     # 消失就是幸存者偏差（只展示能结算的，恰是 CRD-2 覆盖率门要防的事）。
     covered = {c.creator_id for c in cards}
     gate = get_significance_gate()
-    metric = (
-        "broker_excess_win_rate"
-        if signal_class == "broker_recommendation"
-        else None
-    )
+    metric = metric_for_signal_class(signal_class)
     for creator, total in totals.items():
         if creator in covered:
             continue
