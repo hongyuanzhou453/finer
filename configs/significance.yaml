@@ -55,6 +55,21 @@ predictive_claim:
       结论适用于券商层级、月度切分、每段 n>=30。不适用于分析师个人层级、
       行业层级，也未在 KOL 上检验（样本不足）。
 
+  broker_sector_excess_win_rate:
+    permitted: false
+    tested_at: null
+    sample_size: null
+    evidence: null
+    summary: >-
+      板块观点口径尚未检验 —— 未检验一律按不许可处理，不得默认成立。
+      注意：券商个股评级的否定结论**不能**直接搬到这里（那次检验的口径是
+      券商层级的个股评级），但「未检验」与「已检验且不成立」对呈现的要求相同。
+    scope_note: >-
+      板块观点经 ETF 代理成交，基准率与个股评级不同，两者不得混算
+      （见 schemas/trade_action.py SIGNAL_CLASS_LITERAL）。
+      当前全部 24 张板块记录卡都是 count_only（最大 n_settled=11），
+      离能检验的样本量还很远。
+
   kol_excess_win_rate:
     permitted: false
     tested_at: null

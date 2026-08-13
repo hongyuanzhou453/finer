@@ -21,7 +21,7 @@ import logging
 import math
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, get_args
 
 import yaml
 
@@ -30,8 +30,47 @@ from finer.schemas.significance import (
     PredictiveClaimVerdict,
     SampleSufficiency,
 )
+from finer.schemas.trade_action import SIGNAL_CLASS_LITERAL
 
 logger = logging.getLogger(__name__)
+
+#: signal_class → 该口径命中率所对应的、在 ``configs/significance.yaml``
+#: ``predictive_claim`` 段登记的指标名。
+#:
+#: **每个 signal_class 都必须映射到一个指标名，不能是 None。** ``assess()`` 在
+#: ``metric`` 为 None 时返回 ``predictive_claim=None``，而前端的横幅条件是
+#: ``claim && !claim.permitted``——None 于是让整块「不构成对未来的预测」声明
+#: **消失**。缺口的表现恰好是免责声明不见了，这是最坏的失效方向。
+#:
+#: 此前两处调用点都写成 ``"broker_excess_win_rate" if signal_class ==
+#: "broker_recommendation" else None``，于是 24 张板块记录卡全部 claim=None。
+_METRIC_BY_SIGNAL_CLASS: Dict[str, str] = {
+    "broker_recommendation": "broker_excess_win_rate",
+    "broker_sector_view": "broker_sector_excess_win_rate",
+    "kol_statement": "kol_excess_win_rate",
+}
+
+# 契约新增 signal_class 却忘了在此登记指标名时，**import 期就炸**——
+# 不要让它静默退化成 metric=None（= 免责声明消失）。
+_UNMAPPED_SIGNAL_CLASSES = set(get_args(SIGNAL_CLASS_LITERAL)) - set(_METRIC_BY_SIGNAL_CLASS)
+if _UNMAPPED_SIGNAL_CLASSES:  # pragma: no cover - 契约扩张时的启动期护栏
+    raise RuntimeError(
+        f"SIGNAL_CLASS_LITERAL 新增了未映射的取值 {sorted(_UNMAPPED_SIGNAL_CLASSES)}；"
+        "请在 significance.py 的 _METRIC_BY_SIGNAL_CLASS 登记指标名，"
+        "并在 configs/significance.yaml 的 predictive_claim 段登记该指标。"
+    )
+
+
+def metric_for_signal_class(signal_class: Optional[str]) -> Optional[str]:
+    """该口径命中率对应的预测性主张指标名。
+
+    未知 signal_class 返回 None——但注意 ``assess(metric=None)`` 会让
+    ``predictive_claim`` 缺席。所有**契约内**的取值都在表里，不会走到这里；
+    走到这里说明数据里有契约外的脏值，那本身就该在上游被拦。
+    """
+    if signal_class is None:
+        return None
+    return _METRIC_BY_SIGNAL_CLASS.get(signal_class)
 
 _DEFAULT_TTL_SECONDS = 60.0
 _CONFIG_RELPATH = Path("configs") / "significance.yaml"

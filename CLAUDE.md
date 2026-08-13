@@ -294,10 +294,20 @@ cd src/finer_dashboard && npm run build
 cd src/finer_dashboard && npx tsc --noEmit
 
 # 审计闭环（改动 F3/F4/F5 后必跑，必须 100%）
+# 退出码：0 = 全部完整；1 = 有断链；2 = 空扫描（什么都没验，见下）
 python scripts/audit_trace_integrity.py
 
 # 读模型投影重建（改动 CRD 视图字段后必跑，否则页面静默用旧 payload）
 python scripts/materialize_projections.py
+```
+
+**在 worktree 里跑数据类验证必须显式指向主仓。** `data/` 已 gitignore，worktree
+的 `data/` 是空的，而 §10 又要求并行 agent 优先用 worktree——两条规范叠加的结果是
+数据门在 worktree 里扫 0 条然后判绿。审计脚本现在会以退出码 2 拒绝空扫描，
+但你仍要自己把 root 指对：
+
+```bash
+python scripts/audit_trace_integrity.py --data-root /Users/zhouhongyuan/Desktop/finer/data
 ```
 
 ---
