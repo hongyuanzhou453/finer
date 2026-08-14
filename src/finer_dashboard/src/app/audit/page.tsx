@@ -39,26 +39,49 @@ export default function AuditPage() {
   const [statusFilter, setStatusFilter] = useState<CanonicalTraceStatus | "all">("all");
   const [kolFilter, setKolFilter] = useState<string>("all");
   const [tickerQuery, setTickerQuery] = useState("");
+  /** 深链指定的信源/标的一条都没命中——必须明说，不得静默展示别人的记录。 */
+  const [deepLinkMiss, setDeepLinkMiss] = useState<string | null>(null);
 
-  // load the full action list once
+  // load the action list once, honoring ?kol= / ?ticker= as **server-side** filters
   useEffect(() => {
     let alive = true;
     setLoadingList(true);
-    getAuditActions()
+
+    // 深链必须下推到后端。此前这里无条件拉一批（上限 1000）再在客户端匹配 ——
+    // 现役 4,919 条 action，第 1000 条之后的信源永远匹配不上；而匹配不上时
+    // 旧代码**静默回落到 data[0]**，于是从 /discover 点「审计 · 汇丰」会展示
+    // 另一个信源的无关记录，不报错也不提示。比报错更伤：用户不会知道自己看错了。
+    const params =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search)
+        : new URLSearchParams();
+    const urlKol = params.get("kol");
+    const urlTicker = params.get("ticker");
+    const isDeepLink = !!urlKol || !!urlTicker;
+
+    if (urlKol) setKolFilter(urlKol);
+    if (urlTicker) setTickerQuery(urlTicker);
+
+    getAuditActions(
+      isDeepLink
+        ? { kolId: urlKol ?? undefined, ticker: urlTicker ?? undefined }
+        : undefined,
+    )
       .then((data) => {
         if (!alive) return;
         setActions(data);
-        // honor ?kol= deep-link when it matches loaded data, else show all
-        const urlKol =
-          typeof window !== "undefined"
-            ? new URLSearchParams(window.location.search).get("kol")
-            : null;
-        const kolMatch = !!urlKol && data.some((a) => a.kol_id === urlKol);
-        if (kolMatch) setKolFilter(urlKol);
-        const first = kolMatch
-          ? data.find((a) => a.kol_id === urlKol)?.trade_action_id
-          : data[0]?.trade_action_id;
-        setActiveId((prev) => prev ?? first ?? null);
+        if (isDeepLink && data.length === 0) {
+          // 命中不到就说命中不到，不拿别人的记录充数
+          setDeepLinkMiss(
+            [urlKol && `信源「${urlKol}」`, urlTicker && `标的「${urlTicker}」`]
+              .filter(Boolean)
+              .join(" · "),
+          );
+          setActiveId(null);
+          return;
+        }
+        setDeepLinkMiss(null);
+        setActiveId((prev) => prev ?? data[0]?.trade_action_id ?? null);
       })
       .finally(() => {
         if (alive) setLoadingList(false);
@@ -193,6 +216,19 @@ export default function AuditPage() {
             {loadingList ? (
               <div className="flex h-40 items-center justify-center text-foreground/30">
                 <Loader2 className="h-6 w-6 animate-spin" strokeWidth={1.5} />
+              </div>
+            ) : deepLinkMiss ? (
+              <div className="m-3 rounded-sm border border-[var(--accent-gold)]/40 bg-[rgba(155,123,69,0.08)] p-3 text-[12px] leading-5 text-[var(--ink-soft)]">
+                <div className="font-semibold text-foreground/80">未找到对应记录</div>
+                <div className="mt-1">
+                  深链指定的 {deepLinkMiss} 在审计库中没有可溯源的 action。
+                </div>
+                <Link
+                  href="/audit"
+                  className="mt-2 inline-block font-semibold text-morningstar-red hover:underline"
+                >
+                  查看全部记录 →
+                </Link>
               </div>
             ) : (
               <ActionList actions={filtered} activeId={activeId} onSelect={setActiveId} />

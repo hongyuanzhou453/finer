@@ -10,11 +10,13 @@ import {
   Bot,
   CheckCircle2,
   Gauge,
+  LineChart,
   Network,
   Radar,
   Settings,
   Database,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -274,23 +276,47 @@ export function Sidebar({
             Analysis
           </div>
           <div className="space-y-1.5">
+            {/* 新定位（「不告诉你谁更准，让你查得清谁说过什么」）的两个主入口。
+                此前 /discover 与 /ticker 在全仓**零入站链接**——为新定位建的页面
+                没有任何路径能走到，而宣传站落地页却拿 /discover 的截图当主推图。 */}
             <Link
-              href="/radar"
+              href="/discover"
               className="block w-full rounded-sm border border-transparent px-3 py-2.5 text-left transition-all duration-150 hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
             >
               <div className="flex items-start gap-3">
                 <div className="mt-0.5 rounded-sm border border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] p-2 text-[var(--ink-soft)]">
-                  <Radar className="w-4 h-4" strokeWidth={1.6} />
+                  <Users className="w-4 h-4" strokeWidth={1.6} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[13px] font-bold text-foreground">观点雷达 Radar</span>
+                    <span className="text-[13px] font-bold text-foreground">信源记录 Discover</span>
                     <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--accent-teal)]">
                       LIVE
                     </span>
                   </div>
                   <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
-                    跨 KOL 观点横截面与收益榜（真实数据）
+                    谁说过什么 · 按已结算样本量排列，不是排名
+                  </div>
+                </div>
+              </div>
+            </Link>
+            <Link
+              href="/ticker"
+              className="block w-full rounded-sm border border-transparent px-3 py-2.5 text-left transition-all duration-150 hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-sm border border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] p-2 text-[var(--ink-soft)]">
+                  <LineChart className="w-4 h-4" strokeWidth={1.6} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-bold text-foreground">个股共识 Ticker</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--accent-teal)]">
+                      LIVE
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
+                    这只票谁说过什么 · 含陈旧度标注
                   </div>
                 </div>
               </div>
@@ -312,6 +338,33 @@ export function Sidebar({
                   </div>
                   <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
                     证据链与 F3→F4→F5 溯源
+                  </div>
+                </div>
+              </div>
+            </Link>
+            {/* /radar 按「信誉分」降序排名、无 sufficiency、无 95% 区间、无
+                「不构成对未来的预测」声明——正是 2026-08-02 定位转向拍板要禁的形态
+                （UI-1：默认序 = 已结算样本量；禁止「Top 券商/最佳信源」式呈现）。
+                它吃的是真实数据，所以曾挂 LIVE 徽标，位置还在两个合规页之上。
+                这里先降级：移到末位、去掉 LIVE、文案如实说明它不合口径。
+                **页面本身尚未按 UI-1 改造**——改造还是删除是产品决策，未定。 */}
+            <Link
+              href="/radar"
+              className="block w-full rounded-sm border border-transparent px-3 py-2.5 text-left opacity-70 transition-all duration-150 hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)] hover:opacity-100"
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-sm border border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] p-2 text-[var(--ink-soft)]">
+                  <Radar className="w-4 h-4" strokeWidth={1.6} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-bold text-foreground/70">观点雷达 Radar</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+                      旧口径
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
+                    按信誉分排名，不带样本量门与区间——待按新口径改造
                   </div>
                 </div>
               </div>
