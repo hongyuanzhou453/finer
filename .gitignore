@@ -28,6 +28,12 @@ trader韭菜*/
 *.json
 !pyproject.toml
 !src/finer_dashboard/package-lock.json
+# 宣传站的构建必需文件。上面那条全局 `*.json` 把它们一起挡了，导致 main 上的
+# finer_site 无法从干净检出构建（`npm ci` 连 package.json 都找不到）——
+# dashboard 的同名文件是在该规则之前入库的，所以只有宣传站踩到。
+!src/finer_site/package.json
+!src/finer_site/package-lock.json
+!src/finer_site/tsconfig.json
 !tests/fixtures/kol-backtest-mvp/**/*.json
 !scripts/wx_channels_download/**/*.json
 !src/finer_site/src/demo/kol-check/data.json
