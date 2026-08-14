@@ -207,15 +207,19 @@ export function CreatorRecordView({
         </div>
         <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[13px] text-foreground/80">
           <HeaderRatio card={card} />
-          <span className="tabular-nums">
-            均值收益（历史）{" "}
-            <span
-              className="font-semibold"
-              style={{ color: returnColor(card.mean_return) }}
-            >
-              {fmtSignedPct(card.mean_return)}
+          {/* 与 RecordCardWall 同一处泄漏：均值收益是比率，count_only 时不得渲染。
+              `HeaderRatio` 挡住了命中率，这一行却在门外。 */}
+          {card.sufficiency.display_policy !== "count_only" && (
+            <span className="tabular-nums">
+              均值收益（历史）{" "}
+              <span
+                className="font-semibold"
+                style={{ color: returnColor(card.mean_return) }}
+              >
+                {fmtSignedPct(card.mean_return)}
+              </span>
             </span>
-          </span>
+          )}
           <span className="tabular-nums">
             记录 {card.n_settled} / {card.n_total} 已结算
           </span>

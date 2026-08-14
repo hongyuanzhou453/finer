@@ -111,15 +111,22 @@ export function RecordCardWall({
                 {card.n_settled} / {card.n_total}
               </dd>
             </div>
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-foreground/45">均值收益（历史）</dt>
-              <dd
-                className="tabular-nums font-semibold"
-                style={{ color: returnColor(card.mean_return) }}
-              >
-                {fmtSignedPct(card.mean_return)}
-              </dd>
-            </div>
+            {/* 均值收益**也是比率**，必须与命中率同样受 count_only 门约束。
+                此前它在 `CardRatioBlock` 的门**外面**无条件渲染：34 张 count_only
+                卡里 24 张照样印出均值收益（KeyBanc n_settled=1 印 +58.0%），
+                另外 10 张 mean_return 是 null 却被印成「0.0%」。
+                门写对了，只是开在了门外。 */}
+            {card.sufficiency.display_policy !== "count_only" && (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-foreground/45">均值收益（历史）</dt>
+                <dd
+                  className="tabular-nums font-semibold"
+                  style={{ color: returnColor(card.mean_return) }}
+                >
+                  {fmtSignedPct(card.mean_return)}
+                </dd>
+              </div>
+            )}
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-foreground/45">主要市场</dt>
               <dd className="tabular-nums text-foreground/80">

@@ -66,8 +66,15 @@ export function fmtRate(value: number, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
-/** 0.0418 → "+4.2%" (signed, for returns). */
-export function fmtSignedPct(value: number, digits = 1): string {
+/**
+ * 0.0418 → "+4.2%" (signed, for returns). null/undefined → "—"。
+ *
+ * 空值必须显式挡住：`Math.abs(null)` 是 0，旧签名写 `value: number` 时
+ * null 会被印成「0.0%」——一个凭空造出来的数字，比不显示危险得多。
+ * 已发布快照里有 10 张卡的 mean_return 是 null。
+ */
+export function fmtSignedPct(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
   const sign = value > 0 ? "+" : value < 0 ? "−" : "";
   return `${sign}${(Math.abs(value) * 100).toFixed(digits)}%`;
 }
@@ -78,7 +85,8 @@ export function fmtDate(iso: string): string {
 }
 
 /** Return-value color per site convention: red positive, green negative. */
-export function returnColor(value: number): string {
+export function returnColor(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "var(--ink-soft)";
   if (value > 0) return "var(--chart-up)";
   if (value < 0) return "var(--chart-down)";
   return "var(--ink-soft)";
