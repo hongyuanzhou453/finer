@@ -25,6 +25,14 @@ import { PipelineRail } from "./pipeline-rail";
 
 // ---- formatting helpers -----------------------------------------------------
 
+/**
+ * 渲染比率所需的最小已结算样本量。与产品后端同一道门：
+ * `configs/significance.yaml` 的 `tiers.provisional.min_settled`，
+ * 实跑 `SignificanceGate.assess()` —— n≤14 判 `count_only`，不渲染任何比率。
+ * 低于此值只报计数。
+ */
+const RATIO_MIN_SAMPLE = 15;
+
 const pct = (v: number, sign = true) =>
   `${sign && v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
 
@@ -485,7 +493,18 @@ export function DemoWorkbench({
                 { k: "年化", v: pct(m.annualized), red: true },
                 { k: "夏普", v: m.sharpe.toFixed(2) },
                 { k: "最大回撤", v: pct(m.max_drawdown), green: true },
-                { k: "胜率（历史记录）", v: `${(m.win_rate * 100).toFixed(1)}% · n=${m.signal_count}` },
+                // 胜率是比率，受与产品同一道门约束：n < 15 只报计数，不渲染比率
+                // （阈值真相源 configs/significance.yaml，实跑 SignificanceGate：
+                //  n≤14 → count_only）。这里的样本量全是 2–3，且除
+                //  0.667(=2/3) 外的取值在算术上根本不可能（n=2 只能是 0/50/100%），
+                //  照原样印出来就是在展示编造的数字。
+                {
+                  k: "胜率（历史记录）",
+                  v:
+                    m.signal_count >= RATIO_MIN_SAMPLE
+                      ? `${(m.win_rate * 100).toFixed(1)}% · n=${m.signal_count}`
+                      : `n=${m.signal_count} · 样本不足，只报计数`,
+                },
                 { k: "信号数", v: String(m.signal_count) },
               ].map((cell) => (
                 <div

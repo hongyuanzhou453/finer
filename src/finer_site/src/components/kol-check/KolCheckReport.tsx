@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * 单个真实（匿名化）KOL 的「晨星式体检报告」— 散户向自助单页。
+ * 单个真实（匿名化）KOL 的记录卡 — 散户向自助单页。
+ * 口径：只呈现「说过什么、后来发生了什么、说的和做的是否一致」，不做评级。
  * 数据 = 冻结的真实 F5 canonical TradeActions（见 @/demo/kol-check/data.json）：
  * 真实标的/时序/原话/回测保真，KOL 身份匿名化。全前端、不连后端。
  */
@@ -98,7 +99,7 @@ export function KolCheckReport() {
       <header className="mb-8">
         <div className="flex items-baseline gap-3">
           <span className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent-gold)]">
-            KOL 晨星 · 体检报告
+            KOL 记录卡 · 说过什么、后来怎样
           </span>
         </div>
         <h1 className="mt-2 text-[28px] leading-tight sm:text-[34px]">
@@ -119,7 +120,7 @@ export function KolCheckReport() {
           className="mt-5 rounded-sm border-l-4 bg-[var(--surface-muted)] px-4 py-3 text-[13px] leading-relaxed text-[var(--foreground)]"
           style={{ borderColor: avgReturn > 0 ? "var(--chart-up)" : "var(--chart-down)" }}
         >
-          <span className="font-semibold">体检结论：</span>
+          <span className="font-semibold">记录摘要：</span>
           已结算 {settled.length} 笔 · 命中 {wins} 笔（
           {Math.round((hl.hitRate ?? 0) * 100)}%），等权每笔均值 {fmtPct(avgReturn)}
           {styleConflict ? "，且自述入场风格与实盘行为存在冲突" : ""}。
@@ -160,7 +161,7 @@ export function KolCheckReport() {
       <section className="mb-9">
         <SectionHeader
           index="01"
-          title="言行不一 · 自述 vs 实盘"
+          title="言行不一 · 自述 vs 记录"
           en="DECLARED VS OBSERVED"
           note={styleConflict ? <span className="text-[var(--morningstar-red)]">检出冲突</span> : null}
         />
@@ -169,7 +170,7 @@ export function KolCheckReport() {
           <strong className="text-[var(--morningstar-red)]">
             左侧 {TRADING_STYLE.observed?.left_side_count} 次 / 右侧 {TRADING_STYLE.observed?.right_side_count} 次
           </strong>
-          ——多数是逢低抄底。自述与行为的差距，正是散户最难自查、也最该被问责的地方。
+          ——多数发生在下跌之后。自述与行为的差距，正是散户最难自查、也最该被问责的地方。
         </p>
         <TradingStyleCard profile={TRADING_STYLE} />
       </section>
@@ -224,7 +225,7 @@ export function KolCheckReport() {
       <section className="mb-9">
         <SectionHeader
           index="03"
-          title="真实战绩时间线"
+          title="观点时间线 · 逐条结算"
           en="EVIDENCE · AUDIT TRAIL"
           note={<span>每条可展开 F3→F4→F5→F8 溯源</span>}
         />
