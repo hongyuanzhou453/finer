@@ -11,9 +11,8 @@ import {
   type KOLSnapshotData,
 } from "./kol-snapshot";
 
-function fmtPctSigned(x: number): string {
-  return `${x > 0 ? "+" : ""}${(x * 100).toFixed(1)}%`;
-}
+// 第四份手写副本收编：负号约定（U+2212）以 shared/primitives 为唯一真相源。
+import { fmtSignedPct as fmtPctSigned } from "@/components/shared/primitives";
 
 function narrativeFor(kol: RadarKOL): string {
   const summary = deriveSummary(kol.viewpoints);

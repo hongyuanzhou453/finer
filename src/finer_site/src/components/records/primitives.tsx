@@ -1,29 +1,28 @@
 /**
- * Shared presentational atoms + formatters for the /records snapshot page.
- * Institutional discipline: mono tabular numbers; red = up / win, green =
- * down / loss (site-wide China market convention, --chart-up / --chart-down).
+ * records 领域 primitives：共享原子一律来自 components/shared/primitives
+ * （唯一真相源），本文件只保留 /records 快照页的领域词表（signal class、
+ * 期限、动作、离场原因）与 SettleChip。
  */
-import type {
-  RowDirection,
-  RowSettle,
-  SignalClass,
-  SufficiencyTier,
-} from "@/demo/records/types";
+import type { RowSettle, SignalClass } from "@/demo/records/types";
+import { fmtSignedPct } from "../shared/primitives";
 
-// ---- labels -----------------------------------------------------------------
+export {
+  DIRECTION_META,
+  TierBadge,
+  fmtDate,
+  fmtRate,
+  fmtSignedPct,
+  returnColor,
+} from "../shared/primitives";
+
+/** 兼容别名：records 侧历史上叫 DirectionChip（默认 sm 尺寸，签名不变）。 */
+export { DirectionTag as DirectionChip } from "../shared/primitives";
+
+// ---- domain labels ----------------------------------------------------------
 
 export const SIGNAL_CLASS_LABEL: Record<SignalClass, string> = {
   broker_recommendation: "个股评级",
   broker_sector_view: "板块观点",
-};
-
-export const DIRECTION_META: Record<
-  RowDirection,
-  { label: string; color: string }
-> = {
-  bullish: { label: "看多", color: "var(--chart-up)" },
-  bearish: { label: "看空", color: "var(--chart-down)" },
-  neutral: { label: "中性", color: "#8a8278" },
 };
 
 const TIME_HORIZON_LABEL: Record<string, string> = {
@@ -57,78 +56,6 @@ export function actionTypeLabel(v: string): string {
 export function exitReasonLabel(v: string | undefined): string {
   if (!v) return "—";
   return EXIT_REASON_LABEL[v] ?? v;
-}
-
-// ---- formatters -------------------------------------------------------------
-
-/** 0.4624 → "46.2%" (unsigned, for rates). */
-export function fmtRate(value: number, digits = 1): string {
-  return `${(value * 100).toFixed(digits)}%`;
-}
-
-/** 0.0418 → "+4.2%" (signed, for returns). */
-export function fmtSignedPct(value: number, digits = 1): string {
-  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
-  return `${sign}${(Math.abs(value) * 100).toFixed(digits)}%`;
-}
-
-/** ISO timestamp → "YYYY-MM-DD". */
-export function fmtDate(iso: string): string {
-  return iso.slice(0, 10);
-}
-
-/** Return-value color per site convention: red positive, green negative. */
-export function returnColor(value: number): string {
-  if (value > 0) return "var(--chart-up)";
-  if (value < 0) return "var(--chart-down)";
-  return "var(--ink-soft)";
-}
-
-// ---- tier badge -------------------------------------------------------------
-
-const TIER_META: Record<SufficiencyTier, { label: string; color: string }> = {
-  sufficient: { label: "样本充分", color: "var(--accent-teal)" },
-  provisional: { label: "临界样本", color: "var(--accent-gold)" },
-  insufficient: { label: "样本不足", color: "#8a8278" },
-};
-
-export function TierBadge({ tier }: { tier: SufficiencyTier }) {
-  const meta = TIER_META[tier];
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-bold tracking-wider"
-      style={{
-        color: meta.color,
-        backgroundColor: `color-mix(in srgb, ${meta.color} 10%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${meta.color} 30%, transparent)`,
-      }}
-    >
-      {meta.label}
-    </span>
-  );
-}
-
-// ---- direction chip ---------------------------------------------------------
-
-export function DirectionChip({ direction }: { direction: RowDirection }) {
-  const meta = DIRECTION_META[direction];
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium"
-      style={{
-        color: meta.color,
-        backgroundColor: `color-mix(in srgb, ${meta.color} 12%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${meta.color} 32%, transparent)`,
-      }}
-    >
-      <span
-        aria-hidden
-        className="inline-block h-1.5 w-1.5 rounded-full"
-        style={{ backgroundColor: meta.color }}
-      />
-      {meta.label}
-    </span>
-  );
 }
 
 // ---- settle chip (red win / green loss / grey pending) ----------------------
