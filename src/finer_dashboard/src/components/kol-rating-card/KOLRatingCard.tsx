@@ -4,25 +4,21 @@ import React from "react";
 import { StarRating } from "./StarRating";
 import { DimensionScores } from "./DimensionScores";
 import { PerformanceTimeline } from "./PerformanceTimeline";
-import { FocusAreas } from "./FocusAreas";
 import { RecentOpinions } from "./RecentOpinions";
 import { TrendingUp, TrendingDown, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { KOLRatingResponse } from "@/lib/contracts";
 
-// Types
-export interface KOLRating {
-  kolId: string;
-  name: string;
-  avatar?: string;
-  platform: string;
-  overallRating: number; // 1-5
-  totalOpinions: number;
-  verifiedOpinions: number;
-  accuracyRate: number; // 0-100
-  avgReturn: number; // percentage
-  rank?: number; // ranking among all KOLs
-  badges: string[];
-}
+/**
+ * 契约根治（2026-08-15）：本组件曾自带一套与后端不符的响应类型
+ * （badges/rank/accuracyRate 从未存在于任何后端响应；dimensions/focusAreas/
+ * timeline 的形状也各自漂移）。现在 fetch 直接吃 canonical
+ * ``KOLRatingResponse``（contracts.ts 镜像 kol.py），再经本文件底部的
+ * 显式 adapter 转成展示用视图模型——漂移只可能发生在一处、且有类型检查。
+ *
+ * 效力门：ratio 字段（successRate/avgReturn/overallRating）在
+ * display_policy == count_only 时为 null，渲染一律留白（—），不回填 0。
+ */
 
 export interface DimensionScore {
   name: string;
@@ -69,13 +65,58 @@ export interface KOLRatingCardProps {
   showOpinions?: boolean;
 }
 
-// API response type
-interface KOLRatingResponse {
-  rating: KOLRating;
-  dimensions: DimensionScore[];
-  timeline: TimelineEvent[];
-  focusAreas: FocusArea[];
-  recentOpinions: RecentOpinion[];
+// ---------------------------------------------------------------------------
+// canonical 响应 → 展示视图模型（唯一的形状转换点）
+// ---------------------------------------------------------------------------
+
+function toDimensionScores(resp: KOLRatingResponse): DimensionScore[] {
+  // 后端 0-5 → 环形图 0-100；weight 后端不提供，不编造
+  return resp.dimensions.map((d) => ({
+    name: d.label,
+    score: Math.round(d.score * 20),
+    weight: 0,
+  }));
+}
+
+function toTimelineEvents(resp: KOLRatingResponse): TimelineEvent[] {
+  // 业绩时间线的事件源 = recentOpinions（有 ticker/方向/结果的真实字段）；
+  // resp.timeline 是净值采样点（无 ticker），不能拼成事件——此前把它硬塞
+  // 进来渲染的是 undefined。
+  return resp.recentOpinions.map((o) => ({
+    id: o.id,
+    date: o.timestamp.slice(0, 10),
+    ticker: o.ticker,
+    direction: (["bullish", "bearish", "neutral"].includes(o.direction)
+      ? o.direction
+      : "neutral") as TimelineEvent["direction"],
+    verified: o.result === "success" || o.result === "failed" || o.result === "verified",
+    result:
+      o.result === "success" || o.result === "verified"
+        ? "profit"
+        : o.result === "failed"
+          ? "loss"
+          : undefined,
+    summary: o.ticker_name ?? o.ticker,
+  }));
+}
+
+function toRecentOpinions(resp: KOLRatingResponse): RecentOpinion[] {
+  return resp.recentOpinions.map((o) => ({
+    id: o.id,
+    date: o.timestamp.slice(0, 10),
+    ticker: o.ticker,
+    direction: (["bullish", "bearish", "neutral"].includes(o.direction)
+      ? o.direction
+      : "neutral") as RecentOpinion["direction"],
+    title: o.ticker_name ?? o.ticker,
+    verified: o.result === "success" || o.result === "failed" || o.result === "verified",
+    status:
+      o.result === "success" || o.result === "verified"
+        ? "correct"
+        : o.result === "failed"
+          ? "incorrect"
+          : "pending",
+  }));
 }
 
 export function KOLRatingCard({
@@ -130,10 +171,18 @@ export function KOLRatingCard({
     );
   }
 
-  const { rating, dimensions, timeline, focusAreas, recentOpinions } = data;
-  const directionIcon = rating.avgReturn >= 0
-    ? <TrendingUp className="w-4 h-4" />
-    : <TrendingDown className="w-4 h-4" />;
+  const { rating } = data;
+  const dimensions = toDimensionScores(data);
+  const timeline = toTimelineEvents(data);
+  const focusAreas = data.focusAreas;
+  const recentOpinions = toRecentOpinions(data);
+  const countOnly = rating.sufficiency.display_policy === "count_only";
+  const directionIcon =
+    rating.avgReturn != null && rating.avgReturn >= 0 ? (
+      <TrendingUp className="w-4 h-4" />
+    ) : (
+      <TrendingDown className="w-4 h-4" />
+    );
 
   return (
     <div className={cn("research-panel", className)}>
@@ -153,25 +202,14 @@ export function KOLRatingCard({
                 </span>
               </div>
               <div className="flex items-center gap-3 mt-1">
-                <StarRating rating={rating.overallRating} size="lg" showLabel />
-                {rating.rank && (
-                  <span className="text-xs text-foreground/60">
-                    排名 #{rating.rank}
+                {rating.overallRating != null ? (
+                  <StarRating rating={rating.overallRating} size="lg" showLabel />
+                ) : (
+                  <span className="text-xs text-foreground/50">
+                    样本不足，仅显示计数
                   </span>
                 )}
               </div>
-              {rating.badges.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {rating.badges.map((badge, i) => (
-                    <span
-                      key={i}
-                      className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm bg-[rgba(159,29,34,0.07)] text-morningstar-red border border-[rgba(159,29,34,0.12)]"
-                    >
-                      {badge}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 
@@ -180,38 +218,74 @@ export function KOLRatingCard({
             <MetricBlock
               label="观点数"
               value={rating.totalOpinions.toString()}
-              subLabel={`${rating.verifiedOpinions} 已验证`}
+              subLabel={`${rating.settledOpinions} 已结算`}
             />
+            {/* 效力门 count_only 时为 null → 留白（—），不得回填 0 */}
             <MetricBlock
-              label="准确率"
-              value={`${rating.accuracyRate.toFixed(1)}%`}
-              trend={rating.accuracyRate >= 60 ? "up" : rating.accuracyRate >= 40 ? "neutral" : "down"}
+              label="结算命中率"
+              value={
+                rating.successRate != null
+                  ? `${(rating.successRate * 100).toFixed(1)}%`
+                  : "—"
+              }
             />
             <MetricBlock
               label="平均收益"
-              value={`${rating.avgReturn >= 0 ? "+" : ""}${rating.avgReturn.toFixed(1)}%`}
-              trend={rating.avgReturn >= 0 ? "up" : "down"}
-              icon={directionIcon}
+              value={
+                rating.avgReturn != null
+                  ? `${rating.avgReturn >= 0 ? "+" : ""}${rating.avgReturn.toFixed(1)}%`
+                  : "—"
+              }
+              trend={
+                rating.avgReturn == null
+                  ? undefined
+                  : rating.avgReturn >= 0
+                    ? "up"
+                    : "down"
+              }
+              icon={rating.avgReturn != null ? directionIcon : undefined}
             />
           </div>
         </div>
       </div>
 
-      {/* Body: Dimension Scores */}
-      <div className="p-6 border-b border-[rgba(95,67,40,0.08)]">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 mb-4">
-          维度评分
+      {/* 效力门横幅：比率被撤下时说明原因，而不是让空位无声出现 */}
+      {countOnly && (
+        <div className="px-6 py-3 border-b border-[rgba(95,67,40,0.08)] text-[11px] leading-relaxed text-foreground/60">
+          已结算样本不足（{rating.settledOpinions} 条），本卡只显示计数；
+          比率、评分与维度分在样本达标前不呈现——留白比一个不可靠的数字诚实。
         </div>
-        <DimensionScores dimensions={dimensions} compact={compact} />
-      </div>
+      )}
 
-      {/* Focus Areas */}
-      <div className="p-6 border-b border-[rgba(95,67,40,0.08)]">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 mb-4">
-          专注领域
+      {/* Body: Dimension Scores（空 = 无数据依据或门未过，整节隐藏） */}
+      {dimensions.length > 0 && (
+        <div className="p-6 border-b border-[rgba(95,67,40,0.08)]">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 mb-4">
+            维度评分
+          </div>
+          <DimensionScores dimensions={dimensions} compact={compact} />
         </div>
-        <FocusAreas areas={focusAreas} compact={compact} />
-      </div>
+      )}
+
+      {/* Focus Areas：后端只给标的代码列表（无每域统计），只渲染标签，
+          不给 FocusAreas 组件喂零值编造出「0% 准确率」 */}
+      {focusAreas.length > 0 && (
+        <div className="p-6 border-b border-[rgba(95,67,40,0.08)]">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 mb-4">
+            高频标的
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {focusAreas.map((t) => (
+              <span
+                key={t}
+                className="rounded-sm border border-[var(--table-border)] bg-[var(--surface-muted)] px-2 py-0.5 font-mono text-[11px] tabular-nums text-foreground/70"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Timeline */}
       {showTimeline && (

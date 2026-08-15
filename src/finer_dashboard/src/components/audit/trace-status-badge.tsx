@@ -6,9 +6,11 @@ const META: Record<
   CanonicalTraceStatus,
   { label: string; cls: string; Icon: typeof ShieldCheck }
 > = {
+  // canonical=链路完整是「成功」语义，不是行情方向——走 --color-success，
+  // 别与 --chart-down 的「下跌绿」混用同一字面量。
   canonical: {
     label: "Canonical",
-    cls: "border-[#0f9b6c]/30 bg-[rgba(16,185,129,0.1)] text-[#0f9b6c]",
+    cls: "border-success/30 bg-success/10 text-success",
     Icon: ShieldCheck,
   },
   partial: {

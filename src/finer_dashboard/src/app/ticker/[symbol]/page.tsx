@@ -5,41 +5,37 @@
  *
  * 定位纪律（2026-08-02 转向）：本页描述「谁说过什么」，不判断「谁说得对」。
  * notes 里的口径声明必须逐条展示，不得折叠——这是 CRD-2 的前端义务。
+ * 陈旧度是页面的**状态**（置页头），不是脚注里的免责声明。
+ *
+ * 版式（2026-08-13）：机构研报排版——报头横规、编号章节、booktabs 密排表、
+ * 立场构成条、目标价离散度条。所有字段与口径不变，图形只是已显示数字的再编码。
  */
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, ScrollText } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ArrowLeft, ScrollText } from "lucide-react";
 import type {
   ConsensusDirection,
   Staleness,
   TickerConsensusView,
 } from "@/lib/contracts";
 import { apiFetch } from "@/lib/api-client";
-
-const DIRECTION_LABEL: Record<ConsensusDirection, string> = {
-  bullish: "看多",
-  bearish: "看空",
-  neutral: "中性",
-  mixed: "混合",
-};
-
-const DIRECTION_STYLE: Record<ConsensusDirection, string> = {
-  bullish: "bg-red-50 text-red-700 border-red-200",
-  bearish: "bg-green-50 text-green-700 border-green-200",
-  neutral: "bg-zinc-100 text-zinc-600 border-zinc-200",
-  mixed: "bg-amber-50 text-amber-700 border-amber-200",
-};
-
-/** 陈旧度是页头的显性状态，不是埋在脚注里的小字——语料是静态档案，
- *  不标注就会被读成「当前共识」。 */
-const STALENESS_STYLE: Record<Staleness, string> = {
-  current: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  aging: "border-amber-200 bg-amber-50 text-amber-800",
-  stale: "border-orange-200 bg-orange-50 text-orange-800",
-  archival: "border-zinc-300 bg-zinc-100 text-zinc-700",
-};
+import {
+  BlankCell,
+  CONSENSUS_DIRECTION_META,
+  CompositionRibbon,
+  DirectionTag,
+  ErrorPanel,
+  LoadingRow,
+  Masthead,
+  MetricTile,
+  NoteList,
+  SectionHeader,
+  SpreadBar,
+  StatusBanner,
+  fmtPct,
+  type RibbonSegment,
+} from "@/components/crd/primitives";
 
 const STALENESS_LABEL: Record<Staleness, string> = {
   current: "近期记录",
@@ -47,6 +43,14 @@ const STALENESS_LABEL: Record<Staleness, string> = {
   stale: "记录较旧",
   archival: "档案级记录",
 };
+
+/** 构成条的固定读序：多 → 中性 → 空 → 混合，跨标的保持一致好比较形状。 */
+const DIRECTION_ORDER: ConsensusDirection[] = [
+  "bullish",
+  "neutral",
+  "bearish",
+  "mixed",
+];
 
 function fmtPrice(v?: number | null, cur?: string | null): string {
   if (v == null) return "—";
@@ -84,170 +88,290 @@ export default function TickerConsensusPage({
     };
   }, [symbol]);
 
+  const directionSegments = useMemo<RibbonSegment[]>(() => {
+    if (!view) return [];
+    const counts = view.direction_counts ?? {};
+    const known = DIRECTION_ORDER.map((d) => ({
+      key: d,
+      label: CONSENSUS_DIRECTION_META[d].label,
+      count: counts[d] ?? 0,
+      color: CONSENSUS_DIRECTION_META[d].color,
+    }));
+    // 契约外的取值不静默丢弃——宁可显示一个陌生标签，也不要悄悄少算票数。
+    const extras = Object.entries(counts)
+      .filter(([k]) => !DIRECTION_ORDER.includes(k as ConsensusDirection))
+      .map(([k, n]) => ({
+        key: k,
+        label: k,
+        count: n,
+        color: "color-mix(in srgb, var(--foreground) 30%, transparent)",
+      }));
+    return [...known, ...extras];
+  }, [view]);
+
+  const tp = view?.target_prices ?? null;
+
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <Link
-        href="/"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800"
-      >
-        <ArrowLeft className="h-4 w-4" /> 返回
-      </Link>
-
-      <h1 className="text-2xl font-semibold tracking-tight">
-        {decodeURIComponent(symbol)}
-        <span className="ml-3 text-base font-normal text-zinc-500">
-          共识记录 · 谁说过什么
-        </span>
-      </h1>
-
-      {view?.staleness && view.latest_report_date && (
-        <div
-          className={cn(
-            "mt-3 rounded border px-3 py-2 text-sm",
-            STALENESS_STYLE[view.staleness],
-          )}
+    <div className="finer-scrollbar h-full w-full overflow-y-auto">
+      <div className="mx-auto max-w-5xl px-6 py-9">
+        <Link
+          href="/"
+          className="mb-5 inline-flex items-center gap-1 text-[11px] text-[var(--ink-soft)] transition-colors hover:text-[var(--foreground)]"
         >
-          本页记录截至 <strong>{view.latest_report_date}</strong>
-          {view.as_of_days != null && <>（距今 {view.as_of_days} 天）</>} ·{" "}
-          {STALENESS_LABEL[view.staleness]}
-          <div className="mt-0.5 text-xs opacity-80">
-            语料为静态档案，不代表此刻的市场共识。
-          </div>
-        </div>
-      )}
+          <ArrowLeft className="h-3.5 w-3.5" /> 返回
+        </Link>
 
-      {loading && (
-        <div className="mt-12 flex items-center gap-2 text-zinc-500">
-          <Loader2 className="h-4 w-4 animate-spin" /> 加载中…
-        </div>
-      )}
+        <Masthead
+          eyebrow="FINER OS · 个股共识记录"
+          title={
+            <span className="tabular-nums">{decodeURIComponent(symbol)}</span>
+          }
+          suffix="共识记录 · 谁说过什么"
+          meta={
+            view
+              ? [
+                  `${view.n_sources} 家信源`,
+                  `最新报告 ${view.latest_report_date ?? "—"}`,
+                  view.directional_agreement != null
+                    ? `方向一致度 ${fmtPct(view.directional_agreement, 0)}`
+                    : "方向一致度 —",
+                  view.target_names.length > 0
+                    ? view.target_names.slice(0, 2).join(" / ")
+                    : "无名称记录",
+                ]
+              : undefined
+          }
+          lede="本页只回答「谁、在哪天、说了什么」。每一行都可下钻到原文证据，不对未来做任何判断。"
+        />
 
-      {error && !loading && (
-        <div className="mt-8 rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
-          未找到该标的的立场记录：{error}
-          <div className="mt-1 text-xs text-amber-700">
-            确认代码写法（如 0700.HK / NVDA / AZN.L），或该标的未被已接入信源覆盖。
-          </div>
-        </div>
-      )}
-
-      {view && !loading && (
-        <>
-          {/* 口径声明 —— CRD-2 纪律：逐条展示，不折叠 */}
-          <div className="mt-4 space-y-1">
-            {view.notes.map((note) => (
-              <p key={note} className="text-xs leading-5 text-zinc-500">
-                · {note}
-              </p>
-            ))}
-          </div>
-
-          {/* 方向分布 */}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            {Object.entries(view.direction_counts).map(([dir, count]) => (
-              <span
-                key={dir}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-sm",
-                  DIRECTION_STYLE[dir as ConsensusDirection] ??
-                    DIRECTION_STYLE.mixed,
+        {view?.staleness && view.latest_report_date && (
+          <div className="mt-4">
+            <StatusBanner tone={view.staleness}>
+              <span className="font-semibold">
+                本页记录截至{" "}
+                <span className="tabular-nums">{view.latest_report_date}</span>
+                {view.as_of_days != null && (
+                  <span className="tabular-nums">
+                    （距今 {view.as_of_days} 天）
+                  </span>
                 )}
-              >
-                {DIRECTION_LABEL[dir as ConsensusDirection] ?? dir} {count}
+                {" · "}
+                {STALENESS_LABEL[view.staleness]}
               </span>
-            ))}
-            <span className="text-sm text-zinc-500">
-              共 {view.n_sources} 家信源（每源只计最新一篇）
-              {view.directional_agreement != null &&
-                ` · 方向一致度 ${(view.directional_agreement * 100).toFixed(0)}%`}
-            </span>
+              <div className="mt-0.5 text-[11px] text-[var(--ink-soft)]">
+                语料为静态档案，不代表此刻的市场共识。
+              </div>
+            </StatusBanner>
           </div>
+        )}
 
-          {/* 目标价分布 —— 排除计数必须可见 */}
-          {view.target_prices ? (
-            <div className="mt-4 rounded border border-zinc-200 p-4">
-              <div className="text-sm text-zinc-500">
-                目标价分布（{view.target_prices.currency}，n=
-                {view.target_prices.n}）
-              </div>
-              <div className="mt-1 font-mono text-lg">
-                {view.target_prices.min_value.toLocaleString()} /{" "}
-                {view.target_prices.median_value.toLocaleString()} /{" "}
-                {view.target_prices.max_value.toLocaleString()}
-                <span className="ml-2 text-xs text-zinc-400">
-                  最低 / 中位 / 最高
-                </span>
-              </div>
-              {(view.target_prices.excluded_unit_ambiguous > 0 ||
-                view.target_prices.excluded_currency_mismatch > 0) && (
-                <div className="mt-1 text-xs text-amber-700">
-                  已排除：单位可疑 {view.target_prices.excluded_unit_ambiguous}{" "}
-                  条 · 币种不一 {view.target_prices.excluded_currency_mismatch} 条
+        {loading && <LoadingRow>加载中…</LoadingRow>}
+
+        {error && !loading && (
+          <ErrorPanel
+            title={<>未找到该标的的立场记录：{error}</>}
+            hint="确认代码写法（如 0700.HK / NVDA / AZN.L），或该标的未被已接入信源覆盖。"
+          />
+        )}
+
+        {view && !loading && (
+          <>
+            {/* 口径声明 —— CRD-2 纪律：逐条展示，不折叠 */}
+            {view.notes.length > 0 && (
+              <section className="mt-6">
+                <SectionHeader
+                  index=""
+                  title="口径声明"
+                  en="METHODOLOGY NOTES"
+                  note={<>逐条展示 · 不折叠</>}
+                />
+                <div className="mt-2.5">
+                  <NoteList notes={view.notes} />
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="mt-4 rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-500">
-              目标价未聚合（无数据或单位可疑——排除比错误的中位数诚实）。
-            </div>
-          )}
+              </section>
+            )}
 
-          {/* 各信源最新立场 */}
-          <div className="mt-8 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 text-left text-xs text-zinc-500">
-                  <th className="py-2 pr-4">信源</th>
-                  <th className="py-2 pr-4">方向</th>
-                  <th className="py-2 pr-4">评级</th>
-                  <th className="py-2 pr-4">目标价</th>
-                  <th className="py-2 pr-4">报告日</th>
-                  <th className="py-2 pr-4">篇数</th>
-                  <th className="py-2">下钻</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.latest_by_source.map((row) => (
-                  <tr
-                    key={row.intent_id || row.creator_id}
-                    className="border-b border-zinc-100"
-                  >
-                    <td className="py-2 pr-4 font-medium">{row.creator_id}</td>
-                    <td className="py-2 pr-4">
-                      <span
-                        className={cn(
-                          "rounded border px-2 py-0.5 text-xs",
-                          DIRECTION_STYLE[row.direction],
-                        )}
-                      >
-                        {DIRECTION_LABEL[row.direction]}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-4">{row.rating ?? "—"}</td>
-                    <td className="py-2 pr-4 font-mono">
-                      {fmtPrice(row.target_price_value, row.target_price_currency)}
-                    </td>
-                    <td className="py-2 pr-4 text-zinc-500">
-                      {row.report_date ?? "—"}
-                    </td>
-                    <td className="py-2 pr-4 text-zinc-500">{row.n_reports}</td>
-                    <td className="py-2">
-                      <Link
-                        href={`/audit?ticker=${encodeURIComponent(view.ticker)}`}
-                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                        title={row.intent_id}
-                      >
-                        <ScrollText className="h-3 w-3" />
-                        {row.intent_id.slice(0, 14)}…
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+            {/* 01 立场构成 */}
+            <section className="mt-7">
+              <SectionHeader
+                index="01"
+                title="立场构成"
+                en="STATED POSITIONS"
+                note={<>每家信源只计最新一篇</>}
+              />
+              <div className="mt-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+                <MetricTile
+                  value={view.n_sources}
+                  label="信源家数"
+                  sub="每源计最新一篇"
+                />
+                <MetricTile
+                  value={view.latest_by_source.reduce(
+                    (s, r) => s + (r.n_reports ?? 0),
+                    0,
+                  )}
+                  label="累计篇数"
+                  sub="含同源多篇"
+                />
+                <MetricTile
+                  value={
+                    view.directional_agreement != null
+                      ? fmtPct(view.directional_agreement, 0)
+                      : "—"
+                  }
+                  label="方向一致度"
+                  sub="口径见上方声明"
+                />
+                <MetricTile
+                  value={view.latest_report_date ?? "—"}
+                  label="最新报告日"
+                  sub={
+                    view.as_of_days != null
+                      ? `距今 ${view.as_of_days} 天`
+                      : undefined
+                  }
+                />
+              </div>
+              <div className="editorial-panel mt-2.5 rounded-sm px-4 py-3">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+                  方向票构成 · 按家数
+                </div>
+                <div className="mt-2">
+                  <CompositionRibbon
+                    segments={directionSegments}
+                    emptyHint="该标的无方向票记录。"
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* 02 目标价分布 */}
+            <section className="mt-8">
+              <SectionHeader
+                index="02"
+                title="目标价分布"
+                en="TARGET PRICE SPREAD"
+                note={<>排除计数必须可见</>}
+              />
+              {tp ? (
+                <div className="editorial-panel mt-3 rounded-sm px-4 py-3.5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-[11px] text-[var(--ink-soft)]">
+                      币种 <span className="tabular-nums">{tp.currency}</span> ·
+                      纳入
+                      <span className="tabular-nums"> n={tp.n}</span>
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+                      最低 / 中位 / 最高
+                    </span>
+                  </div>
+                  <div className="mt-1.5 tabular-nums text-[22px] font-semibold leading-none">
+                    {tp.min_value.toLocaleString()}
+                    <span className="mx-2 text-[var(--ink-soft)]">/</span>
+                    <span className="text-[var(--accent-gold)]">
+                      {tp.median_value.toLocaleString()}
+                    </span>
+                    <span className="mx-2 text-[var(--ink-soft)]">/</span>
+                    {tp.max_value.toLocaleString()}
+                  </div>
+                  <SpreadBar
+                    min={tp.min_value}
+                    median={tp.median_value}
+                    max={tp.max_value}
+                  />
+                  {(tp.excluded_unit_ambiguous > 0 ||
+                    tp.excluded_currency_mismatch > 0) && (
+                    <p className="mt-2 border-l-2 border-[var(--accent-gold)] pl-2 text-[11px] leading-relaxed text-[var(--ink-soft)]">
+                      已排除：单位可疑{" "}
+                      <span className="tabular-nums text-[var(--foreground)]">
+                        {tp.excluded_unit_ambiguous}
+                      </span>{" "}
+                      条 · 币种不一{" "}
+                      <span className="tabular-nums text-[var(--foreground)]">
+                        {tp.excluded_currency_mismatch}
+                      </span>{" "}
+                      条。排除比一个错误的中位数诚实。
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <BlankCell>
+                  {
+                    "目标价未聚合——无数据，或单位可疑被整体排除。这里留白，不给一个看起来像数字的猜测。"
+                  }
+                </BlankCell>
+              )}
+            </section>
+
+            {/* 03 各信源最新立场 */}
+            <section className="mt-8 pb-12">
+              <SectionHeader
+                index="03"
+                title="各信源最新立场"
+                en="LATEST BY SOURCE"
+                note={<>每行可下钻至 F3 意图与 F2 证据原文</>}
+              />
+              <div className="finer-scrollbar mt-3 overflow-x-auto">
+                <table className="top-rule-table min-w-[720px]">
+                  <thead>
+                    <tr>
+                      <th>信源</th>
+                      <th>方向</th>
+                      <th>评级</th>
+                      <th className="text-right">目标价</th>
+                      <th className="text-right">报告日</th>
+                      <th className="text-right">篇数</th>
+                      <th>下钻</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.latest_by_source.map((row) => (
+                      <tr key={row.intent_id || row.creator_id}>
+                        <td className="font-medium">{row.creator_id}</td>
+                        <td>
+                          <DirectionTag direction={row.direction} size="xs" />
+                        </td>
+                        <td className="text-[var(--ink-soft)]">
+                          {row.rating ?? "—"}
+                        </td>
+                        <td className="tabular-nums">
+                          {fmtPrice(
+                            row.target_price_value,
+                            row.target_price_currency,
+                          )}
+                        </td>
+                        <td className="tabular-nums">
+                          {row.report_date ?? "—"}
+                        </td>
+                        <td className="tabular-nums">{row.n_reports}</td>
+                        <td>
+                          <Link
+                            href={`/audit?ticker=${encodeURIComponent(view.ticker)}`}
+                            className="inline-flex items-center gap-1 border-b border-[var(--accent-gold)] pb-px font-mono text-[10px] text-[var(--foreground)] transition-colors hover:text-[var(--morningstar-red)]"
+                            title={row.intent_id}
+                          >
+                            <ScrollText className="h-3 w-3" />
+                            {row.intent_id.slice(0, 14)}…
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-[var(--ink-soft)]">
+                {"表内为每家信源的"}
+                <strong className="font-semibold text-[var(--foreground)]">
+                  最新一篇
+                </strong>
+                {
+                  "立场；同源历史立场与完整证据链在审计页逐条可查。目标价按原文币种呈现，跨币种不做换算。"
+                }
+              </p>
+            </section>
+          </>
+        )}
+      </div>
     </div>
   );
 }

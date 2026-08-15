@@ -189,7 +189,8 @@ export function RecentOpinions({
       total: opinions.length,
       verified: verified.length,
       correct,
-      accuracy: verified.length > 0 ? (correct / verified.length) * 100 : 0,
+      // null（不是 0）：无已裁决样本时比率不存在——0% 是一个会被当真的数字
+      accuracy: verified.length > 0 ? (correct / verified.length) * 100 : null,
       pending,
     };
   }, [opinions]);
@@ -229,9 +230,11 @@ export function RecentOpinions({
           <span className="text-[10px] text-foreground/50">准确率</span>
           <span className={cn(
             "text-sm font-bold tabular-nums",
-            stats.accuracy >= 60 ? "text-emerald-600" : stats.accuracy >= 40 ? "text-yellow-600" : "text-red-600"
+            stats.accuracy == null
+              ? "text-foreground/30"
+              : stats.accuracy >= 60 ? "text-emerald-600" : stats.accuracy >= 40 ? "text-yellow-600" : "text-red-600"
           )}>
-            {stats.accuracy.toFixed(0)}%
+            {stats.accuracy == null ? "—" : `${stats.accuracy.toFixed(0)}%`}
           </span>
         </div>
         {stats.pending > 0 && (

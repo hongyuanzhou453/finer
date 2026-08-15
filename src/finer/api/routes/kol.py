@@ -1,18 +1,32 @@
 """KOL Rating API — KOL 评级数据查询.
 
 Provides rating and performance metrics for KOLs (Key Opinion Leaders).
+
+契约根治（2026-08-15）：
+- ``rating`` 由 ``Dict[str, Any]`` 收紧为强类型 ``KOLRatingSummary``——
+  此前后端漏发 / 前端多要字段互相看不见，曾导致前端白屏
+  （``rating.badges.length``，badges 从未存在于任何后端响应）。
+- 比率（successRate / avgReturn / overallRating）过 CRD-2 效力门：
+  响应携带 ``SampleSufficiency``，``display_policy == count_only`` 时比率
+  字段为 None——0 是一个会被当真的数字，缺失必须显式为空。
+- 删除两处编造：30 天合成时间线（``(i % 3) * 0.2`` 抖动 + 假收益倍数）
+  与 timeliness/depth/clarity 三个硬编码维度分。timeline 只在有真实
+  portfolio_snapshots 时给出；dimensions 只保留有数据依据且过门的轴。
+
+评分卡信息模型（overallRating / dimensions）已被定位转向判为废弃语义
+（CRD-1），本轮只做契约与诚实性收口，整体下线归 C11 KOL 清理批次。
 """
 
 import json
 import logging
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from finer.credibility.significance import get_significance_gate
 from finer.paths import DATA_ROOT
+from finer.schemas.significance import SampleSufficiency
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +45,8 @@ class DimensionScore(BaseModel):
 
 class TimelinePoint(BaseModel):
     date: str
-    rating: float
+    #: 评分随效力门置空——时间线不得成为绕过 count_only 的旁路通道。
+    rating: Optional[float] = None
     return_pct: Optional[float] = None
 
 
@@ -44,12 +59,67 @@ class RecentOpinion(BaseModel):
     result: Optional[str] = None  # success, failed, pending
 
 
+class KOLRatingSummary(BaseModel):
+    """评级摘要（camelCase 对齐现役前端组件；contracts.ts 逐字段镜像）。"""
+
+    kolId: str
+    name: str
+    platform: str
+    totalOpinions: int = Field(description="口径内 action 总数（含未结算）")
+    settledOpinions: int = Field(
+        description="已裁决条数（验证或证伪；比率的分母）"
+    )
+    #: 以下三个是比率/比率派生量——display_policy == count_only 时一律 None。
+    overallRating: Optional[float] = Field(
+        default=None, description="1-5 派生分；由 successRate 派生，随门置空"
+    )
+    avgReturn: Optional[float] = Field(
+        default=None, description="平均收益（百分点）；无已结算收益时为 None"
+    )
+    successRate: Optional[float] = Field(
+        default=None, description="0-1 结算命中率；随门置空"
+    )
+    sufficiency: SampleSufficiency = Field(
+        description="CRD-2 效力门判定；前端必须按 display_policy 呈现"
+    )
+
+
 class KOLRatingResponse(BaseModel):
-    rating: Dict[str, Any]
+    rating: KOLRatingSummary
     dimensions: List[DimensionScore]
     timeline: List[TimelinePoint]
     focusAreas: List[str]
     recentOpinions: List[RecentOpinion]
+
+
+def _gated_summary(
+    kol_id: str,
+    name: str,
+    platform: str,
+    *,
+    successes: int,
+    settled_n: int,
+    total_n: int,
+    avg_return: Optional[float],
+    overall_rating: Optional[float],
+) -> KOLRatingSummary:
+    """构造过门的评级摘要——比率只在 display_policy 允许时放行。"""
+    sufficiency = get_significance_gate().assess(
+        successes=successes, settled_n=settled_n, total_n=total_n
+    )
+    permitted = sufficiency.display_policy != "count_only"
+    success_rate = successes / settled_n if settled_n > 0 else None
+    return KOLRatingSummary(
+        kolId=kol_id,
+        name=name,
+        platform=platform,
+        totalOpinions=total_n,
+        settledOpinions=settled_n,
+        overallRating=round(overall_rating, 1) if permitted and overall_rating is not None else None,
+        avgReturn=round(avg_return, 2) if permitted and avg_return is not None else None,
+        successRate=round(success_rate, 4) if permitted and success_rate is not None else None,
+        sufficiency=sufficiency,
+    )
 
 
 # ============================================
@@ -106,7 +176,6 @@ def _rating_from_backtest(kol_id: str, backtest: Dict[str, Any]) -> KOLRatingRes
     Used when no F5/F6 action records exist for the KOL but a backtest run does.
     All numbers come from the backtest artifact — no random fallback, no synthesis.
     """
-    total_return_pct = float(backtest.get("total_return", 0.0)) * 100
     win_rate = float(backtest.get("win_rate", 0.0))
     total_trades = int(backtest.get("total_trades", 0))
     sharpe = float(backtest.get("sharpe_ratio", 0.0))
@@ -116,7 +185,7 @@ def _rating_from_backtest(kol_id: str, backtest: Dict[str, Any]) -> KOLRatingRes
     if trades_raw:
         avg_return_per_trade = sum(float(t.get("return_pct", 0.0)) for t in trades_raw) / len(trades_raw) * 100
     else:
-        avg_return_per_trade = 0.0
+        avg_return_per_trade = None
 
     # Overall rating (1-5): 60% win-rate component, 40% sharpe component.
     win_component = win_rate * 5.0  # 0..5
@@ -124,15 +193,28 @@ def _rating_from_backtest(kol_id: str, backtest: Dict[str, Any]) -> KOLRatingRes
     overall_rating = round(0.6 * win_component + 0.4 * sharpe_component, 1)
     overall_rating = max(1.0, min(5.0, overall_rating))
 
-    dimensions = [
-        DimensionScore(dimension="accuracy", score=round(max(0.0, min(5.0, win_rate * 5.0)), 1), label="准确率"),
-        DimensionScore(dimension="consistency", score=round(max(0.0, min(5.0, 2.5 + sharpe * 0.5)), 1), label="一致性"),
-        DimensionScore(dimension="timeliness", score=3.5, label="时效性"),
-        DimensionScore(dimension="depth", score=3.0, label="深度"),
-        DimensionScore(dimension="clarity", score=3.5, label="清晰度"),
-    ]
+    summary = _gated_summary(
+        kol_id,
+        *_registry_identity(kol_id, "Backtest"),
+        successes=round(win_rate * total_trades),
+        settled_n=total_trades,
+        total_n=total_trades,
+        avg_return=avg_return_per_trade,
+        overall_rating=overall_rating,
+    )
+
+    # 维度分只保留有数据依据的两轴（win_rate / sharpe），且随效力门一起
+    # 撤下——把比率画成 0-5 的环并不改变它是比率。timeliness/depth/clarity
+    # 曾是硬编码常量（3.5/3.0/3.5），没有任何测量依据，已删除。
+    dimensions = []
+    if summary.successRate is not None:
+        dimensions = [
+            DimensionScore(dimension="accuracy", score=round(max(0.0, min(5.0, win_rate * 5.0)), 1), label="准确率"),
+            DimensionScore(dimension="consistency", score=round(max(0.0, min(5.0, 2.5 + sharpe * 0.5)), 1), label="一致性"),
+        ]
 
     # Timeline derived from real portfolio_snapshots (up to 30 evenly-sampled points).
+    # 曲线是记录不是承诺（PRT-2）：真实累计收益保留；评分随门置空。
     snapshots = backtest.get("portfolio_snapshots") or []
     timeline: List[TimelinePoint] = []
     if snapshots:
@@ -143,7 +225,7 @@ def _rating_from_backtest(kol_id: str, backtest: Dict[str, Any]) -> KOLRatingRes
             cum_ret = float(s.get("cumulative_return", 0.0)) * 100
             timeline.append(TimelinePoint(
                 date=d,
-                rating=overall_rating,
+                rating=summary.overallRating,
                 return_pct=round(cum_ret, 2),
             ))
 
@@ -176,17 +258,8 @@ def _rating_from_backtest(kol_id: str, backtest: Dict[str, Any]) -> KOLRatingRes
             result=result_label,
         ))
 
-    reg_name, reg_platform = _registry_identity(kol_id, "Backtest")
     return KOLRatingResponse(
-        rating={
-            "kolId": kol_id,
-            "name": reg_name,
-            "platform": reg_platform,
-            "overallRating": overall_rating,
-            "avgReturn": round(avg_return_per_trade, 2),
-            "successRate": round(win_rate, 2),
-            "totalOpinions": total_trades,
-        },
+        rating=summary,
         dimensions=dimensions,
         timeline=timeline,
         focusAreas=focus_areas,
@@ -200,24 +273,18 @@ def _empty_rating(kol_id: str) -> KOLRatingResponse:
     Returned in place of synthetic random fallback. Frontend gracefully renders
     empty timeline / focus areas / opinions.
     """
-    reg_name, reg_platform = _registry_identity(kol_id, "Unknown")
     return KOLRatingResponse(
-        rating={
-            "kolId": kol_id,
-            "name": reg_name,
-            "platform": reg_platform,
-            "overallRating": 0.0,
-            "avgReturn": 0.0,
-            "successRate": 0.0,
-            "totalOpinions": 0,
-        },
-        dimensions=[
-            DimensionScore(dimension="accuracy", score=0.0, label="准确率"),
-            DimensionScore(dimension="consistency", score=0.0, label="一致性"),
-            DimensionScore(dimension="timeliness", score=0.0, label="时效性"),
-            DimensionScore(dimension="depth", score=0.0, label="深度"),
-            DimensionScore(dimension="clarity", score=0.0, label="清晰度"),
-        ],
+        rating=_gated_summary(
+            kol_id,
+            *_registry_identity(kol_id, "Unknown"),
+            successes=0,
+            settled_n=0,
+            total_n=0,
+            avg_return=None,
+            overall_rating=None,
+        ),
+        # 无数据就是无数据：不再返回五个 0 分维度——0 是一个会被当真的分数。
+        dimensions=[],
         timeline=[],
         focusAreas=[],
         recentOpinions=[],
@@ -275,61 +342,65 @@ def _calculate_kol_rating(kol_id: str) -> KOLRatingResponse:
         direction = action.get("direction", "neutral")
         directions[direction] = directions.get(direction, 0) + 1
 
-    # Calculate rating
-    success_rate = success_count / total if total > 0 else 0.5
-    avg_return = sum(returns) / len(returns) if returns else 0.0
+    # 结算口径：validation_status 已裁决（verified/failed）为分母；
+    # 未裁决（pending 等）只进 totalOpinions。
+    settled_n = success_count + failed_count
+    avg_return = sum(returns) / len(returns) if returns else None
 
-    # Overall rating (1-5 scale)
-    overall_rating = 1 + success_rate * 3 + (avg_return > 0) * 1
-    overall_rating = max(1, min(5, round(overall_rating, 1)))
+    overall_rating: Optional[float] = None
+    if settled_n > 0:
+        success_rate = success_count / settled_n
+        overall_rating = 1 + success_rate * 3 + (1 if (avg_return or 0) > 0 else 0)
+        overall_rating = max(1.0, min(5.0, round(overall_rating, 1)))
 
-    # Dimension scores
-    dimensions = [
-        DimensionScore(dimension="accuracy", score=round(success_rate * 5, 1), label="准确率"),
-        DimensionScore(dimension="consistency", score=round(3 + success_rate * 2, 1), label="一致性"),
-        DimensionScore(dimension="timeliness", score=round(3.5, 1), label="时效性"),
-        DimensionScore(dimension="depth", score=round(3.0, 1), label="深度"),
-        DimensionScore(dimension="clarity", score=round(3.5, 1), label="清晰度"),
-    ]
+    summary = _gated_summary(
+        kol_id,
+        *_registry_identity(kol_id, "Internal"),
+        successes=success_count,
+        settled_n=settled_n,
+        total_n=total,
+        avg_return=avg_return,
+        overall_rating=overall_rating,
+    )
 
-    # Timeline (last 30 days)
-    timeline = []
-    now = datetime.now()
-    for i in range(30):
-        date = (now - timedelta(days=i)).strftime("%Y-%m-%d")
-        timeline.append(TimelinePoint(
-            date=date,
-            rating=round(overall_rating - 0.5 + (i % 3) * 0.2, 1),
-            return_pct=round(avg_return * (1 + (i % 5) * 0.1), 2) if returns else None,
-        ))
+    # 维度分只保留有数据依据的准确率轴，且随门撤下。此前的一致性
+    # （3 + rate*2）与 timeliness/depth/clarity 常量没有测量依据，已删除。
+    dimensions = []
+    if summary.successRate is not None:
+        dimensions = [
+            DimensionScore(
+                dimension="accuracy",
+                score=round(summary.successRate * 5, 1),
+                label="准确率",
+            ),
+        ]
+
+    # 本路径没有真实时间序列（action 无逐日净值）。此前在这里合成
+    # 30 天假时间线（评分抖动 + 假收益倍数）——编造数据，已删除；
+    # 前端对空时间线有优雅降级。
+    timeline: List[TimelinePoint] = []
 
     # Focus areas (top tickers)
     focus_areas = sorted(tickers.keys(), key=lambda t: tickers[t], reverse=True)[:5]
 
-    # Recent opinions
+    # Recent opinions（按真实 timestamp 降序，不再假设文件序）
     recent_opinions = []
-    for action in actions[:10]:
+    sorted_actions = sorted(
+        actions, key=lambda a: str(a.get("timestamp", "")), reverse=True
+    )
+    for action in sorted_actions[:10]:
         target = action.get("target", {})
         recent_opinions.append(RecentOpinion(
             id=action.get("trade_action_id", "unknown"),
             ticker=target.get("ticker_normalized") or target.get("ticker", "UNKNOWN"),
             ticker_name=target.get("company_name"),
             direction=action.get("direction", "neutral"),
-            timestamp=action.get("timestamp", now.isoformat()),
+            timestamp=str(action.get("timestamp", "")),
             result=action.get("validation_status", "pending"),
         ))
 
-    reg_name, reg_platform = _registry_identity(kol_id, "Internal")
     return KOLRatingResponse(
-        rating={
-            "kolId": kol_id,
-            "name": reg_name,
-            "platform": reg_platform,
-            "overallRating": overall_rating,
-            "avgReturn": round(avg_return, 2),
-            "successRate": round(success_rate, 2),
-            "totalOpinions": total,
-        },
+        rating=summary,
         dimensions=dimensions,
         timeline=timeline,
         focusAreas=focus_areas,
@@ -372,16 +443,20 @@ async def list_kols():
 
 
 class KOLListItem(BaseModel):
-    """KOL list item with rating data, aligned with frontend KOL type."""
+    """KOL list item with rating data, aligned with frontend KOL type.
+
+    比率字段 Optional：效力门 count_only 时为 None（不得填 0——0 会被当真）。
+    """
     id: str
     name: str
     platform: str = ""
     platform_id: str = ""
-    overall_score: float = Field(0.0, description="Overall rating 1-5")
+    overall_score: Optional[float] = Field(None, description="Overall rating 1-5; 门未过时 None")
     dimension_scores: Dict[str, float] = Field(default_factory=dict)
-    accuracy: float = Field(0.0, description="Accuracy percentage 0-100")
-    avg_return: float = Field(0.0, description="Average return percentage")
+    accuracy: Optional[float] = Field(None, description="Accuracy percentage 0-100; 门未过时 None")
+    avg_return: Optional[float] = Field(None, description="Average return percentage; 门未过时 None")
     total_opinions: int = 0
+    settled_opinions: int = 0
     last_active: str = ""
     tags: List[str] = Field(default_factory=list)
     enabled: bool = True
@@ -473,14 +548,15 @@ async def list_kols_enriched():
 
         result.append(KOLListItem(
             id=kol_id,
-            name=r.get("name", kol_id),
-            platform=r.get("platform", ""),
-            overall_score=r.get("overallRating", 0.0),
+            name=r.name,
+            platform=r.platform,
+            overall_score=r.overallRating,
             dimension_scores=dim_scores,
-            accuracy=round(r.get("successRate", 0.0) * 100, 1),
-            avg_return=r.get("avgReturn", 0.0),
-            total_opinions=r.get("totalOpinions", 0),
-            last_active=rating.timeline[0].date if rating.timeline else "",
+            accuracy=round(r.successRate * 100, 1) if r.successRate is not None else None,
+            avg_return=r.avgReturn,
+            total_opinions=r.totalOpinions,
+            settled_opinions=r.settledOpinions,
+            last_active=rating.timeline[-1].date if rating.timeline else "",
             tags=rating.focusAreas[:3],
             enabled=profile.enabled if profile else True,
         ))

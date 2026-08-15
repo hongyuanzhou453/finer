@@ -66,7 +66,7 @@ function LayerTrace({ layer }: { layer: PolicyLayerTrace }) {
     >
       <div className="flex items-center gap-2">
         {layer.applied ? (
-          <Check className="h-3.5 w-3.5 shrink-0 text-[#0f9b6c]" strokeWidth={2.2} />
+          <Check className="h-3.5 w-3.5 shrink-0 text-success" strokeWidth={2.2} />
         ) : (
           <X className="h-3.5 w-3.5 shrink-0 text-foreground/30" strokeWidth={2.2} />
         )}
@@ -157,7 +157,7 @@ export function PolicyTraceCard({ policy }: { policy: PolicyMappingResult }) {
             {rc.requires_human_review ? (
               <span className="text-[var(--accent-gold)]">是</span>
             ) : (
-              <span className="text-[#0f9b6c]">否</span>
+              <span className="text-success">否</span>
             )}
           </FieldRow>
           {typeof rc.max_concentration_pct === "number" && (

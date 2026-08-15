@@ -555,7 +555,8 @@ export type KOL = {
   platform: "feishu" | "wechat" | "bilibili";
   platformId: string;
   avatar?: string;
-  overallScore: number;
+  /** 比率/评分字段 nullable：效力门 count_only 时为 null，渲染必须留白。 */
+  overallScore: number | null;
   dimensionScores: {
     accuracy: number;
     timeliness: number;
@@ -563,40 +564,47 @@ export type KOL = {
     depth: number;
     consistency: number;
   };
-  accuracy: number;
-  avgReturn: number;
+  accuracy: number | null;
+  avgReturn: number | null;
   totalOpinions: number;
   lastActive: string;
   tags: string[];
   enabled: boolean;
 };
 
-/** Backend KOL list item from GET /api/kol/list/enriched (snake_case). */
+/** Backend KOL list item from GET /api/kol/list/enriched (snake_case).
+ *
+ * 比率字段 nullable：CRD-2 效力门 count_only 时后端发 null（不是 0——
+ * 0 会被当真）。前端渲染 null 必须留白（—），不得回填数字。
+ */
 export type KOLListItemRaw = {
   id: string;
   name: string;
   platform: string;
   platform_id: string;
-  overall_score: number;
+  overall_score: number | null;
   dimension_scores: Record<string, number>;
-  accuracy: number;
-  avg_return: number;
+  accuracy: number | null;
+  avg_return: number | null;
   total_opinions: number;
+  settled_opinions: number;
   last_active: string;
   tags: string[];
   enabled: boolean;
 };
 
-/** Backend KOL rating response (mirrors kol.py KOLRatingResponse). */
+/** Backend KOL rating response (mirrors kol.py KOLRatingResponse / KOLRatingSummary). */
 export type KOLRatingResponse = {
   rating: {
     kolId: string;
     name: string;
     platform: string;
-    overallRating: number;
-    avgReturn: number;
-    successRate: number;
     totalOpinions: number;
+    settledOpinions: number;
+    overallRating: number | null;
+    avgReturn: number | null;
+    successRate: number | null;
+    sufficiency: SampleSufficiency;
   };
   dimensions: Array<{
     dimension: string;
@@ -605,8 +613,8 @@ export type KOLRatingResponse = {
   }>;
   timeline: Array<{
     date: string;
-    rating: number;
-    return_pct?: number;
+    rating: number | null;
+    return_pct?: number | null;
   }>;
   focusAreas: string[];
   recentOpinions: Array<{
@@ -623,8 +631,10 @@ export type KOLRatingResponse = {
 export type KOLDetail = KOL & {
   stats: {
     totalOpinions: number;
-    correctCount: number;
-    avgReturn: number;
+    settledOpinions: number;
+    /** null = 效力门 count_only（不是 0），渲染留白 */
+    correctCount: number | null;
+    avgReturn: number | null;
     maxReturn: number;
     minReturn: number;
     avgHoldingDays: number;
@@ -1873,4 +1883,58 @@ export type CreatorRecordCard = {
   first_action_at?: string | null;
   last_action_at?: string | null;
   sufficiency: SampleSufficiency;
+};
+
+// ---------------------------------------------------------------------------
+// 语料构成聚合（镜像 finer.schemas.credibility.RecordCorpusAggregates）
+// 定位纪律：本类型只允许计数字段——计数不是比率，不受效力门约束；
+// 任何比率想上图表必须改走 SampleSufficiency 通道（后端 schema 同款防线）。
+// ---------------------------------------------------------------------------
+
+export type MonthlyActivityBucket = {
+  month: string; // YYYY-MM
+  n_total: number;
+  n_settled: number;
+};
+
+export type RecordCorpusAggregates = {
+  signal_class?: string | null;
+  n_total: number;
+  n_settled: number;
+  n_creators: number;
+  monthly: MonthlyActivityBucket[];
+  directions: Record<string, number>;
+  markets: Record<string, number>;
+  exit_reasons: Record<string, number>;
+  time_horizons: Record<string, number>;
+  first_action_at?: string | null;
+  last_action_at?: string | null;
+  notes: string[]; // 口径声明，UI 逐条展示
+};
+
+// ---------------------------------------------------------------------------
+// 胜率切片（镜像 finer.schemas.credibility.RatioSlice / CorpusRatioSlices）
+// CRD-2 硬门：每片强制携带 sufficiency；count_only 的片不得渲染任何比率
+// （含 mean/median return），比率必须与 95% 区间并排。
+// ---------------------------------------------------------------------------
+
+export type SliceDimension = "market" | "month";
+
+export type RatioSlice = {
+  key: string; // 市场代码或 YYYY-MM
+  n_total: number;
+  n_settled: number;
+  wins: number;
+  mean_return?: number | null;
+  median_return?: number | null;
+  sufficiency: SampleSufficiency;
+};
+
+export type CorpusRatioSlices = {
+  signal_class?: string | null;
+  dimension: SliceDimension;
+  /** 全口径合并片：参照线来源，它自己也要过门 */
+  overall: RatioSlice;
+  slices: RatioSlice[];
+  notes: string[];
 };

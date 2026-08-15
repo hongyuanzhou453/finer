@@ -12,31 +12,34 @@ export interface PerformanceTimelineProps {
   className?: string;
 }
 
-// Direction icon and color
+/**
+ * 方向/盈亏配色（中国惯例）：红=看涨/盈利，绿=看跌/亏损，走 --chart-up/-down。
+ * 此前用的是西方口径（涨绿跌红），与全仓其余组件反色——密排并置会自相矛盾。
+ */
 function getDirectionStyle(direction: "bullish" | "bearish" | "neutral") {
   switch (direction) {
     case "bullish":
       return {
         icon: <TrendingUp className="w-3.5 h-3.5" />,
-        bg: "bg-emerald-50",
-        text: "text-emerald-600",
-        border: "border-emerald-200",
+        bg: "bg-[color-mix(in_srgb,var(--chart-up)_8%,transparent)]",
+        text: "text-[color:var(--chart-up)]",
+        border: "border-[color-mix(in_srgb,var(--chart-up)_28%,transparent)]",
         label: "看涨",
       };
     case "bearish":
       return {
         icon: <TrendingDown className="w-3.5 h-3.5" />,
-        bg: "bg-red-50",
-        text: "text-red-600",
-        border: "border-red-200",
+        bg: "bg-[color-mix(in_srgb,var(--chart-down)_10%,transparent)]",
+        text: "text-[color:var(--chart-down)]",
+        border: "border-[color-mix(in_srgb,var(--chart-down)_28%,transparent)]",
         label: "看跌",
       };
     case "neutral":
       return {
         icon: <Minus className="w-3.5 h-3.5" />,
-        bg: "bg-stone-50",
-        text: "text-stone-600",
-        border: "border-stone-200",
+        bg: "bg-[var(--surface-muted)]",
+        text: "text-[var(--ink-soft)]",
+        border: "border-[var(--table-border)]",
         label: "中性",
       };
   }
@@ -47,9 +50,17 @@ function ResultBadge({ result, returnRate }: { result?: "profit" | "loss" | "neu
   if (!result || !returnRate) return null;
 
   const styles = {
-    profit: { bg: "bg-emerald-100", text: "text-emerald-700", prefix: "+" },
-    loss: { bg: "bg-red-100", text: "text-red-700", prefix: "" },
-    neutral: { bg: "bg-stone-100", text: "text-stone-600", prefix: "" },
+    profit: {
+      bg: "bg-[color-mix(in_srgb,var(--chart-up)_12%,transparent)]",
+      text: "text-[color:var(--chart-up)]",
+      prefix: "+",
+    },
+    loss: {
+      bg: "bg-[color-mix(in_srgb,var(--chart-down)_14%,transparent)]",
+      text: "text-[color:var(--chart-down)]",
+      prefix: "",
+    },
+    neutral: { bg: "bg-[var(--surface-muted)]", text: "text-[var(--ink-soft)]", prefix: "" },
   };
 
   const style = styles[result];
@@ -100,22 +111,22 @@ function TimelineNode({
             "w-[38px] h-[38px] rounded-full flex items-center justify-center border-2",
             event.verified
               ? event.result === "profit"
-                ? "bg-emerald-50 border-emerald-200"
+                ? "bg-[color-mix(in_srgb,var(--chart-up)_8%,transparent)] border-[color-mix(in_srgb,var(--chart-up)_28%,transparent)]"
                 : event.result === "loss"
-                  ? "bg-red-50 border-red-200"
-                  : "bg-stone-50 border-stone-200"
-              : "bg-amber-50 border-amber-200"
+                  ? "bg-[color-mix(in_srgb,var(--chart-down)_10%,transparent)] border-[color-mix(in_srgb,var(--chart-down)_28%,transparent)]"
+                  : "bg-[var(--surface-muted)] border-[var(--table-border)]"
+              : "bg-[color-mix(in_srgb,var(--accent-gold)_12%,transparent)] border-[color-mix(in_srgb,var(--accent-gold)_32%,transparent)]"
           )}>
             {event.verified ? (
               event.result === "profit" ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <CheckCircle2 className="w-5 h-5 text-[color:var(--chart-up)]" />
               ) : event.result === "loss" ? (
-                <XCircle className="w-5 h-5 text-red-500" />
+                <XCircle className="w-5 h-5 text-[color:var(--chart-down)]" />
               ) : (
-                <Minus className="w-5 h-5 text-stone-500" />
+                <Minus className="w-5 h-5 text-[var(--ink-soft)]" />
               )
             ) : (
-              <Clock className="w-5 h-5 text-amber-600" />
+              <Clock className="w-5 h-5 text-[var(--accent-gold)]" />
             )}
           </div>
           <span className="text-[9px] text-foreground/50 mt-1 tabular-nums">
@@ -138,7 +149,7 @@ function TimelineNode({
             </span>
             {event.verified && <ResultBadge result={event.result} returnRate={event.returnRate} />}
             {!event.verified && (
-              <span className="text-[9px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+              <span className="text-[9px] text-[var(--accent-gold)] bg-[color-mix(in_srgb,var(--accent-gold)_12%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--accent-gold)_32%,transparent)]">
                 待验证
               </span>
             )}
@@ -199,7 +210,11 @@ export function PerformanceTimeline({
               {event.verified && event.returnRate !== undefined && (
                 <span className={cn(
                   "text-[9px] font-bold tabular-nums",
-                  event.result === "profit" ? "text-emerald-600" : event.result === "loss" ? "text-red-600" : "text-stone-500"
+                  event.result === "profit"
+                    ? "text-[color:var(--chart-up)]"
+                    : event.result === "loss"
+                      ? "text-[color:var(--chart-down)]"
+                      : "text-[var(--ink-soft)]"
                 )}>
                   {event.returnRate >= 0 ? "+" : ""}{event.returnRate.toFixed(0)}%
                 </span>

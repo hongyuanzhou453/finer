@@ -124,3 +124,109 @@ class TickerConsensusView(BaseModel):
         default_factory=list,
         description="口径声明（等权、单位排除、无预测性等），UI 逐条展示",
     )
+
+
+class MonthlyActivityBucket(BaseModel):
+    """一个月份的语料活动计数（纯计数，无比率）。"""
+
+    month: str = Field(description="YYYY-MM（按 canonical signal clock 归月）")
+    n_total: int = Field(description="该月 action 条数（含未结算）")
+    n_settled: int = Field(description="该月已结算条数（backtest return_pct 非空）")
+
+
+class RecordCorpusAggregates(BaseModel):
+    """单一口径下的语料构成聚合（UI 图表数据源，CRD-1 的伴生视图）。
+
+    定位纪律：本模型**只携带计数**——计数不是比率，不受 CRD-2 效力门约束；
+    任何想加比率字段（胜率、均值收益、占比）的改动都必须改走
+    ``SampleSufficiency`` 通道，不得在这里绕过（红线 §CLAUDE.md 定位前提 1）。
+
+    口径与 ``CreatorRecordCard`` 完全一致：排除 ``metadata.superseded_by``、
+    排除无 creator_id 的孤儿行、按 ``signal_class`` 隔离（R6：跨口径不相加）。
+    这样图表上的合计能与卡墙逐位对账。
+    """
+
+    signal_class: Optional[str] = Field(
+        default=None, description="记录口径；None 仅用于全局体检，不供 UI 消费"
+    )
+    n_total: int = Field(description="口径内 action 总条数（含未结算）")
+    n_settled: int = Field(description="口径内已结算条数")
+    n_creators: int = Field(description="口径内信源数（与卡墙张数一致）")
+
+    monthly: List[MonthlyActivityBucket] = Field(
+        default_factory=list,
+        description="按月活动计数，升序；形状反映语料入库节奏（2025-12 占半壁），"
+                    "不反映信源行为节奏——UI 必须并排此口径说明",
+    )
+    directions: Dict[str, int] = Field(
+        default_factory=dict, description="方向计数（bullish/bearish/neutral/...）"
+    )
+    markets: Dict[str, int] = Field(
+        default_factory=dict, description="市场计数（US/CN/HK/...，取 target.market）"
+    )
+    exit_reasons: Dict[str, int] = Field(
+        default_factory=dict,
+        description="已结算行的离场原因计数（stop_loss/time_exit/target_reached/...）",
+    )
+    time_horizons: Dict[str, int] = Field(
+        default_factory=dict, description="期限档计数（short/medium/long_term/...）"
+    )
+
+    first_action_at: Optional[str] = Field(
+        default=None, description="口径内最早 signal clock（ISO）"
+    )
+    last_action_at: Optional[str] = Field(
+        default=None, description="口径内最晚 signal clock（ISO）"
+    )
+
+    notes: List[str] = Field(
+        default_factory=list,
+        description="口径声明（计数非比率、月度形状是入库节奏等），UI 逐条展示",
+    )
+
+
+#: 切片维度。模块级常量，供 contracts.ts 镜像与 drift REGISTRY 引用。
+SLICE_DIMENSION_LITERAL = Literal["market", "month"]
+
+
+class RatioSlice(BaseModel):
+    """语料的一个胜率切片（按市场或按月）。
+
+    CRD-2 硬门：每片**强制**内嵌 ``SampleSufficiency``——切片比率不允许
+    裸奔离开后端；前端按 ``display_policy`` 呈现，``count_only`` 时不得
+    渲染本片的任何比率（含 mean/median return）。
+
+    切片是**历史描述**：月度切片大多样本不足是预期行为，不是缺陷；
+    切片间对比不构成对未来的预测（跨期持续性未获支持）。
+    """
+
+    key: str = Field(description="切片键：市场代码（US/CN/...）或月份（YYYY-MM）")
+    n_total: int = Field(description="该片全部条数（含未结算）")
+    n_settled: int = Field(description="该片已结算条数")
+    wins: int = Field(description="该片命中条数")
+    mean_return: Optional[float] = Field(
+        default=None, description="已结算收益均值；count_only 时前端不得渲染"
+    )
+    median_return: Optional[float] = Field(
+        default=None, description="已结算收益中位数；count_only 时前端不得渲染"
+    )
+    sufficiency: SampleSufficiency = Field(
+        description="效力门判定（比率与区间都在这里面）；缺门的切片不允许构造"
+    )
+
+
+class CorpusRatioSlices(BaseModel):
+    """单一口径下的胜率切片集（CRD-2 门覆盖每一片）。"""
+
+    signal_class: Optional[str] = Field(default=None, description="记录口径")
+    dimension: SLICE_DIMENSION_LITERAL = Field(description="切片维度")
+    #: 参照片：全口径合并。它自己也要过门——参照线只有在合并样本过门时才画。
+    overall: RatioSlice = Field(description="全口径合并片（切片图的参照线来源）")
+    slices: List[RatioSlice] = Field(
+        default_factory=list,
+        description="market 维度按已结算样本量降序（稳定输出序，非排名）；"
+                    "month 维度按月份升序",
+    )
+    notes: List[str] = Field(
+        default_factory=list, description="口径声明，UI 逐条展示"
+    )

@@ -96,7 +96,11 @@ export default function ResearchPage() {
   } = useAsyncData(() => loadKolUniverse(), []);
 
   const kols: KOL[] = useMemo(
-    () => [...(kolsRaw ?? [])].sort((a, b) => b.overallScore - a.overallScore),
+    // null（效力门 count_only）沉底
+    () =>
+      [...(kolsRaw ?? [])].sort(
+        (a, b) => (b.overallScore ?? -Infinity) - (a.overallScore ?? -Infinity),
+      ),
     [kolsRaw],
   );
 

@@ -379,7 +379,11 @@ export function kolRatingToDetail(
   }
 
   const totalOpinions = r.totalOpinions;
-  const correctCount = Math.round(r.successRate * totalOpinions);
+  // null 透传（效力门 count_only）——不得用 0 回填一个会被当真的数字
+  const correctCount =
+    r.successRate != null
+      ? Math.round(r.successRate * r.settledOpinions)
+      : null;
 
   const timeline: KOLTimelineEvent[] = resp.recentOpinions.map((o) => ({
     id: o.id,
@@ -400,14 +404,15 @@ export function kolRatingToDetail(
     platformId: "",
     overallScore: r.overallRating,
     dimensionScores: dimScores,
-    accuracy: Math.round(r.successRate * 100),
+    accuracy: r.successRate != null ? Math.round(r.successRate * 100) : null,
     avgReturn,
     totalOpinions,
-    lastActive: resp.timeline[0]?.date ?? "",
+    lastActive: resp.timeline[resp.timeline.length - 1]?.date ?? "",
     tags: resp.focusAreas.slice(0, 3),
     enabled: true,
     stats: {
       totalOpinions,
+      settledOpinions: r.settledOpinions,
       correctCount,
       avgReturn,
       maxReturn: 0,

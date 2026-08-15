@@ -131,7 +131,9 @@ export default function KOLDetailPage() {
           </p>
         </div>
         <div className="text-right">
-          <div className="text-3xl font-bold tabular-nums">{kol.overallScore.toFixed(1)}</div>
+          <div className="text-3xl font-bold tabular-nums">
+            {kol.overallScore != null ? kol.overallScore.toFixed(1) : "—"}
+          </div>
           <div className="text-[10px] text-foreground/45 uppercase tracking-[0.16em] font-bold">
             综合评分
           </div>
@@ -145,26 +147,33 @@ export default function KOLDetailPage() {
             准确率
           </div>
           <div className="text-2xl font-bold tabular-nums">
-            {((kol.stats.correctCount / kol.stats.totalOpinions) * 100).toFixed(1)}%
+            {/* 分母 = 已裁决（settled），不是总数；null（门未过）留白 */}
+            {kol.stats.correctCount != null && kol.stats.settledOpinions > 0
+              ? `${((kol.stats.correctCount / kol.stats.settledOpinions) * 100).toFixed(1)}%`
+              : "—"}
           </div>
         </div>
         <div className="bg-white border border-[var(--table-border)] rounded-sm p-4">
           <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-2 font-bold">
             平均收益
           </div>
-          <div
-            className={cn(
-              "text-2xl font-bold tabular-nums flex items-center gap-2",
-              returnToneClass(kol.stats.avgReturn)
-            )}
-          >
-            {kol.stats.avgReturn >= 0 ? (
-              <TrendingUp className="w-5 h-5" />
-            ) : (
-              <TrendingDown className="w-5 h-5" />
-            )}
-            {kol.stats.avgReturn.toFixed(1)}%
-          </div>
+          {kol.stats.avgReturn != null ? (
+            <div
+              className={cn(
+                "text-2xl font-bold tabular-nums flex items-center gap-2",
+                returnToneClass(kol.stats.avgReturn)
+              )}
+            >
+              {kol.stats.avgReturn >= 0 ? (
+                <TrendingUp className="w-5 h-5" />
+              ) : (
+                <TrendingDown className="w-5 h-5" />
+              )}
+              {kol.stats.avgReturn.toFixed(1)}%
+            </div>
+          ) : (
+            <div className="text-2xl font-bold tabular-nums text-foreground/30">—</div>
+          )}
         </div>
         <div className="bg-white border border-[var(--table-border)] rounded-sm p-4">
           <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-2 font-bold">

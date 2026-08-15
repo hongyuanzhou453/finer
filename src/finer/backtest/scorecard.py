@@ -157,6 +157,18 @@ def _market_of(action: TradeAction) -> Optional[str]:
     return target.market if target is not None else None
 
 
+#: 公开别名：CRD 消费层（credibility/aggregates、ratio_slices）复用同一套
+#: 市场推导与分组统计，保证图表/切片与记分卡逐位对账。真相源仍是本模块。
+def real_market_of(action: TradeAction) -> Optional[str]:
+    """见 ``_market_of``——ticker 推导的真实市场（存量误标 US 的解毒剂）。"""
+    return _market_of(action)
+
+
+def stats_for_group(key: str, actions: "Sequence[TradeAction]") -> "GroupStats":
+    """见 ``_stats_for``——一组已结算 action 的分组统计。"""
+    return _stats_for(key, actions)
+
+
 def _creator_of(action: TradeAction) -> str:
     src = action.source
     return (src.creator_id if src is not None else None) or "unknown"

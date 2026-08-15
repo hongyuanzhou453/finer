@@ -41,14 +41,15 @@ export function KolObjectRail({
             k.tags.some((t) => t.toLowerCase().includes(q)),
         )
       : kols;
+    // null（效力门 count_only）沉底
     return [...filtered].sort((a, b) => {
       switch (sortBy) {
         case "accuracy":
-          return b.accuracy - a.accuracy;
+          return (b.accuracy ?? -Infinity) - (a.accuracy ?? -Infinity);
         case "return":
-          return b.avgReturn - a.avgReturn;
+          return (b.avgReturn ?? -Infinity) - (a.avgReturn ?? -Infinity);
         default:
-          return b.overallScore - a.overallScore;
+          return (b.overallScore ?? -Infinity) - (a.overallScore ?? -Infinity);
       }
     });
   }, [kols, query, sortBy]);
@@ -153,14 +154,20 @@ export function KolObjectRail({
                           {platformLabel(kol.platform)} · {kol.totalOpinions} 观点
                         </div>
                       </div>
-                      <div
-                        className={cn(
-                          "shrink-0 tabular-nums text-[17px] font-bold leading-none",
-                          scoreToneClass(kol.overallScore),
-                        )}
-                      >
-                        {kol.overallScore.toFixed(1)}
-                      </div>
+                      {kol.overallScore != null ? (
+                        <div
+                          className={cn(
+                            "shrink-0 tabular-nums text-[17px] font-bold leading-none",
+                            scoreToneClass(kol.overallScore),
+                          )}
+                        >
+                          {kol.overallScore.toFixed(1)}
+                        </div>
+                      ) : (
+                        <div className="shrink-0 tabular-nums text-[17px] font-bold leading-none text-foreground/30">
+                          —
+                        </div>
+                      )}
                     </div>
 
                     {kol.tags.length > 0 && (

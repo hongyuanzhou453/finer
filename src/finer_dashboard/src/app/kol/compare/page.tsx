@@ -48,9 +48,10 @@ export default function KOLComparePage() {
     avgReturn: "平均收益 (%)",
   };
 
+  // null（效力门 count_only）视为 -∞：没有数字的不可能成为「最高」
   const getBestKOL = (metric: typeof metrics[number]) => {
     return selectedKOLs.reduce((best, kol) =>
-      kol[metric] > best[metric] ? kol : best
+      (kol[metric] ?? -Infinity) > (best[metric] ?? -Infinity) ? kol : best
     );
   };
 
@@ -142,27 +143,35 @@ export default function KOLComparePage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-foreground/60">评分</span>
-                    <span className="font-bold tabular-nums">{kol.overallScore.toFixed(1)}</span>
+                    <span className="font-bold tabular-nums">
+                      {kol.overallScore != null ? kol.overallScore.toFixed(1) : "—"}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-foreground/60">准确率</span>
-                    <span className="font-bold tabular-nums">{kol.accuracy}%</span>
+                    <span className="font-bold tabular-nums">
+                      {kol.accuracy != null ? `${kol.accuracy}%` : "—"}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-foreground/60">平均收益</span>
-                    <span
-                      className={cn(
-                        "font-bold tabular-nums flex items-center gap-1",
-                        returnToneClass(kol.avgReturn)
-                      )}
-                    >
-                      {kol.avgReturn >= 0 ? (
-                        <TrendingUp className="w-3 h-3" />
-                      ) : (
-                        <TrendingDown className="w-3 h-3" />
-                      )}
-                      {kol.avgReturn.toFixed(1)}%
-                    </span>
+                    {kol.avgReturn != null ? (
+                      <span
+                        className={cn(
+                          "font-bold tabular-nums flex items-center gap-1",
+                          returnToneClass(kol.avgReturn)
+                        )}
+                      >
+                        {kol.avgReturn >= 0 ? (
+                          <TrendingUp className="w-3 h-3" />
+                        ) : (
+                          <TrendingDown className="w-3 h-3" />
+                        )}
+                        {kol.avgReturn.toFixed(1)}%
+                      </span>
+                    ) : (
+                      <span className="font-bold tabular-nums text-foreground/30">—</span>
+                    )}
                   </div>
                 </div>
               </Link>
@@ -200,7 +209,9 @@ export default function KOLComparePage() {
                             kol.id === best.id && "text-morningstar-red"
                           )}
                         >
-                          {metric === "overallScore"
+                          {kol[metric] == null
+                            ? "—"
+                            : metric === "overallScore"
                             ? kol[metric].toFixed(1)
                             : metric === "accuracy"
                             ? `${kol[metric]}%`

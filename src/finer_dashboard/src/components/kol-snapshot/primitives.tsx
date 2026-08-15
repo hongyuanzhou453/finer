@@ -42,36 +42,11 @@ export function fmtMonthDay(iso: string): string {
 
 // ---- section header (editorial "01 / TITLE" rule) ---------------------------
 
-export function SectionHeader({
-  index,
-  title,
-  en,
-  note,
-}: {
-  index: string;
-  title: string;
-  en: string;
-  note?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-end justify-between gap-4 border-b border-[var(--foreground)] pb-2">
-      <div className="flex items-baseline gap-3">
-        {index ? (
-          <span className="tabular-nums text-sm font-semibold text-[var(--accent-gold)]">
-            {index}
-          </span>
-        ) : null}
-        <h2 className="text-lg leading-none text-[var(--foreground)]">{title}</h2>
-        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--ink-soft)]">
-          {en}
-        </span>
-      </div>
-      {note ? (
-        <div className="text-[11px] leading-tight text-[var(--ink-soft)]">{note}</div>
-      ) : null}
-    </div>
-  );
-}
+/**
+ * 单一实现放在 components/crd/primitives —— 这里只再导出，避免出现第三份拷贝。
+ * （站点侧 finer_site 目前仍有独立副本，合并需跨仓，另行处理。）
+ */
+export { SectionHeader } from "@/components/crd/primitives";
 
 // ---- direction tag ----------------------------------------------------------
 

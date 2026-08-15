@@ -101,7 +101,7 @@ export function ResearchCanvas({
             </div>
             <div className="shrink-0 text-right">
               <div className="tabular-nums text-4xl font-bold leading-none text-foreground">
-                {(r?.overallRating ?? kol.overallScore).toFixed(1)}
+                {(r?.overallRating ?? kol.overallScore)?.toFixed(1) ?? "—"}
               </div>
               <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-foreground/45">
                 综合评分

@@ -35,7 +35,7 @@ const DIRECTION: Record<TradeDirection, { label: string; tone: Tone }> = {
   bearish: { label: "看空", tone: "green" },
   neutral: { label: "中性", tone: "neutral" },
   watchlist: { label: "观察", tone: "gold" },
-  risk_warning: { label: "风险提示", tone: "green" },
+  risk_warning: { label: "风险提示", tone: "teal" },
 };
 
 function StageNode({

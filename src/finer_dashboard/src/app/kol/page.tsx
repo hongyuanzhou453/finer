@@ -31,14 +31,15 @@ export default function KOLListPage() {
     [],
   );
 
+  // null（效力门 count_only）沉底：没有数字的排在有数字的后面
   const sortedKOLs = [...(kols ?? [])].sort((a, b) => {
     switch (sortBy) {
       case "score":
-        return b.overallScore - a.overallScore;
+        return (b.overallScore ?? -Infinity) - (a.overallScore ?? -Infinity);
       case "accuracy":
-        return b.accuracy - a.accuracy;
+        return (b.accuracy ?? -Infinity) - (a.accuracy ?? -Infinity);
       case "return":
-        return b.avgReturn - a.avgReturn;
+        return (b.avgReturn ?? -Infinity) - (a.avgReturn ?? -Infinity);
       default:
         return 0;
     }
@@ -129,9 +130,15 @@ export default function KOLListPage() {
                     </span>
                   </div>
                 </div>
-                <div className={cn("text-2xl font-bold tabular-nums", scoreToneClass(kol.overallScore))}>
-                  {kol.overallScore.toFixed(1)}
-                </div>
+                {kol.overallScore != null ? (
+                  <div className={cn("text-2xl font-bold tabular-nums", scoreToneClass(kol.overallScore))}>
+                    {kol.overallScore.toFixed(1)}
+                  </div>
+                ) : (
+                  <div className="text-2xl font-bold tabular-nums text-foreground/30" title="样本不足，仅显示计数">
+                    —
+                  </div>
+                )}
               </div>
 
               {/* Stats */}
@@ -140,25 +147,31 @@ export default function KOLListPage() {
                   <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-1 font-bold">
                     准确率
                   </div>
-                  <div className="text-lg font-bold tabular-nums">{kol.accuracy}%</div>
+                  <div className="text-lg font-bold tabular-nums">
+                    {kol.accuracy != null ? `${kol.accuracy}%` : "—"}
+                  </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-1 font-bold">
                     平均收益
                   </div>
-                  <div
-                    className={cn(
-                      "text-lg font-bold tabular-nums flex items-center gap-1",
-                      returnToneClass(kol.avgReturn)
-                    )}
-                  >
-                    {kol.avgReturn >= 0 ? (
-                      <TrendingUp className="w-4 h-4" />
-                    ) : (
-                      <TrendingDown className="w-4 h-4" />
-                    )}
-                    {kol.avgReturn.toFixed(1)}%
-                  </div>
+                  {kol.avgReturn != null ? (
+                    <div
+                      className={cn(
+                        "text-lg font-bold tabular-nums flex items-center gap-1",
+                        returnToneClass(kol.avgReturn)
+                      )}
+                    >
+                      {kol.avgReturn >= 0 ? (
+                        <TrendingUp className="w-4 h-4" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4" />
+                      )}
+                      {kol.avgReturn.toFixed(1)}%
+                    </div>
+                  ) : (
+                    <div className="text-lg font-bold tabular-nums text-foreground/30">—</div>
+                  )}
                 </div>
                 <div>
                   <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-1 font-bold">

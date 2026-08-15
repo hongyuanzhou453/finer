@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import type { TradeActionSummary, TradeDirection } from "@/lib/contracts";
+import { returnToneClass } from "@/lib/finance-format";
 import { TraceStatusBadge } from "./trace-status-badge";
 import { Pill, type Tone } from "./primitives";
 
@@ -10,7 +11,8 @@ const DIRECTION: Record<TradeDirection, { label: string; tone: Tone }> = {
   bearish: { label: "看空", tone: "green" },
   neutral: { label: "中性", tone: "neutral" },
   watchlist: { label: "观察", tone: "gold" },
-  risk_warning: { label: "风险提示", tone: "green" },
+  // 风险提示不是看空——teal 与 kol-snapshot DIRECTION_META 同词表
+  risk_warning: { label: "风险提示", tone: "teal" },
 };
 
 function pct(v: number) {
@@ -67,10 +69,11 @@ export function ActionList({
             <div className="mt-1.5 flex items-center justify-between gap-2">
               <TraceStatusBadge status={a.canonical_trace_status} size="sm" />
               {typeof a.backtest_return_pct === "number" && (
+                // returnToneClass：>0 红 / <0 绿 / 0 中性（0 = 未触发，不该染红）
                 <span
                   className={cn(
                     "tabular-nums text-[12px] font-bold",
-                    a.backtest_return_pct >= 0 ? "text-morningstar-red" : "text-[#0f9b6c]",
+                    returnToneClass(a.backtest_return_pct),
                   )}
                 >
                   {pct(a.backtest_return_pct)}
