@@ -11,7 +11,8 @@
  */
 import { useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
-import type { RecordCard, RecordRow, RowDirection } from "@/demo/records/types";
+import type { RecordRow, RowDirection } from "@/demo/records/types";
+import type { DisplayCard } from "./gate";
 import {
   DirectionChip,
   SIGNAL_CLASS_LABEL,
@@ -29,25 +30,42 @@ import {
 const PAGE_SIZE = 50;
 const COL_COUNT = 8;
 
-function HeaderRatio({ card }: { card: RecordCard }) {
-  const s = card.sufficiency;
-  if (s.display_policy === "count_only") {
+/**
+ * 页头上**全部**比率的唯一渲染点：命中率、区间、均值收益都在这里。
+ * 均值收益此前是本组件的同级节点、在门外无条件渲染——见 ./gate.ts。
+ */
+function HeaderRatio({ card }: { card: DisplayCard }) {
+  if (!card.ratiosPermitted) {
     // Red line: count_only ⇒ no ratio in the header restatement either.
+    const s = card.sufficiency;
     return (
       <span className="tabular-nums">
         已结算 {s.settled_n} / 总数 {s.total_n}（样本不足，只报计数）
       </span>
     );
   }
+  // 窄化之后才取 sufficiency：在窄化前取出会得到联合类型，比率字段不可访问。
+  const s = card.sufficiency;
   return (
-    <span className="tabular-nums">
-      结算命中率（历史）{fmtRate(s.point_estimate)} · 95% 区间{" "}
-      {fmtRate(s.wilson_low)}–{fmtRate(s.wilson_high)} · 已结算 {s.settled_n} 条
-      {/* show_with_warning 契约：比率可渲染，但后端告警注必须随行（types.ts） */}
-      {s.display_policy === "show_with_warning" && s.notes[0] ? (
-        <span className="ml-2 text-[var(--accent-gold)]">{s.notes[0]}</span>
-      ) : null}
-    </span>
+    <>
+      <span className="tabular-nums">
+        结算命中率（历史）{fmtRate(s.point_estimate)} · 95% 区间{" "}
+        {fmtRate(s.wilson_low)}–{fmtRate(s.wilson_high)} · 已结算 {s.settled_n} 条
+        {/* show_with_warning 契约：比率可渲染，但后端告警注必须随行（types.ts） */}
+        {s.display_policy === "show_with_warning" && s.notes[0] ? (
+          <span className="ml-2 text-[var(--accent-gold)]">{s.notes[0]}</span>
+        ) : null}
+      </span>
+      <span className="tabular-nums">
+        均值收益（历史）{" "}
+        <span
+          className="font-semibold"
+          style={{ color: returnColor(card.mean_return) }}
+        >
+          {fmtSignedPct(card.mean_return)}
+        </span>
+      </span>
+    </>
   );
 }
 
@@ -139,7 +157,7 @@ export function CreatorRecordView({
   asOf,
   onBack,
 }: {
-  card: RecordCard;
+  card: DisplayCard;
   /** Full rows file content — filtered here by card.signal_class. */
   rows: RecordRow[];
   asOf: string;
@@ -207,15 +225,6 @@ export function CreatorRecordView({
         </div>
         <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[13px] text-foreground/80">
           <HeaderRatio card={card} />
-          <span className="tabular-nums">
-            均值收益（历史）{" "}
-            <span
-              className="font-semibold"
-              style={{ color: returnColor(card.mean_return) }}
-            >
-              {fmtSignedPct(card.mean_return)}
-            </span>
-          </span>
           <span className="tabular-nums">
             记录 {card.n_settled} / {card.n_total} 已结算
           </span>

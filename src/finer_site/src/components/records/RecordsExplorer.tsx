@@ -11,7 +11,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CreatorRowsFile,
-  RecordCard,
   RecordRow,
   RecordsManifest,
   SignalClass,
@@ -19,8 +18,9 @@ import type {
 import { RecordCardWall } from "./RecordCardWall";
 import { CreatorRecordView } from "./CreatorRecordView";
 import { SIGNAL_CLASS_LABEL } from "./primitives";
+import { gateCard, type DisplayCard } from "./gate";
 
-type Selection = { card: RecordCard; rows: RecordRow[] } | null;
+type Selection = { card: DisplayCard; rows: RecordRow[] } | null;
 
 /** Persistence-test banner content, rendered FROM the data (not hardcoded). */
 function usePersistenceStatement(manifest: RecordsManifest | null) {
@@ -69,9 +69,16 @@ export function RecordsExplorer() {
   }, []);
 
   const statement = usePersistenceStatement(manifest);
-  const cards = manifest?.cards[signalClass] ?? [];
+  /**
+   * CRD-2 门的唯一执行点：原始快照卡在这里过门，下游只见 DisplayCard。
+   * count_only 卡的比率字段自此在类型上不存在——见 ./gate.ts 的事故说明。
+   */
+  const cards = useMemo(
+    () => (manifest?.cards[signalClass] ?? []).map(gateCard),
+    [manifest, signalClass],
+  );
 
-  async function openCard(card: RecordCard) {
+  async function openCard(card: DisplayCard) {
     const cached = rowsCache.current.get(card.rows_file);
     if (cached) {
       setSelection({ card, rows: cached });

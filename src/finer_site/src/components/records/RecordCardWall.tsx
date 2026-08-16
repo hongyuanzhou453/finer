@@ -9,8 +9,13 @@
  * - Every rendered ratio sits next to its settled sample count AND its 95%
  *   Wilson interval.
  * - "show_with_warning" renders the ratio plus the backend warning note.
+ *
+ * 第一条红线现在由类型系统执行：本组件只接受 `DisplayCard`，count_only 分支上
+ * 比率字段不存在，写出来即编译错误（此前它只是组件内的控制流，被同级的
+ * `<dl>` 节点绕过去了——见 ./gate.ts）。
  */
-import type { RecordCard, SignalClass } from "@/demo/records/types";
+import type { SignalClass } from "@/demo/records/types";
+import type { DisplayCard } from "./gate";
 import {
   SIGNAL_CLASS_LABEL,
   TierBadge,
@@ -26,11 +31,14 @@ function topMarkets(mix: Record<string, number>, k = 3): string {
   return entries.map(([m, n]) => `${m} ${n}`).join(" · ");
 }
 
-function CardRatioBlock({ card }: { card: RecordCard }) {
-  const s = card.sufficiency;
-
-  if (s.display_policy === "count_only") {
+/**
+ * 卡面上**全部**比率的唯一渲染点：命中率、区间、均值收益都在这里。
+ * 均值收益此前在同级 `<dl>` 里、门外无条件渲染，是本次事故的直接成因。
+ */
+function CardRatioBlock({ card }: { card: DisplayCard }) {
+  if (!card.ratiosPermitted) {
     // Red line: zero ratios for count_only — counts only.
+    const s = card.sufficiency;
     return (
       <div className="mt-3">
         <div className="tabular-nums text-[24px] font-bold leading-none tracking-tight text-foreground">
@@ -46,6 +54,8 @@ function CardRatioBlock({ card }: { card: RecordCard }) {
     );
   }
 
+  // 窄化之后才取 sufficiency：在窄化前取出会得到联合类型，比率字段不可访问。
+  const s = card.sufficiency;
   return (
     <div className="mt-3">
       <div className="flex items-baseline gap-2">
@@ -58,6 +68,15 @@ function CardRatioBlock({ card }: { card: RecordCard }) {
       </div>
       <div className="mt-1 text-[11px] leading-4 text-[var(--ink-soft)]">
         结算命中率（历史）· 已结算 {s.settled_n} 条
+      </div>
+      <div className="mt-1.5 flex items-baseline justify-between gap-3 text-[11px] leading-4">
+        <span className="text-foreground/45">均值收益（历史）</span>
+        <span
+          className="tabular-nums font-semibold"
+          style={{ color: returnColor(card.mean_return) }}
+        >
+          {fmtSignedPct(card.mean_return)}
+        </span>
       </div>
       {s.display_policy === "show_with_warning" && s.notes[0] ? (
         <div className="mt-1.5 border-l-2 border-[var(--accent-gold)] pl-2 text-[11px] leading-4 text-[var(--accent-gold)]">
@@ -73,9 +92,9 @@ export function RecordCardWall({
   signalClass,
   onSelect,
 }: {
-  cards: RecordCard[];
+  cards: DisplayCard[];
   signalClass: SignalClass;
-  onSelect: (card: RecordCard) => void;
+  onSelect: (card: DisplayCard) => void;
 }) {
   return (
     <div
@@ -104,20 +123,13 @@ export function RecordCardWall({
 
           <CardRatioBlock card={card} />
 
+          {/* 事实列：计数、市场构成、记录窗口——不含任何比率，
+              比率一律在 CardRatioBlock 内（门的唯一执行点）。 */}
           <dl className="mt-4 space-y-1.5 border-t border-[var(--grid-line)] pt-3 text-[11px] leading-4">
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-foreground/45">已结算 / 总数</dt>
               <dd className="tabular-nums text-foreground/80">
                 {card.n_settled} / {card.n_total}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-foreground/45">均值收益（历史）</dt>
-              <dd
-                className="tabular-nums font-semibold"
-                style={{ color: returnColor(card.mean_return) }}
-              >
-                {fmtSignedPct(card.mean_return)}
               </dd>
             </div>
             <div className="flex items-baseline justify-between gap-3">
