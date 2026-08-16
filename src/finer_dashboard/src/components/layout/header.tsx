@@ -7,7 +7,9 @@ import {
   LayoutDashboard,
   Radar,
   Users,
-  GitCompare,
+  ScrollText,
+  Search,
+  ShieldCheck,
   LineChart,
   ClipboardCheck,
   GraduationCap,
@@ -15,13 +17,28 @@ import {
   Database,
 } from "lucide-react";
 
+/**
+ * 全局导航。**排序即产品表态**：执行 CRD-2 效力门的消费面在前，转向前的
+ * 旧口径页在后。
+ *
+ * 2026-08-16 手术：
+ * - 加入 `/discover` `/ticker` `/audit`。此前它们只在**首页侧边栏**有入口
+ *   （main 0814fd31 加的），而侧边栏只挂在 `/`——从任何 AppShell 页面出发
+ *   都走不到这三页，用户的默认落点是按信誉分排名的 `/radar`。
+ * - 摘除 `/kol/compare`：四个 KOL 分数硬编码、零网络调用，还给最优值打 ★。
+ *   路由本身的去留见同批次的死资产清理。
+ * - `/radar` 后移：它按信誉分排名、无 sufficiency、无区间、无「不构成预测」
+ *   声明，是转向前的形态（main 已在侧边栏做过同样降级）。页面本身未改造。
+ */
 const navItems = [
   { href: "/", label: "工作台", icon: LayoutDashboard },
-  { href: "/radar", label: "雷达", icon: Radar },
+  { href: "/discover", label: "信源记录", icon: ScrollText },
+  { href: "/ticker", label: "个股共识", icon: Search },
+  { href: "/audit", label: "审计台", icon: ShieldCheck },
   { href: "/kol", label: "KOL", icon: Users },
-  { href: "/kol/compare", label: "对比", icon: GitCompare },
   { href: "/backtest", label: "回测", icon: LineChart },
   { href: "/annotation", label: "标注", icon: ClipboardCheck },
+  { href: "/radar", label: "雷达", icon: Radar },
   { href: "/training", label: "训练数据", icon: GraduationCap },
   { href: "/settings", label: "设置", icon: Settings },
 ];
@@ -71,12 +88,10 @@ export function Header() {
           })}
         </nav>
 
-        {/* Right side - can add user menu, etc */}
-        <div className="hidden flex-1 items-center justify-end gap-4 lg:flex">
-          <span className="text-xs text-foreground/40 font-medium">
-            AI-native 投研流水线
-          </span>
-        </div>
+        {/* 原本这里有一句装饰性 tagline，且占着 flex-1——导航在 1280 宽下
+            只分到 498px（需要 908px）而被迫横向滚动，加入三个消费面入口后
+            「设置」直接被挤出可视区。导航是功能面，装饰不该与它抢位置；
+            产品身份已由左侧 logo 承担，故整块移除。 */}
       </div>
     </header>
   );
