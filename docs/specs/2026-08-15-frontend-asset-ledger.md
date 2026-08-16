@@ -1,14 +1,35 @@
 # Finer 前端资产台账（2026-08-15）
 
+> ## ⚠️ 订正声明（2026-08-16）—— 本次盘点的基准分支是陈旧的
+>
+> 盘点在 `claude/nervous-villani-7587cb` 上执行，而该分支**落后 main 18 个
+> 提交**。核对后确认：**7 条 P0 里有 2 条在 main 上已修复**，是盘点基准
+> 陈旧造成的假阳性，不是现存问题。
+>
+> | 原 P0 | 在 main 上的真实状态 |
+> |---|---|
+> | #2 `/records` 均值收益漏在门外 | **已修**（`2ff70c86`，2026-08-14）。数据层导出器 `_strip_ratios_when_count_only` 已把 count_only 卡的 `mean_return` 置 null（实测 main 快照 0 张泄漏），渲染层与格式化层同时加固。**原文所称「公开站在线」是错的** |
+> | #7 site `package.json` 被 gitignore 吞掉 | **已修**（`e06df45f`），文件已入库 |
+> | #1 后端 opinions 私有效力门 | 仍成立（`_credibility_score` 9 处命中，0 处 sufficiency） |
+> | #3 `/kol/compare` 硬编码 + 占导航 | 仍成立 |
+> | #4 `adapters.ts` 回填 0 | 仍成立 |
+> | #5 死代码 4,017 行 | 仍成立（三处文件在 main 上原样存在） |
+> | #6 `/discover` `/ticker` `/audit` 零入站 | 仍成立（main 的导航八项仍不含这三页） |
+>
+> **一条盘点没发现、但在 main 上真实存在的残留**：main 的门是逐处控制流判断
+> （`display_policy !== "count_only" &&`），而导出器只剥离了 `mean_return`，
+> **`sufficiency.point_estimate` 仍留在 24/34 张 count_only 卡的 payload 里**。
+> 即换一个字段名仍可从门外泄漏。本分支的 `components/records/gate.ts` 把门下沉
+> 到类型层并一并剥离了 sufficiency 比率，是对 main 那版的增量加固。
+>
+> 教训与记忆「测量纪律」同型：**盘点基准必须先对齐 main**。下方正文除已订正的
+> 两条外，其余结论已逐条对 main 复核仍成立。
+>
+> ---
+>
 > 由 10 个只读 agent 并行盘点产出：5 路清点（dashboard 路由 / dashboard 组件 /
 > site 全量 / 设计 token / 前后端契约）+ 4 路交叉审计（死资产、跨 app 重复、
 > 定位对齐、健康度）+ 1 路合成。共清点 161 项资产、产出 56 条发现。
->
-> 主控已逐条核实的关键结论：`/records` 均值收益漏在 count_only 门外（34 张
-> count_only 卡中 24 张受影响，KeyBanc settled=1 印 +58.0%）；`/kol/compare`
-> 零网络调用且占主导航第 4 格；`opinion-timeline`(1,818 行) /
-> `rlhf-review-panel`(1,743 行) / `mock-contracts.ts`(456 行) 外部引用方均为 0；
-> 主导航八项不含 `/discover` `/ticker` `/audit`。
 
 > 盘点范围：`/Users/zhouhongyuan/Desktop/finer/.claude/worktrees/nervous-villani-7587cb` 的两个 Next.js app（`src/finer_dashboard`、`src/finer_site`）。仅只读调查，未修改任何文件。基准日期 2026-08-15。
 
