@@ -34,17 +34,27 @@ export const DIRECTION_META: Record<
 
 // ---- formatters -------------------------------------------------------------
 
-/** 0.4624 → "46.2%"（无符号，用于比率）。 */
-export function fmtRate(value: number, digits = 1): string {
+/** 0.4624 → "46.2%"（无符号，用于比率）。null/undefined → "—"。 */
+export function fmtRate(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return `${(value * 100).toFixed(digits)}%`;
 }
 
 /**
  * 0.0418 → "+4.2%"，-0.0268 → "−2.7%"（带符号，用于收益）。
- * 负号统一 U+2212「−」：与「+」等宽，密排表格里对得齐——这是本次合并
- * 拍板的站点级约定（此前 kol-check 走 toFixed 的 ASCII 连字符）。
+ * 负号统一 U+2212「−」：与「+」等宽，密排表格里对得齐——这是站点级约定
+ * （此前 kol-check 走 toFixed 的 ASCII 连字符）。
+ *
+ * 空值必须显式挡住（main 2ff70c86 的加固，合并时移植到共享层）：
+ * `Math.abs(null)` 是 0，旧签名写 `value: number` 时 null 会被印成
+ * 「0.0%」——一个凭空造出来的数字，比不显示危险得多。已发布快照里
+ * 有 10 张卡的 mean_return 是 null。
  */
-export function fmtSignedPct(value: number, digits = 1): string {
+export function fmtSignedPct(
+  value: number | null | undefined,
+  digits = 1,
+): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
   const sign = value > 0 ? "+" : value < 0 ? "−" : "";
   return `${sign}${(Math.abs(value) * 100).toFixed(digits)}%`;
 }
@@ -58,8 +68,9 @@ export function fmtConfidence(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-/** 收益值配色：正=红、负=绿、零=中性墨。 */
-export function returnColor(value: number): string {
+/** 收益值配色：正=红、负=绿、零/空=中性墨。 */
+export function returnColor(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "var(--ink-soft)";
   if (value > 0) return "var(--chart-up)";
   if (value < 0) return "var(--chart-down)";
   return "var(--ink-soft)";

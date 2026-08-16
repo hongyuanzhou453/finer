@@ -517,7 +517,7 @@ export default function DiscoverPage() {
               本页数字描述已发生的事实，不构成对未来的预测。
               {claim?.summary
                 ? ` 跨期持续性检验：${claim.summary}`
-                : " 该指标未经跨期持续性检验。"}
+                : " 该口径的跨期持续性尚未检验——未检验一律按不许可处理。"}
               {claim?.evidence ? (
                 <span className="ml-1 font-mono text-[10px]">
                   {claim.evidence}

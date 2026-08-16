@@ -37,6 +37,64 @@ _DIRECTIONAL = ("bullish", "bearish")
 #: 单位可疑的市场后缀（镑/便士混存已实测；先只收录有实证的）。
 _UNIT_AMBIGUOUS_SUFFIXES = (".L",)
 
+#: 币种**子单位** → 独立 canonical 桶。ISO 4217 没有子单位代码，沿用市场惯用的
+#: GBX（便士）；南非分照此办理。
+#:
+#: **绝不与主单位合并。** 此前分桶键是 ``(currency or "?").upper()``，
+#: ``GBp``（便士）被抹成 ``GBP``（镑）——差 100 倍，正是 ``.L`` 排除规则要防的那个错。
+#: 现役数据里 GBp 36 / p 6 / pence 1 条，且有 43 只**非 .L** 英股带这些标签
+#: （不受后缀门保护）；目前每只只有一家信源覆盖才没炸，是潜伏而非不存在。
+#: 匹配大小写敏感——``GBp`` 与 ``GBP`` 的区别**只在大小写上**。
+_SUBUNIT_EXACT = {"GBp": "GBX", "p": "GBX", "ZAc": "ZAX"}
+_SUBUNIT_WORDS = {"pence": "GBX", "penny": "GBX"}
+
+#: 子单位 → 其主单位。两者同时出现在一只票上 = 单位不明，整只票不聚合。
+_SUBUNIT_OF = {"GBX": "GBP", "ZAX": "ZAR"}
+
+#: 自由文本币种写法 → ISO 代码（键为大写）。**逐条有实证**：每个写法都在
+#: 现役 F3 数据里出现过，且已用标的的市场后缀交叉确认（如 ``M$``/``P$`` 出现在
+#: ``.MX`` 上是墨西哥比索，不是马来西亚林吉特——只看符号会弄反）。
+#:
+#: 刻意**不**收录的：``¥``（JPY 与 CNY 都用）、``$``（多国）、``KWF``
+#: （1 条，疑似 KWD 笔误——映射笔误等于编造）。宁可让它们各成一桶被排除。
+_CURRENCY_ALIASES = {
+    "W": "KRW", "WON": "KRW",          # .KS / .KQ
+    "NT$": "TWD", "NTD": "TWD", "NT": "TWD",  # .TW
+    "SFR": "CHF",                       # .S
+    "NKR": "NOK", "SKR": "SEK", "DKR": "DKK",
+    "RS": "INR",                        # .BO / .NS / .IN
+    "RM": "MYR",                        # .KL
+    "M$": "MXN", "P$": "MXN",           # .MX（比索，不是林吉特）
+    "RP": "IDR",                        # .JK
+    "BT": "THB",                        # .BK
+    "ZL": "PLN",                        # .WA
+    "R$": "BRL",
+    "A$": "AUD", "AU$": "AUD",
+    "C$": "CAD", "CA$": "CAD",
+    "US$": "USD", "HK$": "HKD", "S$": "SGD",
+    "RMB": "CNY",
+}
+
+
+def normalize_currency(label: Optional[str]) -> Optional[str]:
+    """自由文本币种标签 → canonical 桶键。
+
+    子单位先判且**大小写敏感**（``GBp`` 与 ``GBP`` 只差大小写），其余大写后查别名表；
+    表里没有的原样大写返回——未知写法自成一桶，会被当作币种不符排除，
+    这比猜错单位安全。
+    """
+    if not label:
+        return None
+    raw = label.strip()
+    if not raw:
+        return None
+    if raw in _SUBUNIT_EXACT:
+        return _SUBUNIT_EXACT[raw]
+    if raw.lower() in _SUBUNIT_WORDS:
+        return _SUBUNIT_WORDS[raw.lower()]
+    upper = raw.upper()
+    return _CURRENCY_ALIASES.get(upper, upper)
+
 #: 陈旧度阈值（天）。取自研报的实际节奏：券商对同一标的通常按季度更新。
 _STALENESS_BANDS = ((90, "current"), (180, "aging"), (365, "stale"))
 
@@ -140,8 +198,19 @@ def _view_from_group(
                 excluded_unit += 1
             else:
                 tp_by_currency.setdefault(
-                    (tp.get("currency") or "?").upper(), []
+                    normalize_currency(tp.get("currency")) or "?", []
                 ).append(value)
+
+    # 主单位与其子单位同时出现（镑 + 便士）= 这只票的单位不明，整只不聚合。
+    # 后缀门（.L）只认伦敦后缀，抓不到裸码英股与 .AS 上的英股 ADR——
+    # 而标签本身已经把矛盾写出来了，比后缀更直接的证据。
+    if not unit_ambiguous:
+        for sub, major in _SUBUNIT_OF.items():
+            if sub in tp_by_currency and major in tp_by_currency:
+                excluded_unit = sum(len(v) for v in tp_by_currency.values())
+                tp_by_currency = {}
+                unit_ambiguous = True
+                break
 
     direction_counts = Counter(r.direction for r in rows)
     directional = [r for r in rows if r.direction in _DIRECTIONAL]
@@ -157,21 +226,35 @@ def _view_from_group(
     notes = list(_METHOD_NOTES)
     summary: Optional[TargetPriceSummary] = None
     if tp_by_currency:
-        # 只聚合占多数的那个币种；其余计入 mismatch
-        major = max(tp_by_currency, key=lambda c: len(tp_by_currency[c]))
-        values = tp_by_currency[major]
-        excluded_currency = sum(
-            len(v) for c, v in tp_by_currency.items() if c != major
-        )
-        summary = TargetPriceSummary(
-            currency=major,
-            n=len(values),
-            min_value=min(values),
-            median_value=statistics.median(values),
-            max_value=max(values),
-            excluded_unit_ambiguous=excluded_unit,
-            excluded_currency_mismatch=excluded_currency,
-        )
+        # 只聚合占多数的那个币种；其余计入 mismatch。
+        # **平局不选。** 原实现用 `max()`，取的是 dict 插入序——同样的数据换个
+        # 读取顺序就换一个中位数。改成按字母序只是把随机换成确定性，掷硬币还是
+        # 掷硬币：一个取决于字母序的「共识」不是共识。19 只票是这种情形，
+        # 多为双重上市（A/H、ADR/本地）。逐源报价行照常展示，信息不丢，
+        # 只是不给一个假的聚合值——同 `.L` 的处理原则。
+        top = max(len(v) for v in tp_by_currency.values())
+        winners = sorted(c for c, v in tp_by_currency.items() if len(v) == top)
+        if len(winners) > 1:
+            notes.append(
+                "目标价按币种分组后无多数派（"
+                + "、".join(f"{c} {len(tp_by_currency[c])} 条" for c in winners)
+                + "），不聚合——逐源报价见下表。"
+            )
+        else:
+            major = winners[0]
+            values = tp_by_currency[major]
+            excluded_currency = sum(
+                len(v) for c, v in tp_by_currency.items() if c != major
+            )
+            summary = TargetPriceSummary(
+                currency=major,
+                n=len(values),
+                min_value=min(values),
+                median_value=statistics.median(values),
+                max_value=max(values),
+                excluded_unit_ambiguous=excluded_unit,
+                excluded_currency_mismatch=excluded_currency,
+            )
     elif excluded_unit:
         notes.append(
             f"目标价 {excluded_unit} 条因单位可疑（{canonical} 镑/便士混存风险）"

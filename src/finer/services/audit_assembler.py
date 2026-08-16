@@ -118,7 +118,36 @@ class AuditAssembler:
                 action, intent, envelope, source_file=indexed.source_file
             ),
             "provenance": self._provenance(action, intent),
+            "deep_summary": self._load_deep_summary(intent),
         }
+
+    def _load_deep_summary(
+        self,
+        intent: NormalizedInvestmentIntent | None,
+    ) -> dict[str, Any] | None:
+        """M3: LLM-generated deep summary of the source research report.
+
+        Keyed by ``intent.metadata.report_id`` — the same join M2 uses. Returns
+        None for a miss, which is the common case: coverage is partial, and the
+        UI must say so rather than substituting the shorter T5 summary.
+
+        This is generated prose *about* the report, not the broker's own text
+        and not a recommendation; the payload carries its own disclaimer and
+        the consumer is required to surface it.
+        """
+        if intent is None:
+            return None
+        report_id = (intent.metadata or {}).get("report_id")
+        if report_id is None:
+            return None
+        path = self.data_root / "deep_summaries" / f"{report_id}.json"
+        if not path.is_file():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("deep summary unreadable for report_id=%s: %s", report_id, exc)
+            return None
 
     def _provenance(
         self,

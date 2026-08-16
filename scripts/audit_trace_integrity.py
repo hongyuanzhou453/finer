@@ -217,6 +217,26 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.json.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"\nJSON report -> {args.json}")
 
+    # CLAUDE.md §6 把这个脚本列为「改动 F3/F4/F5 后必跑，必须 100%」的硬门。
+    # 在此之前它无条件 `return 0`——断链和空扫描都判绿，任何脚本化的
+    # `audit_trace_integrity.py && ...` 都必然通过。两种失败各有其陷阱：
+    #
+    # 1. 空扫描：worktree 的 data/ 不含 F5（data/ 已 gitignore，只有主仓有），
+    #    而 CLAUDE.md §10 又要求并行 agent 优先用 worktree。两条规范叠加的结果
+    #    是在 worktree 里改完代码跑这道门，拿到的是 0/0 的假绿。
+    # 2. 有断链：本来就该是红的。
+    if report.total_actions == 0:
+        print(
+            f"\n✗ 空扫描：{data_root} 下没有任何 F5 action，这道门什么都没验。\n"
+            "  worktree 的 data/ 是空的（data/ 已 gitignore，真实数据只在主仓），\n"
+            "  请指向主仓：--data-root /Users/zhouhongyuan/Desktop/finer/data"
+        )
+        return 2
+    if report.broken:
+        print(f"\n✗ {len(report.broken)} 条 action 的引用链断裂（要求 100% 完整）")
+        return 1
+
+    print(f"\n✓ 三向引用完整 {report.total_actions}/{report.total_actions}")
     return 0
 
 

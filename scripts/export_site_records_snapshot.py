@@ -30,6 +30,26 @@ from finer.services.repository import TradeActionRepository
 
 SIGNAL_CLASSES = ["broker_recommendation", "broker_sector_view"]
 
+#: 样本不足时不得离开后端的比率字段（命中率之外的那几个也是比率）。
+_RATIO_FIELDS = ("mean_return", "median_return", "expected_win_rate")
+
+
+def _strip_ratios_when_count_only(card: dict) -> dict:
+    """``count_only`` 的卡不带比率实值出站——在**数据层**挡住，不指望渲染层。
+
+    红线是「count_only 时不得渲染任何比率」，此前只由组件的门保证，而门
+    可以开在错的位置：2026-08-10 发布的快照里 34 张 count_only 卡有 24 张
+    照样印出均值收益（KeyBanc n_settled=1 印 +58.0%），另 10 张 mean_return
+    为 null 被 `fmtSignedPct` 印成「0.0%」——凭空造数。
+
+    快照是冻结档案、发出去就不再重算，所以纪律钉在文件本身最稳：只要 payload
+    里没有比率实值，前端任何一处漏门都无从泄漏。
+    `tests/test_site_records_snapshot.py` 对真实发布物全量扫描。
+    """
+    if (card.get("sufficiency") or {}).get("display_policy") != "count_only":
+        return card
+    return {**card, **{f: None for f in _RATIO_FIELDS}}
+
 
 def _load_intent_index(intents_dir: Path, intent_ids: set) -> Dict[str, dict]:
     """按 intent_id 读取 F3 文件；一个 id 一个文件，缺失容忍。"""
@@ -133,7 +153,9 @@ def main() -> None:
     cards_by_class: Dict[str, list] = {}
     for sc in SIGNAL_CLASSES:
         cards = build_record_cards(all_actions, signal_class=sc)
-        cards_by_class[sc] = [c.model_dump(mode="json") for c in cards]
+        cards_by_class[sc] = [
+            _strip_ratios_when_count_only(c.model_dump(mode="json")) for c in cards
+        ]
 
     # 文件名不用中文 creator 名：cards 顺序即 creator-<i>.json 的 i。
     creator_order: List[str] = []

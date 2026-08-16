@@ -200,3 +200,76 @@ def test_view_without_any_report_date_is_left_alone():
     )
     out = with_staleness(view)
     assert out.staleness is None and not any("截至" in n for n in out.notes)
+
+
+# ---------------------------------------------------------------------------
+# 币种归一（CRD-3）：别名合桶、子单位分桶、平局确定性
+# ---------------------------------------------------------------------------
+
+
+def test_currency_aliases_are_one_bucket_not_a_mismatch():
+    """同一币种的不同写法不得被算成「币种不符」。
+
+    回归：分桶键曾是 `(currency or "?").upper()`，于是 KRW / W / Won 成了三个桶，
+    多数派之外的被计入 `excluded_currency_mismatch`——页面对**同币种**的报价
+    宣称「币种不一致已排除」，既少算样本又给出错误的诚实声明。
+    实测全语料 104 条 excluded 里 52 条（41 只票）是这么来的。
+    """
+    view = build_ticker_consensus([
+        _intent("a", "005930.KS", tp=400000.0, cur="KRW"),
+        _intent("b", "005930.KS", tp=440000.0, cur="W"),
+        _intent("c", "005930.KS", tp=480000.0, cur="Won"),
+    ], "005930.KS")
+    s = view.target_prices
+    assert s.currency == "KRW"
+    assert s.n == 3, "三种写法是同一个币种，必须都进聚合"
+    assert s.excluded_currency_mismatch == 0
+    assert s.median_value == 440000.0
+
+
+def test_pence_is_not_merged_into_pounds():
+    """便士与镑差 100 倍，**只差大小写**的 GBp / GBP 绝不能合桶。
+
+    回归：`.upper()` 把 GBp 抹成 GBP。现役数据有 43 只非 .L 英股带这类标签，
+    不受 .L 后缀门保护；目前每只只有一家信源覆盖才没炸。
+    """
+    from finer.credibility.consensus import normalize_currency
+    assert normalize_currency("GBp") != normalize_currency("GBP")
+    assert normalize_currency("p") == normalize_currency("pence") == "GBX"
+
+
+def test_major_and_subunit_together_is_unit_ambiguous():
+    """镑与便士同时出现 = 这只票单位不明，整只不聚合（不看后缀）。"""
+    view = build_ticker_consensus([
+        _intent("a", "BATS", tp=3400.0, cur="GBp"),   # 便士
+        _intent("b", "BATS", tp=34.0, cur="GBP"),     # 镑
+    ], "BATS")
+    assert view.target_prices is None, "单位不明却给出了中位数"
+    assert any("单位可疑" in n for n in view.notes)
+
+
+def test_unknown_currency_label_is_not_guessed():
+    """表里没有的写法自成一桶被排除，不猜。
+
+    `KWF` 是现役数据里的 1 条，疑似 KWD 笔误——映射笔误等于编造。
+    """
+    from finer.credibility.consensus import normalize_currency
+    assert normalize_currency("KWF") == "KWF"
+
+
+def test_no_majority_currency_means_no_aggregate():
+    """币种无多数派时不选胜者——取决于读取顺序（或字母序）的「共识」不是共识。
+
+    原实现用 `max()`，取的是 dict 插入序：同样的数据换个读取顺序就换一个中位数。
+    实测 19 只票是这种情形，多为双重上市（A/H、ADR/本地）。
+    逐源报价行照常展示，信息不丢。
+    """
+    both = [
+        _intent("a", "X", tp=100.0, cur="TWD"), _intent("b", "X", tp=110.0, cur="TWD"),
+        _intent("c", "X", tp=3.0, cur="USD"), _intent("d", "X", tp=3.5, cur="USD"),
+    ]
+    a = build_ticker_consensus(both, "X")
+    b = build_ticker_consensus(list(reversed(both)), "X")
+    assert a.target_prices is None and b.target_prices is None
+    assert any("无多数派" in n for n in a.notes)
+    assert len(a.latest_by_source) == 4, "逐源行必须还在"

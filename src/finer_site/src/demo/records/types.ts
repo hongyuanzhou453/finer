@@ -53,9 +53,14 @@ export interface RecordCard {
   n_total: number;
   n_settled: number;
   wins: number;
-  mean_return: number;
-  median_return: number;
-  expected_win_rate: number;
+  /**
+   * 全未结算的信源为 null。类型曾写 `number`，而快照里实实在在有 null——
+   * `fmtSignedPct(null)` 走 `Math.abs(null)=0` 印出「0.0%」，凭空造了个数字，
+   * 编译器一句没报。类型说了实话，tsc 才逼得出全部空值分支。
+   */
+  mean_return: number | null;
+  median_return: number | null;
+  expected_win_rate: number | null;
   /** market code → action count, e.g. { US: 130, CN: 101 } */
   market_mix: Record<string, number>;
   first_action_at: string;

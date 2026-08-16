@@ -225,6 +225,9 @@ export function CreatorRecordView({
         </div>
         <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[13px] text-foreground/80">
           <HeaderRatio card={card} />
+          {/* 合并说明：main 在这里加了条件判断版的均值收益（2ff70c86）。
+              本分支把它移进了 HeaderRatio —— 页头的比率只在一个组件里渲染，
+              且 DisplayCard 已让门外访问 card.mean_return 编译不过。 */}
           <span className="tabular-nums">
             记录 {card.n_settled} / {card.n_total} 已结算
           </span>

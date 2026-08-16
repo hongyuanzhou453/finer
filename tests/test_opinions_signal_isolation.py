@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, get_args
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from finer.api.routes import opinions
 from finer.api.server import create_app
 from finer.schemas.trade_action import (
+    SIGNAL_CLASS_LITERAL,
     ActionStep,
     ActionType,
     BacktestResult,
@@ -147,6 +148,54 @@ class TestClassification:
     def test_kol_statement_is_not_broker(self):
         a = make_action("a4", "k", "AAPL", NOW, signal_class="kol_statement")
         assert opinions._is_broker_signal(a) is False
+
+    def test_sector_view_is_broker_too(self):
+        """板块观点也是券商信号——不是 KOL。
+
+        回归：此前 ``_is_broker_signal`` 用 ``== "broker_recommendation"``
+        单值比较，现役 400 条 ``broker_sector_view`` 因此全部落进「未知 = KOL」
+        的默认分支，进了 KOL 记分卡与榜单。整个测试类当时是绿的，因为没有一条
+        用例喂过第二个 broker 取值。
+        """
+        a = make_action("a8", "k", "AAPL", NOW, signal_class="broker_sector_view")
+        assert opinions._is_broker_signal(a) is True
+        assert opinions._is_credibility_scoreable(a) is False
+
+    def test_sector_view_via_metadata_fallback(self):
+        a = make_action(
+            "a9", "k", "AAPL", NOW,
+            metadata={"signal_class": "broker_sector_view"},
+        )
+        assert opinions._is_broker_signal(a) is True
+        assert opinions._is_credibility_scoreable(a) is False
+
+    def test_every_contract_value_is_classified(self):
+        """钉内容而非钉行为：契约里的每个取值都必须被显式归类。
+
+        逐个喂 ``SIGNAL_CLASS_LITERAL`` 的取值，而不是喂几个手挑的常量——
+        新增第四个取值时这条会失败，不会像上一次那样静默漏进 KOL 侧。
+        """
+        contract_values = set(get_args(SIGNAL_CLASS_LITERAL))
+        assert contract_values, "SIGNAL_CLASS_LITERAL 必须是非空 Literal"
+        for value in contract_values:
+            a = make_action(f"a-{value}", "k", "AAPL", NOW, signal_class=value)
+            is_broker = opinions._is_broker_signal(a)
+            assert is_broker is (value in opinions._BROKER_SIGNAL_CLASSES), (
+                f"{value} 未被显式归类；不得依赖「未知 = KOL」的默认分支"
+            )
+        # 归类表本身必须完整覆盖契约，不多不少。
+        assert (
+            opinions._BROKER_SIGNAL_CLASSES | opinions._KOL_SIGNAL_CLASSES
+        ) == contract_values
+
+    def test_passthrough_preserves_sector_view(self):
+        """对外透传不得把板块观点抹成 None（None 在前端读作 KOL）。"""
+        a = make_action("a10", "k", "AAPL", NOW, signal_class="broker_sector_view")
+        assert opinions.trade_action_to_opinion(a).signalClass == "broker_sector_view"
+
+    def test_passthrough_drops_junk_signal_class(self):
+        a = make_action("a11", "k", "AAPL", NOW, metadata={"signal_class": "garbage"})
+        assert opinions.trade_action_to_opinion(a).signalClass is None
 
     def test_superseded_marker_blocks_scoring(self):
         a = make_action("a5", "k", "AAPL", NOW, metadata={"superseded_by": "a6"})

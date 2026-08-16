@@ -27,7 +27,10 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence
 
-from finer.credibility.significance import get_significance_gate
+from finer.credibility.significance import (
+    get_significance_gate,
+    metric_for_signal_class,
+)
 from finer.enrichment.ticker_normalization import normalize_broker_ticker
 from finer.schemas.significance import SampleSufficiency
 from finer.schemas.trade_action import TradeAction
@@ -266,9 +269,7 @@ def build_scorecard(
             successes=stats.wins,
             settled_n=stats.n,
             total_n=stats.total_n,
-            metric="broker_excess_win_rate"
-            if signal_class == "broker_recommendation"
-            else None,
+            metric=metric_for_signal_class(signal_class),
         )
         # 纯暴露预期：把本 creator 的每条 action 换成「该市场的语料平均水平」
         if stats.n:

@@ -48,6 +48,10 @@ export async function getAuditActions(
     params.set("kol_id", filters.kolId);
   }
   if (filters?.ticker) params.set("ticker", filters.ticker);
+  // 后端默认 limit=100（上限 1000）。左栏的 KOL/标的筛选是**客户端**过滤这一批，
+  // 所以不显式要满额时，第 100 条之后的 action 在界面上根本不可达 —— broker 记录
+  // 恰好全在那之后，M3 深摘要因此曾整个看不到。取后端允许的最大值。
+  params.set("limit", "1000");
   const qs = params.toString();
   const res = await apiFetch<{ actions: TradeActionSummary[]; total: number }>(
     `/api/audit/actions${qs ? `?${qs}` : ""}`,

@@ -7,7 +7,7 @@ Returns FinerError canonical envelope when data is unavailable.
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, get_args
 
 from fastapi import APIRouter, Query
 from fastapi.concurrency import run_in_threadpool
@@ -239,9 +239,11 @@ def trade_action_to_opinion(action: TradeAction) -> TimelineOpinion:
     )
 
     # Signal-class passthrough (top-level field with metadata fallback); only
-    # the two contract values survive — junk metadata degrades to None (= KOL).
+    # contract values survive — junk metadata degrades to None (= KOL).
+    # 白名单取自 SIGNAL_CLASS_LITERAL 而非手写字面量：这里曾漏掉
+    # broker_sector_view，使板块观点在时间线上被抹成 None，即「显示为 KOL」。
     signal_class = _signal_class_of(action)
-    if signal_class not in ("kol_statement", "broker_recommendation"):
+    if signal_class not in _VALID_SIGNAL_CLASSES:
         signal_class = None
 
     return TimelineOpinion(
@@ -281,7 +283,38 @@ def trade_action_to_opinion(action: TradeAction) -> TimelineOpinion:
 # signalClass). These helpers are the single classification point — O(1) per
 # action, no extra pass over pure-KOL directories.
 
-_BROKER_SIGNAL_CLASS = "broker_recommendation"
+#: 券商口径。**两个都算券商**——``broker_recommendation`` 是对个股的评级，
+#: ``broker_sector_view`` 是对板块的看法（经 ETF 代理成交）。两者基准率不同、
+#: 不得互相混算（见 SIGNAL_CLASS_LITERAL 的注释），但对 KOL 记分卡而言同样是
+#: 「不是 KOL 说的」，两个都必须被 R6 门挡住。
+#:
+#: 此前这里是单个字符串 ``"broker_recommendation"``，用 ``==`` 比较，于是 400 条
+#: ``broker_sector_view`` 全部落进「未知 = KOL」的默认分支，进了 KOL 记分卡与榜单。
+_BROKER_SIGNAL_CLASSES: frozenset[str] = frozenset(
+    {"broker_recommendation", "broker_sector_view"}
+)
+
+#: KOL 自述口径。与 ``_BROKER_SIGNAL_CLASSES`` 合并后必须覆盖契约的全部取值。
+_KOL_SIGNAL_CLASSES: frozenset[str] = frozenset({"kol_statement"})
+
+#: 契约认可的全部取值，直接取自 schema 真相源——用于对外透传时的白名单，
+#: 避免手写字面量与契约漂移（``check_contract_drift.py`` 守的是 TS 侧镜像，
+#: 守不住 Python 内部重新手写的这类白名单）。
+_VALID_SIGNAL_CLASSES: frozenset[str] = frozenset(get_args(SIGNAL_CLASS_LITERAL))
+
+# 新增 signal_class 却忘了在此归类时，**import 期就炸**，而不是静默落进
+# 「未知 = KOL」——后者正是 broker_sector_view 漏了 400 条的机制。
+_UNCLASSIFIED_SIGNAL_CLASSES = (
+    set(get_args(SIGNAL_CLASS_LITERAL))
+    - _BROKER_SIGNAL_CLASSES
+    - _KOL_SIGNAL_CLASSES
+)
+if _UNCLASSIFIED_SIGNAL_CLASSES:  # pragma: no cover - 契约扩张时的启动期护栏
+    raise RuntimeError(
+        "SIGNAL_CLASS_LITERAL 新增了未归类的取值 "
+        f"{sorted(_UNCLASSIFIED_SIGNAL_CLASSES)}；请在 opinions.py 的 R6 隔离门里"
+        "明确归入券商侧或 KOL 侧，不要依赖默认分支。"
+    )
 
 
 def _signal_class_of(action: TradeAction) -> Optional[str]:
@@ -298,8 +331,8 @@ def _signal_class_of(action: TradeAction) -> Optional[str]:
 
 
 def _is_broker_signal(action: TradeAction) -> bool:
-    """True when the action is a declarative broker recommendation."""
-    return _signal_class_of(action) == _BROKER_SIGNAL_CLASS
+    """True when the action carries any broker signal class (stock or sector)."""
+    return _signal_class_of(action) in _BROKER_SIGNAL_CLASSES
 
 
 def _is_superseded(action: TradeAction) -> bool:

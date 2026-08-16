@@ -132,6 +132,10 @@ export function RecordCardWall({
                 {card.n_settled} / {card.n_total}
               </dd>
             </div>
+            {/* 合并说明：main 在这里加了条件判断版的均值收益（2ff70c86）。
+                本分支把它整体移进了 CardRatioBlock —— 同一个比率不应有两处
+                渲染点，且 DisplayCard 已让门外访问 card.mean_return 编译不过。
+                main 那版的事故记述保留在 ./gate.ts 的模块注释里。 */}
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-foreground/45">主要市场</dt>
               <dd className="tabular-nums text-foreground/80">

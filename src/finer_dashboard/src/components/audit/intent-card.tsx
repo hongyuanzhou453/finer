@@ -1,8 +1,9 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ScanSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
+  ExtractionConfidenceTier,
   IntentActionability,
   IntentDirection,
   IntentRiskPreference,
@@ -11,6 +12,7 @@ import type {
   NormalizedInvestmentIntent,
   PositionDeltaHint,
 } from "@/lib/contracts";
+import { readExtractionConfidence } from "@/lib/contracts";
 import { FieldRow, Meter, Pill, SectionLabel, type Tone } from "./primitives";
 
 const DIRECTION: Record<IntentDirection, { label: string; tone: Tone }> = {
@@ -64,6 +66,16 @@ const TARGET_TYPE: Record<IntentTargetType, string> = {
   unknown: "未知",
 };
 
+// M2: 五票抽取投票的非一致档位。**unanimous 刻意不在此表** —— 实测 98.65%
+// 的记录五票全一致，逐条标注等于满屏噪音；只有需要留意的 1.35% 才出现提示。
+const EXTRACTION_TIER_COPY: Partial<
+  Record<ExtractionConfidenceTier, { label: string; hint: string }>
+> = {
+  strong: { label: "抽取 4/5 一致", hint: "五次独立重抽中有一次读法不同" },
+  majority: { label: "抽取 3/5 一致", hint: "五次独立重抽中有两次读法不同" },
+  disputed: { label: "抽取存疑", hint: "五次独立重抽未形成多数，建议以原文为准" },
+};
+
 export function IntentCard({
   intent,
   activeSpanId,
@@ -75,6 +87,19 @@ export function IntentCard({
 }) {
   const dir = DIRECTION[intent.direction];
   const act = ACTIONABILITY[intent.actionability];
+
+  // 取 rating / target 里更弱的一档展示；两档都 unanimous 时整块不渲染。
+  const extraction = readExtractionConfidence(intent.metadata);
+  const weakerTier: ExtractionConfidenceTier | null = extraction
+    ? ([extraction.rating, extraction.target] as ExtractionConfidenceTier[])
+        .filter((t) => t !== "unanimous")
+        .sort(
+          (a, b) =>
+            (["disputed", "majority", "strong"] as string[]).indexOf(a) -
+            (["disputed", "majority", "strong"] as string[]).indexOf(b),
+        )[0] ?? null
+    : null;
+  const extractionCopy = weakerTier ? EXTRACTION_TIER_COPY[weakerTier] : undefined;
 
   return (
     <div className="rounded-sm border border-[var(--table-border)] bg-white p-3.5">
@@ -107,6 +132,29 @@ export function IntentCard({
           <Meter value={intent.confidence} />
         </FieldRow>
       </div>
+
+      {extraction && extractionCopy && (
+        <div className="mt-2.5 rounded-sm border border-[var(--table-border)] bg-[var(--surface-strong)] px-2.5 py-1.5">
+          <div className="flex items-start gap-1.5">
+            <ScanSearch
+              className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/45"
+              strokeWidth={1.8}
+            />
+            <div className="text-[11px] leading-5 text-[var(--ink-soft)]">
+              <span className="font-medium text-foreground/75">{extractionCopy.label}</span>
+              <span className="text-foreground/45">
+                {" · "}
+                {extractionCopy.hint}
+              </span>
+              <div className="mt-0.5 text-[10px] text-foreground/40">
+                评级 {extraction.rating_votes}/{extraction.total_votes} · 目标价{" "}
+                {extraction.target_votes}/{extraction.total_votes} · 衡量本平台读取原文的一致性，
+                非该信源的准确性
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {intent.ambiguity_flags.length > 0 && (
         <div className="mt-2.5 flex items-start gap-1.5 rounded-sm border border-[var(--accent-gold)]/30 bg-[rgba(155,123,69,0.08)] px-2.5 py-1.5">

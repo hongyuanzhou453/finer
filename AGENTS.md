@@ -97,5 +97,7 @@ pytest tests/ -v
 - `docs/specs/f-stage-contracts.md` — 每阶段契约
 - `docs/specs/f1-standardization-contract.md` — F1 标准化契约（最新）
 - `docs/specs/canonical-path-test-plan.md` — 测试计划
+- `docs/mimo-integration-guide.md` — **MiMo 接入手册（调用 MiMo 前必读）**：端点分流、
+  `thinking:disabled` 省 89-97% token、429 三义判据、批量作业骨架、质量门控；结论均有实测背书
 - `CLAUDE.md` — 项目工程规范
 - `knowledge/okf/index.md` — OKF 知识层入口（derived/curated 跨工具导航；运行时真值仍以 schemas + specs + 本文件为准）

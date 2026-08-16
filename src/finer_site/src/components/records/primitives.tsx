@@ -58,6 +58,7 @@ export function exitReasonLabel(v: string | undefined): string {
   return EXIT_REASON_LABEL[v] ?? v;
 }
 
+
 // ---- settle chip (red win / green loss / grey pending) ----------------------
 
 export function SettleChip({ settle }: { settle: RowSettle }) {
