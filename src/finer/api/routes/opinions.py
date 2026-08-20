@@ -502,20 +502,13 @@ def _get_real_meta() -> TimelineMeta:
     )
 
 
-# 收缩式「信誉分」：adjRate = (wins + K/2) / (settled + K)，再映射到 0-99。
-#
-# ⚠️ 2026-08-17：**不再对外发布**。它有两个无法接受的性质：
-#   1. 私有阈值 n<5 判「低样本」，而 canonical 效力门是 30/15
-#      （configs/significance.yaml）——宽了 3-6 倍，等于给同一件事开了两道门，
-#      松的那道还是用户看到的那道；
-#   2. 0-99 的分数 + 降序排名正是 2026-08-02 定位转向明令禁止的形态
-#      （CLAUDE.md「定位前提」§3：排行榜不按超额排序、禁止「Top 券商」式文案）。
-#
-# 现仅保留给 stance_snapshot 的**内部**变更检测（score_change 事件），
-# 该出口的清理见 docs/specs 的后续批次。任何新的对外字段一律走
-# `get_significance_gate().assess()`。
-_CRED_PRIOR_K = 4
-_CRED_LOW_SAMPLE_N = 5
+# 曾有一个收缩式「信誉分」：adjRate = (wins + K/2)/(settled + K) → 0-99，
+# 私有阈值 n<5 判低样本。2026-08-17 **整条链路删除**（API 字段、快照存储、
+# score_change 事件、前端 4 个组件）。两个无法接受的性质：
+#   1. canonical 效力门是 30/15（configs/significance.yaml），私有门宽了
+#      3-6 倍——同一件事两道门，松的那道还是用户看到的那道；
+#   2. 0-99 分 + 降序排名正是 2026-08-02 定位转向禁止的形态。
+# 任何比率型指标一律走 `get_significance_gate().assess()`。
 
 _DIRECTION_CN = {
     "bullish": "看多",
@@ -524,11 +517,6 @@ _DIRECTION_CN = {
     "watchlist": "观察",
     "risk_warning": "风险提示",
 }
-
-
-def _credibility_score(settled: int, wins: int) -> int:
-    adj_rate = (wins + _CRED_PRIOR_K * 0.5) / (settled + _CRED_PRIOR_K)
-    return max(0, min(99, round(40 + 55 * adj_rate)))
 
 
 def _attributed_actions() -> List[TradeAction]:
@@ -604,10 +592,10 @@ def _kol_settled_record(
     return {k: (v[0], v[1]) for k, v in record.items()}
 
 
-def _kol_credibility_map(actions: List[TradeAction]) -> Dict[str, int]:
+def _kol_settled_count_map(actions: List[TradeAction]) -> Dict[str, int]:
+    """每个 KOL 的已结算样本量——快照存的事实计数（取代已下线的信誉分）。"""
     return {
-        k: _credibility_score(settled, wins)
-        for k, (settled, wins) in _kol_settled_record(actions).items()
+        k: settled for k, (settled, _wins) in _kol_settled_record(actions).items()
     }
 
 
@@ -940,10 +928,10 @@ async def get_stats_summary(
 def _compute_changes(limit: int) -> dict:
     """Synchronous body of GET /changes (run in a threadpool, see handler)."""
     actions = _attributed_actions()
-    credibility = _kol_credibility_map(actions)
+    settled_counts = _kol_settled_count_map(actions)
 
     today = date.today()
-    current = build_snapshot(actions, credibility, snapshot_date=today)
+    current = build_snapshot(actions, settled_counts, snapshot_date=today)
     previous = load_latest_snapshot_before(today)
     snapshot_events = diff_snapshots(previous[1], current) if previous else []
     persist_snapshot(current)

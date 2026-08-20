@@ -222,10 +222,13 @@ class TestCredibilityIsolation:
         # zero-record leaderboard entries.
         assert record == {"kol_alpha": (1, 1)}
 
-    def test_credibility_map_has_no_broker_or_superseded_entries(self, mixed_action_dir):
-        cred = opinions._kol_credibility_map(opinions._load_all_actions())
-        assert set(cred) == {"kol_alpha"}
-        assert cred["kol_alpha"] == opinions._credibility_score(1, 1)
+    def test_settled_count_map_has_no_broker_or_superseded_entries(self, mixed_action_dir):
+        # 快照存的是已结算样本量（事实计数）。0-99 信誉分与 _credibility_score
+        # 已于 2026-08-17 整条链路删除。
+        counts = opinions._kol_settled_count_map(opinions._load_all_actions())
+        assert set(counts) == {"kol_alpha"}
+        assert counts["kol_alpha"] == 1
+        assert not hasattr(opinions, "_credibility_score")
 
     def test_attributed_actions_exclude_broker_and_superseded(self, mixed_action_dir):
         ids = {a.trade_action_id for a in opinions._attributed_actions()}

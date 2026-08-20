@@ -26,7 +26,7 @@ const CHANGE_META: Record<ChangeType, ChangeMeta> = {
   new_high_conviction: { label: "新高信念", color: "var(--chart-up)" },
   new_call: { label: "新增", color: "var(--chart-up)" },
   stop_loss: { label: "触发止损", color: "var(--chart-down)" },
-  score_change: { label: "信誉变动", color: "var(--accent-gold)" },
+  record_change: { label: "战绩更新", color: "var(--accent-gold)" },
   consensus_alert: { label: "共识异动", color: "var(--accent-teal)" },
 };
 
@@ -35,14 +35,16 @@ const CHANGE_META: Record<ChangeType, ChangeMeta> = {
 function EventValue({ ev }: { ev: RadarChangeEvent }) {
   if (ev.value === undefined || ev.value === null) return null;
 
-  if (ev.type === "score_change") {
+  if (ev.type === "record_change") {
+    // 已结算样本量的增量（事实计数）。此前是 0-99「信誉」分的 delta——
+    // 一个编造的刻度被呈现成进步，2026-08-17 随信誉分整条链路下线。
     const sign = ev.value > 0 ? "+" : "";
     return (
       <span
         className="tabular-nums text-[11px] font-semibold"
         style={{ color: "var(--accent-gold)" }}
       >
-        信誉 {sign}
+        已结算 {sign}
         {ev.value}
       </span>
     );

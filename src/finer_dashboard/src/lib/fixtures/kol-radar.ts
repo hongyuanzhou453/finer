@@ -46,7 +46,7 @@ export type ChangeType =
   | "new_high_conviction" // 新高信念 call
   | "new_call" // 新增观点
   | "stop_loss" // 旧 call 触发止损
-  | "score_change" // 信誉分变动
+  | "record_change" // 已结算样本量变化（新回测结算落地）
   | "consensus_alert"; // 标的出现共识/分歧异动
 
 export interface RadarChangeEvent {
@@ -568,10 +568,10 @@ const CHANGES: RadarChangeEvent[] = [
   },
   {
     id: "chg-5",
-    type: "score_change",
+    type: "record_change",
     kolId: "value_laozhang",
     kolName: "价值老张",
-    detail: "平安兑现 +18.2%，信誉分上调",
+    detail: "已结算 14 → 16 笔",
     timestamp: "2026-06-24T16:00:00+08:00",
     value: 2,
   },

@@ -53,11 +53,13 @@ class TestBuildSnapshot:
             make_action("k1", "600519.SH", TradeDirection.BULLISH, T1, "a1"),
             make_action("k1", "600519.SH", TradeDirection.BEARISH, T2, "a2"),
         ]
-        snap = build_snapshot(actions, {"k1": 70}, snapshot_date=date(2026, 7, 3))
+        snap = build_snapshot(actions, {"k1": 12}, snapshot_date=date(2026, 7, 3))
         stance = snap["kols"]["k1"]["stances"]["600519.SH"]
         assert stance["direction"] == "bearish"
         assert stance["trade_action_id"] == "a2"
-        assert snap["kols"]["k1"]["credibility"] == 70
+        # 快照存已结算样本量（事实计数），不再存 0-99 信誉分
+        assert snap["kols"]["k1"]["settled"] == 12
+        assert "credibility" not in snap["kols"]["k1"]
 
     def test_unattributed_excluded(self):
         actions = [make_action("unknown", "X", TradeDirection.BULLISH, T1, "a1")]
@@ -66,12 +68,12 @@ class TestBuildSnapshot:
 
 
 class TestDiff:
-    def base(self, direction: str = "bullish", cred: int = 70) -> dict:
+    def base(self, direction: str = "bullish", settled: int = 12) -> dict:
         return {
             "snapshot_date": "2026-07-02",
             "kols": {
                 "k1": {
-                    "credibility": cred,
+                    "settled": settled,
                     "stances": {
                         "600519.SH": {
                             "direction": direction,
@@ -84,8 +86,8 @@ class TestDiff:
             },
         }
 
-    def curr(self, direction: str = "bullish", cred: int = 70, extra=None) -> dict:
-        snap = self.base(direction, cred)
+    def curr(self, direction: str = "bullish", settled: int = 12, extra=None) -> dict:
+        snap = self.base(direction, settled)
         snap["snapshot_date"] = "2026-07-03"
         if extra:
             snap["kols"]["k1"]["stances"].update(extra)
@@ -112,11 +114,28 @@ class TestDiff:
         assert len(news) == 1
         assert news[0]["ticker"] == "300750.SZ"
 
-    def test_score_change_detected(self):
-        events = diff_snapshots(self.base(cred=70), self.curr(cred=73))
-        scores = [e for e in events if e["type"] == "score_change"]
-        assert len(scores) == 1
-        assert scores[0]["value"] == 3
+    def test_record_change_detected(self):
+        events = diff_snapshots(self.base(settled=12), self.curr(settled=15))
+        recs = [e for e in events if e["type"] == "record_change"]
+        assert len(recs) == 1
+        assert recs[0]["value"] == 3
+        assert "已结算 12 → 15" in recs[0]["detail"]
+        # 0-99 信誉分事件已下线
+        assert not [e for e in events if e["type"] == "score_change"]
+
+    def test_legacy_credibility_snapshot_emits_no_record_change(self):
+        """2026-08-17 前落盘的快照存的是 0-99 信誉分，与计数量纲不同。
+
+        拿 credibility=70 当作「已结算 70 笔」去和新快照的 12 相减，会凭空
+        造出 -58 的战绩暴跌。缺基线就不报——首次部署后那一次 diff 静默。
+        """
+        legacy = self.base()
+        legacy["kols"]["k1"].pop("settled")
+        legacy["kols"]["k1"]["credibility"] = 70  # 旧字段
+        events = diff_snapshots(legacy, self.curr(settled=12))
+        assert not [e for e in events if e["type"] == "record_change"], (
+            "旧信誉分快照不得被当成计数基线"
+        )
 
     def test_no_change_no_events(self):
         assert diff_snapshots(self.base(), self.curr()) == []
