@@ -52,7 +52,7 @@ function StanceRow({ v }: { v: TickerViewpoint }) {
               border: "1px solid color-mix(in srgb, var(--accent-gold) 32%, transparent)",
             }}
           >
-            信誉 {v.credibility}
+            {v.settledCount} 笔已结算
           </span>
           <span className="ml-auto flex items-center gap-3">
             <span className="text-[10px] uppercase tracking-wider text-[var(--ink-soft)]">

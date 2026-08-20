@@ -1,8 +1,13 @@
 /**
- * 01 可信度榜 — the product spine. KOL leaderboard ranked by derived 信誉分.
- * Compact 6-column institutional table: 趋势 merged into 信誉分, 擅长 into the
- * KOL cell, everything `whitespace-nowrap` so Chinese never wraps one-char-per-line.
- * (Panel chrome is supplied by the parent section, so no inner editorial-panel.)
+ * 01 信源记录板 —— 谁说过什么、结算了多少，**不是排名**。
+ *
+ * 2026-08-17 改造：此前是「可信度榜 · 按 0-99 信誉分降序」，那个分数由
+ * `opinions.py` 的私有阈值（n<5 判低样本，canonical 门是 30/15）收缩得出，
+ * 且分数 + 名次正是定位转向明令禁止的形态。现在：默认序 = 已结算样本量降序
+ * （稳定输出序），命中率过 CRD-2 效力门才呈现且必与 95% 区间并排。
+ *
+ * Compact institutional table：趋势并入样本量列，擅长并入 KOL 单元格，
+ * 全部 `whitespace-nowrap` 以免中文逐字换行。
  */
 import React from "react";
 import Link from "next/link";
@@ -44,9 +49,9 @@ export function CredibilityBoard({
       </colgroup>
       <thead>
         <tr>
-          <th scope="col">#</th>
+          <th scope="col">序</th>
           <th scope="col">KOL</th>
-          <th scope="col" className="text-right">信誉分</th>
+          <th scope="col" className="text-right">已结算</th>
           <th scope="col" className="text-right">命中率</th>
           <th scope="col">当前立场</th>
           <th scope="col">当前主推</th>
@@ -86,38 +91,46 @@ export function CredibilityBoard({
               </td>
 
               <td className="align-top">
+                {/* 已结算样本量：默认序所依据的事实。此前这里是 0-99 信誉分
+                    + 金色进度条，那是私有阈值下的收缩分，已于 2026-08-17 下线。 */}
                 <div className="flex items-baseline justify-end gap-1.5">
                   <span className="tabular-nums text-xl font-semibold leading-none text-[var(--foreground)]">
-                    {r.credibility}
+                    {r.settledCount}
                   </span>
                   <span
                     className="text-sm font-semibold leading-none"
                     style={{ color: trend.color }}
-                    title={`趋势 ${trend.label}`}
+                    title={`近 45 天已结算收益趋势 ${trend.label}`}
                   >
                     {trend.glyph}
                   </span>
                 </div>
-                <div className="ml-auto mt-1.5 h-1 w-16 overflow-hidden rounded-full bg-[var(--surface-muted)]">
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: `${r.credibility}%`, backgroundColor: "var(--accent-gold)" }}
-                  />
+                <div className="mt-1 text-right text-[10px] text-[var(--ink-soft)]">
+                  笔已结算
                 </div>
               </td>
 
               <td className="align-top text-right">
-                <div className="tabular-nums font-medium text-[var(--foreground)]">
-                  {r.hitRate === null ? "—" : fmtConfidence(r.hitRate)}
-                </div>
-                <div className="tabular-nums text-[11px] text-[var(--ink-soft)]">
-                  {r.settledCount} 笔
-                </div>
-                {r.lowSample ? (
-                  <div className="text-[10px] text-[var(--accent-gold)]" title="结算样本不足，信誉分已按样本量打折">
-                    样本少
+                {/* CRD-2：门未过一律不渲染比率；过门则必须与 95% 区间并排。 */}
+                {r.ratiosPermitted && r.hitRate !== null ? (
+                  <>
+                    <div className="tabular-nums font-medium text-[var(--foreground)]">
+                      {fmtConfidence(r.hitRate)}
+                    </div>
+                    <div className="tabular-nums text-[10px] text-[var(--ink-soft)]">
+                      {r.wilsonLow !== null && r.wilsonHigh !== null
+                        ? `95% ${fmtConfidence(r.wilsonLow)}–${fmtConfidence(r.wilsonHigh)}`
+                        : "区间未提供"}
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    className="text-[11px] text-[var(--ink-soft)]"
+                    title="已结算样本不足，不呈现比率——留白比一个不可靠的数字诚实"
+                  >
+                    样本不足 · 仅计数
                   </div>
-                ) : null}
+                )}
               </td>
 
               <td className="whitespace-nowrap align-top">

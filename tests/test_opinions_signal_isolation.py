@@ -254,8 +254,19 @@ class TestLeaderboard:
         (entry,) = data["topKols"]
         assert entry["count"] == 2  # both non-superseded KOL actions
         assert entry["settledCount"] == 1
-        assert entry["hitRate"] == 1.0
-        assert entry["credibility"] == opinions._credibility_score(1, 1)
+        assert entry["wins"] == 1
+
+        # CRD-2 效力门（2026-08-17）：settled=1 远低于 canonical 门槛，
+        # 比率不得离开后端——此前这里发 hitRate=1.0 与信誉分 95，
+        # 一条 1/1 的记录就能占榜首。
+        assert entry["hitRate"] is None, "样本不足时不得发出比率"
+        assert entry["sufficiency"]["display_policy"] == "count_only"
+        assert entry["sufficiency"]["settled_n"] == 1
+
+        # 0-99 信誉分与私有 lowSample 已下线，不得再出现在响应里
+        assert "credibility" not in entry
+        assert "lowSample" not in entry
+        assert "avgRating" not in entry
 
     def test_superseded_action_absent_from_stats(self, mixed_action_dir):
         res = client.get("/api/opinions/stats/summary?timeRange=1M")

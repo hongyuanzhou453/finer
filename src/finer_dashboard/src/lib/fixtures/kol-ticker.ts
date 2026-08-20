@@ -20,13 +20,15 @@ export type { SnapshotViewpoint, ViewpointDirection } from "./kol-snapshot";
 export interface TickerViewpoint extends SnapshotViewpoint {
   kolId: string;
   kolName: string;
-  credibility: number;
+  /** 该信源的已结算样本量（事实计数）——取代已下线的 0-99 信誉分。 */
+  settledCount: number;
 }
 
 export interface WhoWasRightRow {
   kolId: string;
   kolName: string;
-  credibility: number;
+  /** 该信源的已结算样本量（事实计数）——取代已下线的 0-99 信誉分。 */
+  settledCount: number;
   direction: ViewpointDirection; // KOL's current (latest) stance on this ticker
   confidence: number;
   returnPct: number | null; // realized follow-P&L of that stance (null = 未结算)
@@ -35,7 +37,8 @@ export interface WhoWasRightRow {
   callCount: number; // how many calls this KOL made on the ticker
   overallHitRate: number | null; // KOL's overall hit rate (一贯准 vs 此票蒙对一次)
   overallSettled: number; // overall settled sample size
-  lowSample: boolean; // overall sample thin — discount the credibility
+  /** 效力门是否放行整体命中率；false ⇒ UI 不得渲染 overallHitRate。 */
+  ratiosPermitted: boolean;
 }
 
 export type ConsensusNetLabel = "共识看多" | "共识看空" | "分歧" | "观望";
@@ -116,7 +119,7 @@ export function deriveTickerCrossSection(
         ...v,
         kolId: k.kolId,
         kolName: k.name,
-        credibility: boardById.get(k.kolId)?.credibility ?? 50,
+        settledCount: boardById.get(k.kolId)?.settledCount ?? 0,
       });
     }
   }
@@ -179,7 +182,7 @@ export function deriveTickerCrossSection(
       return {
         kolId: v.kolId,
         kolName: v.kolName,
-        credibility: v.credibility,
+        settledCount: v.settledCount,
         direction: v.direction,
         confidence: v.confidence,
         returnPct: settled ? v.returnPct : null,
@@ -188,7 +191,8 @@ export function deriveTickerCrossSection(
         callCount,
         overallHitRate: board?.hitRate ?? null,
         overallSettled: board?.settledCount ?? 0,
-        lowSample: board?.lowSample ?? false,
+        // 缺 board ⇒ 按不放行处理（门在缺信息时拦截）
+        ratiosPermitted: board?.ratiosPermitted ?? false,
       };
     })
     .sort((a, b) => {

@@ -90,7 +90,7 @@ export function WhoWasRight({ rows }: { rows: WhoWasRightRow[] }) {
                         "1px solid color-mix(in srgb, var(--accent-gold) 32%, transparent)",
                     }}
                   >
-                    信誉 {r.credibility}
+                    {r.settledCount} 笔已结算
                   </span>
                   {r.callCount > 1 ? (
                     <span className="text-[10px] leading-none text-[var(--ink-soft)]">
@@ -100,14 +100,16 @@ export function WhoWasRight({ rows }: { rows: WhoWasRightRow[] }) {
                 </div>
                 {/* 该不该信下一次：KOL 整体战绩，区分一贯准 vs 此票蒙对一次 */}
                 <div className="tabular-nums mt-1 flex items-center gap-2 whitespace-nowrap text-[10px] text-[var(--ink-soft)]">
-                  <span>
-                    总命中{" "}
-                    {r.overallHitRate === null ? "—" : fmtConfidence(r.overallHitRate)} ·{" "}
-                    {r.overallSettled} 笔
-                  </span>
-                  {r.lowSample ? (
-                    <span style={{ color: "var(--accent-gold)" }}>样本少</span>
-                  ) : null}
+                  {/* CRD-2：门未过只报计数，不渲染整体命中率 */}
+                  {r.ratiosPermitted && r.overallHitRate !== null ? (
+                    <span>
+                      总命中 {fmtConfidence(r.overallHitRate)} · {r.overallSettled} 笔
+                    </span>
+                  ) : (
+                    <span title="已结算样本不足，不呈现比率">
+                      {r.overallSettled} 笔已结算 · 样本不足不报比率
+                    </span>
+                  )}
                 </div>
               </td>
 

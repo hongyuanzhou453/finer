@@ -64,11 +64,16 @@ export interface RadarChangeEvent {
 }
 
 /** Server-computed credibility (single source of truth when present). */
+/** 服务端效力门判定（/stats/summary 的 sufficiency 投影）。
+ *  不再有 0-99 信誉分——那是私有阈值下的收缩分，2026-08-17 已下线。 */
 export interface CredibilityOverride {
-  credibility: number;
+  /** 仅在 display_policy 放行时非空 */
   hitRate: number | null;
   settledCount: number;
-  lowSample: boolean;
+  wilsonLow: number | null;
+  wilsonHigh: number | null;
+  tier: string | null;
+  ratiosPermitted: boolean;
 }
 
 export interface KOLRadarData {
@@ -700,10 +705,14 @@ export interface CredibilityRow {
   handle: string;
   style: string;
   specialties: string[];
-  credibility: number; // 0–99, sample-size-shrunk hit rate (see deriveCredibilityBoard)
+  /** 命中率：仅在效力门放行时非空。count_only 时为 null，UI 只报计数。 */
   hitRate: number | null;
   settledCount: number;
-  lowSample: boolean; // settled < LOW_SAMPLE_N — score is statistically thin, flag it
+  /** 95% Wilson 区间——比率必须与区间并排（CRD-2） */
+  wilsonLow: number | null;
+  wilsonHigh: number | null;
+  tier: string | null;
+  ratiosPermitted: boolean;
   trend: "up" | "flat" | "down";
   netStance: number;
   stanceLabel: "偏多" | "偏空" | "分歧";
@@ -734,28 +743,48 @@ function trendOf(vps: SnapshotViewpoint[], generatedAt: string): "up" | "flat" |
   return mean > 0.02 ? "up" : mean < -0.02 ? "down" : "flat";
 }
 
-const PRIOR_K = 4; // pseudo-observations for the 0.5 prior (sample-size shrinkage)
-const LOW_SAMPLE_N = 5; // below this, the score is statistically thin
+/**
+ * fixture 侧的效力门。**阈值取 canonical 值**（configs/significance.yaml
+ * min_settled=15），不再用此前的私有 n<5——同一件事开两道门、松的那道还是
+ * 用户看到的那道，正是 2026-08-17 下线 0-99 信誉分的原因。
+ * live 路径以服务端 sufficiency 为准（credibilityOverrides）。
+ */
+const MIN_SETTLED_FOR_RATIO = 15;
 
+/** Wilson 95% 区间——比率离开数据层必须带区间。 */
+function wilson95(wins: number, n: number): [number, number] | [null, null] {
+  if (n <= 0) return [null, null];
+  const z = 1.959963984540054;
+  const p = wins / n;
+  const d = 1 + (z * z) / n;
+  const c = p + (z * z) / (2 * n);
+  const s = z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
+  return [Math.max(0, (c - s) / d), Math.min(1, (c + s) / d)];
+}
+
+/**
+ * 信源记录板。**默认序 = 已结算样本量降序**（UI-1 拍板的稳定输出序，不是排名）。
+ * 此前按 0-99 信誉分降序 = 一张「谁更准」的榜，撞 2026-08-02 定位红线。
+ */
 export function deriveCredibilityBoard(data: KOLRadarData): CredibilityRow[] {
   const rows = data.kols.map((k): CredibilityRow => {
     const { rate, settled, wins } = hitRateOf(k.viewpoints);
-    // Shrink the raw hit rate toward a 0.5 prior by sample size, so a tiny 4/4
-    // record can't outrank a long, consistently-good one (4/4 → 0.75, not 1.0).
-    const adjRate = settled === 0 ? 0.5 : (wins + PRIOR_K * 0.5) / (settled + PRIOR_K);
-    let credibility = Math.max(0, Math.min(99, Math.round(40 + 55 * adjRate)));
-    let hitRate = rate;
+    let ratiosPermitted = settled >= MIN_SETTLED_FOR_RATIO;
+    let [wLow, wHigh] = wilson95(wins, settled) as [number | null, number | null];
+    // 门未过 ⇒ 比率不出数据层（与后端 _gated_summary 同一原则：不是 0，是没有）
+    let hitRate = ratiosPermitted ? rate : null;
     let settledCount = settled;
-    let lowSample = settled < LOW_SAMPLE_N;
+    let tier: string | null = null;
 
-    // Server-computed credibility is the source of truth when provided
-    // (live adapter fills it from /stats/summary; fixtures don't).
+    // 服务端 sufficiency 是 live 路径的真相源；fixture 页没有它，走上面的派生。
     const override = data.credibilityOverrides?.[k.kolId];
     if (override) {
-      credibility = override.credibility;
+      ratiosPermitted = override.ratiosPermitted;
       hitRate = override.hitRate;
       settledCount = override.settledCount;
-      lowSample = override.lowSample;
+      wLow = override.wilsonLow;
+      wHigh = override.wilsonHigh;
+      tier = override.tier;
     }
 
     const latest = [...latestByKolTicker(k).values()];
@@ -777,10 +806,12 @@ export function deriveCredibilityBoard(data: KOLRadarData): CredibilityRow[] {
       handle: k.handle,
       style: k.style,
       specialties: k.specialties,
-      credibility,
       hitRate,
       settledCount,
-      lowSample,
+      wilsonLow: wLow,
+      wilsonHigh: wHigh,
+      tier,
+      ratiosPermitted,
       trend: trendOf(k.viewpoints, data.generatedAt),
       netStance,
       stanceLabel,
@@ -796,8 +827,10 @@ export function deriveCredibilityBoard(data: KOLRadarData): CredibilityRow[] {
     };
   });
 
+  // 已结算样本量降序；同量时按名称，保证输出稳定。**不按命中率排序**——
+  // 那会让 3/3 的小样本压过 40 条样本的信源，正是被否掉的排名语义。
   return rows.sort(
-    (a, b) => b.credibility - a.credibility || (b.hitRate ?? 0) - (a.hitRate ?? 0),
+    (a, b) => b.settledCount - a.settledCount || a.name.localeCompare(b.name),
   );
 }
 
@@ -807,7 +840,8 @@ export interface ActionCall {
   id: string;
   kolId: string;
   kolName: string;
-  credibility: number;
+  /** 该信源的已结算样本量（事实计数）——取代此前的 0-99 信誉分。 */
+  settledCount: number;
   ticker: string;
   companyName: string;
   market: string;
@@ -817,16 +851,19 @@ export interface ActionCall {
   evidenceText: string;
   ageDays: number;
   isFresh: boolean; // pending / not yet settled
-  score: number; // credibility × confidence × freshness
+  /** 排序分 = conviction × freshness（都是这一条 call 自身的属性）。
+   *  **不再乘信源信誉分**：把信源的历史样本量乘进单条 call 的排序，等于
+   *  用「谁更可信」给具体观点加权，是被否掉的排名语义。 */
+  score: number;
 }
 
-/** Active, actionable calls across all KOLs, ranked credibility × conviction × freshness. */
+/** Active, actionable calls across all KOLs, ranked conviction × freshness. */
 export function deriveActionableCalls(
   data: KOLRadarData,
   maxAgeDays = 24,
 ): ActionCall[] {
-  const credById = new Map(
-    deriveCredibilityBoard(data).map((r) => [r.kolId, r.credibility]),
+  const settledById = new Map(
+    deriveCredibilityBoard(data).map((r) => [r.kolId, r.settledCount]),
   );
   const now = new Date(data.generatedAt).getTime();
   const calls: ActionCall[] = [];
@@ -840,13 +877,13 @@ export function deriveActionableCalls(
       if (v.actionType === "watch") continue;
       const ageDays = Math.round((now - new Date(v.timestamp).getTime()) / 86_400_000);
       if (ageDays > maxAgeDays) continue;
-      const credibility = credById.get(k.kolId) ?? 50;
+      const settledCount = settledById.get(k.kolId) ?? 0;
       const freshness = Math.max(0.2, 1 - ageDays / 30);
       calls.push({
         id: v.id,
         kolId: k.kolId,
         kolName: k.name,
-        credibility,
+        settledCount,
         ticker: v.ticker,
         companyName: v.companyName,
         market: v.market,
@@ -856,7 +893,7 @@ export function deriveActionableCalls(
         evidenceText: v.evidenceText,
         ageDays,
         isFresh: v.validationStatus === "pending",
-        score: (credibility / 100) * v.confidence * freshness,
+        score: v.confidence * freshness,
       });
     }
   }

@@ -135,9 +135,9 @@ async function fetchServerChanges(): Promise<RadarChangeEvent[] | undefined> {
 }
 
 /**
- * Server-side credibility from /stats/summary (the single source of truth —
- * same shrunk-hit-rate formula, now computed in opinions.py). Failure-tolerant:
- * returns undefined so the client-side derivation stands as fallback.
+ * 服务端效力门判定（/stats/summary 的 sufficiency）。0-99 信誉分已于
+ * 2026-08-17 下线——它用私有阈值 n<5，而 canonical 门是 30/15。
+ * 容错：失败返回 undefined，回落到客户端派生（fixture 路径同款阈值）。
  */
 async function fetchCredibilityOverrides(): Promise<
   Record<string, CredibilityOverride> | undefined
@@ -150,19 +150,28 @@ async function fetchCredibilityOverrides(): Promise<
     const body = await res.json();
     const kols: {
       author?: string;
-      credibility?: number;
       hitRate?: number | null;
       settledCount?: number;
-      lowSample?: boolean;
+      sufficiency?: {
+        display_policy?: string;
+        wilson_low?: number | null;
+        wilson_high?: number | null;
+        tier?: string | null;
+      } | null;
     }[] = (body.data ?? body)?.topKols ?? [];
     const out: Record<string, CredibilityOverride> = {};
     for (const k of kols) {
-      if (!k.author || typeof k.credibility !== "number") continue;
+      if (!k.author) continue;
+      const s = k.sufficiency ?? undefined;
+      // 缺 sufficiency ⇒ 一律按不放行处理（门在缺信息时必须拦截，不是放行）
+      const permitted = s?.display_policy != null && s.display_policy !== "count_only";
       out[k.author] = {
-        credibility: k.credibility,
-        hitRate: k.hitRate ?? null,
+        hitRate: permitted ? (k.hitRate ?? null) : null,
         settledCount: k.settledCount ?? 0,
-        lowSample: k.lowSample ?? true,
+        wilsonLow: s?.wilson_low ?? null,
+        wilsonHigh: s?.wilson_high ?? null,
+        tier: s?.tier ?? null,
+        ratiosPermitted: permitted,
       };
     }
     return Object.keys(out).length ? out : undefined;

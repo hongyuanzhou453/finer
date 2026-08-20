@@ -13,6 +13,7 @@ from fastapi import APIRouter, Query
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
+from finer.credibility.significance import get_significance_gate
 from finer.paths import DATA_ROOT
 from finer.errors.codes import ErrorCode
 from finer.errors.exceptions import FinerError
@@ -501,10 +502,18 @@ def _get_real_meta() -> TimelineMeta:
     )
 
 
-# Sample-size-shrunk credibility: adjRate = (wins + K/2) / (settled + K), so a
-# tiny 4/4 record can't outrank a long consistently-good one. Single source of
-# truth for /stats/summary topKols and /changes score events (the dashboard
-# previously derived this client-side in kol-radar.ts).
+# 收缩式「信誉分」：adjRate = (wins + K/2) / (settled + K)，再映射到 0-99。
+#
+# ⚠️ 2026-08-17：**不再对外发布**。它有两个无法接受的性质：
+#   1. 私有阈值 n<5 判「低样本」，而 canonical 效力门是 30/15
+#      （configs/significance.yaml）——宽了 3-6 倍，等于给同一件事开了两道门，
+#      松的那道还是用户看到的那道；
+#   2. 0-99 的分数 + 降序排名正是 2026-08-02 定位转向明令禁止的形态
+#      （CLAUDE.md「定位前提」§3：排行榜不按超额排序、禁止「Top 券商」式文案）。
+#
+# 现仅保留给 stance_snapshot 的**内部**变更检测（score_change 事件），
+# 该出口的清理见 docs/specs 的后续批次。任何新的对外字段一律走
+# `get_significance_gate().assess()`。
 _CRED_PRIOR_K = 4
 _CRED_LOW_SAMPLE_N = 5
 
@@ -790,23 +799,32 @@ def _get_real_stats(time_range: str, ticker: Optional[str]) -> Dict[str, Any]:
     # FULL history (universe) so the window can't re-anchor a standing view to
     # an in-window restatement; the window only decides which anchors count.
     kol_record = _kol_settled_record(filtered, universe=all_actions)
-    top_kols = sorted(kol_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    # 默认序 = 已结算样本量降序（UI-1 拍板的稳定输出序，**不是排名**）。
+    # 此前按观点数排序、再由前端配上 0-99 信誉分与名次，合起来就是一张
+    # 「谁更准」的榜——定位转向明令禁止的形态。
+    gate = get_significance_gate()
+    ranked = sorted(
+        kol_counts.items(),
+        key=lambda kv: (-kol_record.get(kv[0], (0, 0))[0], -kv[1], kv[0]),
+    )[:5]
     top_kol_list = []
-    for k, cnt in top_kols:
+    for k, cnt in ranked:
         settled, wins = kol_record.get(k, (0, 0))
         # `author` stays the raw creator_id — it is the join key the frontend
-        # uses (credibilityOverrides); registry adds display fields only.
+        # uses; registry adds display fields only.
         profile = registry.get(k)
+        sufficiency = gate.assess(successes=wins, settled_n=settled, total_n=cnt)
+        permitted = sufficiency.display_policy != "count_only"
         top_kol_list.append({
             "author": k,
             "displayName": profile.display_name if profile and profile.display_name else k,
             "styleLabel": profile.style_label if profile else None,
             "count": cnt,
-            "avgRating": 0.0,  # legacy field, kept for backward compat
             "settledCount": settled,
-            "hitRate": round(wins / settled, 4) if settled else None,
-            "credibility": _credibility_score(settled, wins),
-            "lowSample": settled < _CRED_LOW_SAMPLE_N,
+            "wins": wins,
+            # 比率过门才发；不过门发 None——0 会被当真，见 CLAUDE.md 定位前提 §1
+            "hitRate": round(wins / settled, 4) if (permitted and settled) else None,
+            "sufficiency": sufficiency.model_dump(mode="json"),
         })
 
     return {

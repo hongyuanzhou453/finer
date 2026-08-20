@@ -51,7 +51,7 @@ export function ActionableCalls({
                   }}
                 >
                   信誉&nbsp;
-                  <span className="tabular-nums">{call.credibility}</span>
+                  <span className="tabular-nums">{call.settledCount} 笔已结算</span>
                 </span>
               </div>
               {call.ageDays <= 1 ? (
