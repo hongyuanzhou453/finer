@@ -28,9 +28,16 @@ export interface RLHFReviewItem {
 
   // 提取结果
   ticker: string;
-  tickerConfidence: number;
   direction: "bullish" | "bearish" | "neutral" | "watchlist" | "risk_warning";
-  directionConfidence: number;
+  /**
+   * F5 只有**整条抽取**的单一 confidence，没有分字段置信度。后端如实只发
+   * 这一个值（见 rlhf.py PendingActionItem.confidence），两处复用同一个数
+   * 并在 UI 上标注它是整体把握——不是「ticker 判对的把握」。
+   * 缺失时不得回填 0：0 会被读成「毫无把握」。
+   */
+  confidence?: number | null;
+  tickerConfidence?: number | null;
+  directionConfidence?: number | null;
   rationale: string;
   timeHorizon: string;
   actionChain: ActionChainItem[];
@@ -50,8 +57,9 @@ export interface ActionChainItem {
   triggerCondition: string;
   targetPriceLow?: string;
   targetPriceHigh?: string;
-  confidence: number;
-  status: "draft" | "active" | "watch";
+  /** F5 ActionStep 无分步置信度/状态——缺失即留白，不得回填 0 或「草稿」。 */
+  confidence?: number | null;
+  status?: "draft" | "active" | "watch" | null;
   userCorrected?: boolean;
   userCorrection?: Partial<ActionChainItem>;
 }
@@ -355,7 +363,7 @@ export function RLHFReviewPanel({ isOpen, onClose, onComplete }: RLHFReviewPanel
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <TickerReview
                     ticker={currentItem.ticker}
-                    confidence={currentItem.tickerConfidence}
+                    confidence={currentItem.tickerConfidence ?? currentItem.confidence}
                     correction={corrections.ticker}
                     isCorrecting={activeCorrectionField === "ticker"}
                     onCorrect={(highlightedText) => handleCorrectField("ticker", highlightedText)}
@@ -369,7 +377,7 @@ export function RLHFReviewPanel({ isOpen, onClose, onComplete }: RLHFReviewPanel
 
                   <DirectionReview
                     direction={currentItem.direction}
-                    confidence={currentItem.directionConfidence}
+                    confidence={currentItem.directionConfidence ?? currentItem.confidence}
                     rationale={currentItem.rationale}
                     timeHorizon={currentItem.timeHorizon}
                     correction={corrections.direction}

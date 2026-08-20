@@ -170,17 +170,18 @@ export function ActionChainReview({
                             ? "bg-amber-100 text-amber-700"
                             : "bg-stone-100 text-stone-600"
                       )}>
-                        {action.status === "active" ? "生效" : action.status === "watch" ? "观察" : "草稿"}
+                        {action.status === "active" ? "生效" : action.status === "watch" ? "观察" : action.status === "draft" ? "草稿" : "未标注"}
                       </span>
                     </div>
 
                     <span className={cn(
                       "text-[10px] font-medium",
-                      action.confidence >= 0.8 ? "text-green-600"
+                      action.confidence == null ? "text-foreground/35"
+                        : action.confidence >= 0.8 ? "text-green-600"
                         : action.confidence >= 0.5 ? "text-amber-600"
                           : "text-red-600"
                     )}>
-                      {(action.confidence * 100).toFixed(0)}%
+                      {action.confidence == null ? "—" : `${(action.confidence * 100).toFixed(0)}%`}
                     </span>
                   </div>
 
@@ -293,13 +294,13 @@ export function ActionChainReview({
 
                   <div>
                     <label className="block text-[10px] font-medium text-foreground/50 mb-1">
-                      置信度: {(action.confidence * 100).toFixed(0)}%
+                      置信度: {action.confidence == null ? "—" : `${(action.confidence * 100).toFixed(0)}%`}
                     </label>
                     <input
                       type="range"
                       min="0"
                       max="100"
-                      value={action.confidence * 100}
+                      value={(action.confidence ?? 0.5) * 100}
                       onChange={(e) => updateAction(index, "confidence", parseInt(e.target.value) / 100)}
                       className="w-full accent-morningstar-red"
                     />
@@ -310,7 +311,7 @@ export function ActionChainReview({
                       状态
                     </label>
                     <select
-                      value={action.status}
+                      value={action.status ?? "draft"}
                       onChange={(e) => updateAction(index, "status", e.target.value as "draft" | "active" | "watch")}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-stone-300 rounded-sm focus:border-morningstar-red focus:ring-1 focus:ring-morningstar-red/20 outline-none"
                     >

@@ -8,7 +8,8 @@ export type Direction = "bullish" | "bearish" | "neutral" | "watchlist" | "risk_
 
 export interface DirectionReviewProps {
   direction: Direction;
-  confidence: number;
+  /** F5 只有整条抽取的把握，缺失时留白——0 会被读成「毫无把握」。 */
+  confidence?: number | null;
   rationale: string;
   timeHorizon: string;
   correction?: Direction;
@@ -77,7 +78,14 @@ export function DirectionReview({
   const hasCorrection = Boolean(correction);
   const config = DIRECTION_CONFIG[displayDirection];
   const Icon = config.icon;
-  const confidenceColor = confidence >= 0.8 ? "text-green-600" : confidence >= 0.5 ? "text-amber-600" : "text-red-600";
+  const confidenceColor =
+    confidence == null
+      ? "text-foreground/35"
+      : confidence >= 0.8
+        ? "text-green-600"
+        : confidence >= 0.5
+          ? "text-amber-600"
+          : "text-red-600";
 
   const handleSubmit = () => {
     if (selectedDirection !== direction) {
@@ -124,7 +132,7 @@ export function DirectionReview({
                   </span>
                 </div>
                 <span className={cn("text-xs font-medium", confidenceColor)}>
-                  {(confidence * 100).toFixed(0)}%
+                  {confidence == null ? "—" : `${(confidence * 100).toFixed(0)}%`}
                 </span>
               </div>
 

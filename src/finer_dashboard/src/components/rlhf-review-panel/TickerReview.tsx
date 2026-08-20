@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 
 export interface TickerReviewProps {
   ticker: string;
-  confidence: number;
+  /** F5 只有整条抽取的把握，缺失时留白——0 会被读成「毫无把握」。 */
+  confidence?: number | null;
   correction?: string;
   isCorrecting: boolean;
   onCorrect: (highlightedText?: string) => void;
@@ -31,7 +32,14 @@ export function TickerReview({
 
   const displayTicker = correction || ticker;
   const hasCorrection = Boolean(correction);
-  const confidenceColor = confidence >= 0.8 ? "text-green-600" : confidence >= 0.5 ? "text-amber-600" : "text-red-600";
+  const confidenceColor =
+    confidence == null
+      ? "text-foreground/35"
+      : confidence >= 0.8
+        ? "text-green-600"
+        : confidence >= 0.5
+          ? "text-amber-600"
+          : "text-red-600";
 
   const handleSubmit = () => {
     if (inputValue.trim() && inputValue !== ticker) {
@@ -74,7 +82,7 @@ export function TickerReview({
                 {displayTicker}
               </span>
               <span className={cn("text-xs font-medium", confidenceColor)}>
-                {(confidence * 100).toFixed(0)}%
+                {confidence == null ? "—" : `${(confidence * 100).toFixed(0)}%`}
               </span>
             </div>
 

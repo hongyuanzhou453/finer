@@ -179,16 +179,49 @@ class RLHFFeedbackUpdate(BaseModel):
     preference: Optional[Preference] = None
 
 
-class PendingActionItem(BaseModel):
-    """Item in pending review list."""
+class PendingActionChainStep(BaseModel):
+    """复核面板需要的操作链步骤（camelCase：直接喂前端，不再要中间适配器）。"""
     model_config = ConfigDict(strict=True)
 
+    id: str
+    actionType: str
+    instrumentType: str = ""
+    triggerCondition: str = ""
+    targetPriceLow: Optional[str] = None
+    targetPriceHigh: Optional[str] = None
+    #: F5 ActionStep 没有分步置信度与状态。**不编造**——前端按缺失渲染。
+    confidence: Optional[float] = None
+    status: Optional[str] = None
+
+
+class PendingActionItem(BaseModel):
+    """待复核项。
+
+    字段名刻意用 camelCase 对齐 `RLHFReviewPanel.RLHFReviewItem`：面板拿到
+    响应后是 `setItems(data.items)` 直接赋值、没有适配层，snake_case 会让
+    originalText/rationale/actionChain 全部渲染成 undefined（这正是该面板
+    从未真正跑起来的原因之一）。
+    """
+    model_config = ConfigDict(strict=True)
+
+    id: str
     trade_action_id: str
-    event_id: Optional[str] = None
     content_id: Optional[str] = None
+    sourceFile: str = ""
+    originalText: str = ""
+    extractedAt: Optional[str] = None
+
     ticker: str
     direction: str
-    extracted_at: Optional[datetime] = None
+    rationale: str = ""
+    timeHorizon: str = ""
+    actionChain: List[PendingActionChainStep] = Field(default_factory=list)
+
+    #: F5 只有单一 confidence，没有分字段置信度。给出的是同一个值，
+    #: 语义是「这条抽取整体的把握」，不是「ticker 判对的把握」——
+    #: 前端文案必须如实标注，不得把它读成分字段准确度。
+    confidence: Optional[float] = None
+
     has_feedback: bool = False
     feedback_id: Optional[str] = None
 
@@ -421,13 +454,19 @@ async def get_pending_actions(
     offset: int = Query(0, ge=0),
     has_feedback: Optional[bool] = Query(None, description="Filter by feedback status"),
 ):
-    """Get list of TradeActions pending review.
+    """待人工复核的 canonical F5 TradeAction 列表。
 
-    This endpoint returns actions from the extraction results that
-    may need human feedback.
+    数据源（2026-08-17 修正）：原本 glob 的是 ``data/L0_ingestion/extractions/``
+    ——L0→F0 迁移后该目录**根本不存在**，所以这个端点一直返回空数组，
+    `RLHFReviewPanel` 也就永远没有可复核的条目。而 DPO 实训的前置正是
+    「用该面板对已结算 action 积累偏好对」（docs/specs/2026-07-13-...md P2#8）。
+    现改为读 canonical F5，与记分卡/记录卡同一个 repository。
+
+    只回已结算的 action（有 backtest_result.return_pct）：复核的价值在于
+    「判断对不对」，未结算的还没有对错可言。
     """
-    # Load extraction results from F0 data (legacy L0_ingestion dir)
-    extraction_dir = DATA_ROOT / "L0_ingestion" / "extractions"
+    from finer.services.repository import TradeActionRepository
+
     pending_items: List[PendingActionItem] = []
     index = load_index()
 
@@ -437,47 +476,63 @@ async def get_pending_actions(
         for fb_id, fb in index.get("feedbacks", {}).items()
     }
 
-    if extraction_dir.exists():
-        for extraction_file in extraction_dir.glob("*.json"):
-            try:
-                data = json.loads(extraction_file.read_text(encoding="utf-8"))
-                events = data.get("events", [])
-
-                for event in events:
-                    ticker = event.get("ticker", "")
-                    direction = event.get("direction", "")
-                    event_id = event.get("event_id")
-                    content_id = event.get("content_id")
-
-                    # Create action ID from event
-                    action_id = event_id or f"action_{content_id}_{ticker}"
-                    has_fb = action_id in reviewed_actions
-
-                    # Apply filter
-                    if has_feedback is not None and has_fb != has_feedback:
-                        continue
-
-                    pending_items.append(PendingActionItem(
-                        trade_action_id=action_id,
-                        event_id=event_id,
-                        content_id=content_id,
-                        ticker=ticker,
-                        direction=direction,
-                        extracted_at=event.get("metadata", {}).get("extracted_at"),
-                        has_feedback=has_fb,
-                        feedback_id=reviewed_actions.get(action_id),
-                    ))
-            except (json.JSONDecodeError, KeyError):
-                continue
-
-    # Sort by extracted_at (newest first), then by has_feedback
-    pending_items.sort(
-        key=lambda x: (
-            x.has_feedback,
-            -(datetime.fromisoformat(x.extracted_at).timestamp()
-              if x.extracted_at else 0)
-        )
+    repo = TradeActionRepository(
+        db_path=DATA_ROOT / "cache" / "trade_actions.db",
+        action_dir=DATA_ROOT / "F5_executed",
     )
+    for action in repo.load_all_actions():
+        if (action.metadata or {}).get("superseded_by"):
+            continue
+        br = action.backtest_result
+        if br is None or br.return_pct is None:
+            continue
+
+        action_id = action.trade_action_id
+        has_fb = action_id in reviewed_actions
+        if has_feedback is not None and has_fb != has_feedback:
+            continue
+
+        target = action.target
+        chain = [
+            PendingActionChainStep(
+                id=f"{action_id}-{step.sequence}",
+                actionType=getattr(step.action_type, "value", str(step.action_type)),
+                instrumentType=getattr(
+                    target.instrument_type, "value", str(target.instrument_type or "")
+                ) if target is not None else "",
+                triggerCondition=step.trigger_condition or "",
+                targetPriceLow=(
+                    str(step.target_price_low) if step.target_price_low is not None else None
+                ),
+                targetPriceHigh=(
+                    str(step.target_price_high) if step.target_price_high is not None else None
+                ),
+            )
+            for step in (action.action_chain or [])
+        ]
+
+        pending_items.append(PendingActionItem(
+            id=action_id,
+            trade_action_id=action_id,
+            content_id=action.source.content_id if action.source else None,
+            sourceFile=(action.source.content_id if action.source else "") or "",
+            originalText=(action.source.evidence_text if action.source else "") or "",
+            extractedAt=action.timestamp.isoformat() if action.timestamp else None,
+            ticker=(target.ticker if target else "") or "",
+            direction=getattr(action.direction, "value", str(action.direction)),
+            rationale=action.rationale or "",
+            timeHorizon=action.time_horizon or "",
+            actionChain=chain,
+            confidence=action.confidence,
+            has_feedback=has_fb,
+            feedback_id=reviewed_actions.get(action_id),
+        ))
+
+    # 未复核的排在前面；同组内按抽取时间倒序（extractedAt 是 ISO 字符串，
+    # 字典序即时间序——原代码对 datetime 调 fromisoformat，一旦有数据必崩）。
+    pending_items.sort(key=lambda x: (x.has_feedback, x.extractedAt or ""), reverse=False)
+    pending_items.sort(key=lambda x: x.extractedAt or "", reverse=True)
+    pending_items.sort(key=lambda x: x.has_feedback)
 
     # Apply pagination
     total = len(pending_items)
