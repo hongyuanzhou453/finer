@@ -175,19 +175,27 @@ export default function KOLDetailPage() {
             <div className="text-2xl font-bold tabular-nums text-foreground/30">—</div>
           )}
         </div>
+        {/* 这两格原本是「最大收益 +0.0%」与「平均持仓 0 天」——后端从未提供
+            maxReturn/minReturn/avgHoldingDays，那个 0 是 adapters.ts 硬编码的
+            常量。与其留两个永远的破折号，换成后端真有的两个计数事实。 */}
         <div className="bg-white border border-[var(--table-border)] rounded-sm p-4">
           <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-2 font-bold">
-            最大收益
+            观点数
           </div>
-          <div className={cn("text-2xl font-bold tabular-nums", returnToneClass(kol.stats.maxReturn))}>
-            +{kol.stats.maxReturn.toFixed(1)}%
+          <div className="text-2xl font-bold tabular-nums">
+            {kol.stats.totalOpinions}
           </div>
         </div>
         <div className="bg-white border border-[var(--table-border)] rounded-sm p-4">
           <div className="text-[10px] text-foreground/45 uppercase tracking-[0.14em] mb-2 font-bold">
-            平均持仓
+            已结算
           </div>
-          <div className="text-2xl font-bold tabular-nums">{kol.stats.avgHoldingDays} 天</div>
+          <div className="text-2xl font-bold tabular-nums">
+            {kol.stats.settledOpinions}
+            <span className="ml-1 text-sm font-normal text-foreground/45">
+              / {kol.stats.totalOpinions}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -272,6 +280,14 @@ export default function KOLDetailPage() {
 
       {activeTab === "radar" && (
         <div className="bg-white border border-stone-200 rounded-lg p-8">
+          {/* 后端只返回有数据依据且过效力门的维度；为空时明说，不留空面板。
+              timeliness/clarity/depth 三轴曾是 3.5/3.0/3.5 硬编码常量，
+              已于 2026-08-15 从后端删除。 */}
+          {Object.keys(kol.dimensionScores).length === 0 ? (
+            <div className="text-sm leading-relaxed text-foreground/50">
+              暂无可展示的维度评分：已结算样本不足以支撑比率，或该维度没有测量依据。
+            </div>
+          ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
             {Object.entries(kol.dimensionScores).map(([key, value]) => {
               const labels: Record<string, string> = {
@@ -297,6 +313,7 @@ export default function KOLDetailPage() {
               );
             })}
           </div>
+          )}
         </div>
       )}
 

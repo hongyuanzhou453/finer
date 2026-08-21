@@ -557,13 +557,13 @@ export type KOL = {
   avatar?: string;
   /** 比率/评分字段 nullable：效力门 count_only 时为 null，渲染必须留白。 */
   overallScore: number | null;
-  dimensionScores: {
-    accuracy: number;
-    timeliness: number;
-    clarity: number;
-    depth: number;
-    consistency: number;
-  };
+  /**
+   * 只包含后端**实际返回**的维度。此前是固定五槽（accuracy/timeliness/
+   * clarity/depth/consistency），逼得 adapter 用 0 补齐缺失轴——而
+   * timeliness/clarity/depth 三轴在 2026-08-15 已从后端删除（它们曾是
+   * 3.5/3.0/3.5 的硬编码常量，无任何测量依据）。空对象 = 无维度可展示。
+   */
+  dimensionScores: Record<string, number>;
   accuracy: number | null;
   avgReturn: number | null;
   totalOpinions: number;
@@ -635,9 +635,6 @@ export type KOLDetail = KOL & {
     /** null = 效力门 count_only（不是 0），渲染留白 */
     correctCount: number | null;
     avgReturn: number | null;
-    maxReturn: number;
-    minReturn: number;
-    avgHoldingDays: number;
   };
   timeline: KOLTimelineEvent[];
 };

@@ -365,13 +365,9 @@ export function kolRatingToDetail(
   kolId: string,
 ): KOLDetail {
   const r = resp.rating;
-  const dimScores: KOLDetail["dimensionScores"] = {
-    accuracy: 0,
-    timeliness: 0,
-    clarity: 0,
-    depth: 0,
-    consistency: 0,
-  };
+  // 只装后端**实际返回**的维度。此前初始化为五个 0 再覆盖——效力门未过时
+  // 后端返回 dimensions=[]，于是整屏渲染五个「0.0」分。
+  const dimScores: KOLDetail["dimensionScores"] = {};
   for (const d of resp.dimensions) {
     if (d.dimension in dimScores) {
       dimScores[d.dimension as keyof typeof dimScores] = d.score;
@@ -415,9 +411,8 @@ export function kolRatingToDetail(
       settledOpinions: r.settledOpinions,
       correctCount,
       avgReturn,
-      maxReturn: 0,
-      minReturn: 0,
-      avgHoldingDays: 0,
+      // maxReturn/minReturn/avgHoldingDays 已删除：后端从未提供这三个字段，
+      // 此前硬编码为 0 并被 /kol/[id] 渲染成「最大收益 +0.0%」「平均持仓 0 天」。
     },
     timeline,
   };
