@@ -29,37 +29,49 @@ export interface TimelineNodeProps {
 
 const NODE_WIDTH = 180;
 
+/**
+ * 方向配色。**中国惯例：红=看多/上涨，绿=看空/下跌**（--chart-up/-down）。
+ * 此前这里是西方口径（bullish 绿 / bearish 红），与全仓其余组件正相反——
+ * 与 PerformanceTimeline 2026-08-14 修过的是同一个错。
+ */
 const DIRECTION_STYLES: Record<OpinionDirection, { bg: string; border: string; text: string; icon: React.ReactNode }> = {
   bullish: {
-    bg: "bg-emerald-50",
-    border: "border-emerald-200",
-    text: "text-emerald-600",
+    bg: "bg-[color-mix(in_srgb,var(--chart-up)_8%,transparent)]",
+    border: "border-[color-mix(in_srgb,var(--chart-up)_28%,transparent)]",
+    text: "text-[color:var(--chart-up)]",
     icon: <TrendingUp className="w-4 h-4" strokeWidth={2} />,
   },
   bearish: {
-    bg: "bg-red-50",
-    border: "border-red-200",
-    text: "text-red-600",
+    bg: "bg-[color-mix(in_srgb,var(--chart-down)_10%,transparent)]",
+    border: "border-[color-mix(in_srgb,var(--chart-down)_28%,transparent)]",
+    text: "text-[color:var(--chart-down)]",
     icon: <TrendingDown className="w-4 h-4" strokeWidth={2} />,
   },
   neutral: {
-    bg: "bg-stone-100",
-    border: "border-stone-300",
-    text: "text-stone-500",
+    bg: "bg-[var(--surface-muted)]",
+    border: "border-[var(--table-border)]",
+    text: "text-[var(--ink-soft)]",
     icon: <Minus className="w-4 h-4" strokeWidth={2} />,
   },
   watchlist: {
-    bg: "bg-amber-50",
-    border: "border-amber-200",
-    text: "text-amber-600",
+    bg: "bg-[color-mix(in_srgb,var(--accent-gold)_10%,transparent)]",
+    border: "border-[color-mix(in_srgb,var(--accent-gold)_30%,transparent)]",
+    text: "text-[var(--accent-gold)]",
     icon: <Minus className="w-4 h-4" strokeWidth={2} />,
   },
   risk_warning: {
-    bg: "bg-teal-50",
-    border: "border-teal-200",
-    text: "text-teal-700",
+    bg: "bg-[color-mix(in_srgb,var(--accent-teal)_10%,transparent)]",
+    border: "border-[color-mix(in_srgb,var(--accent-teal)_30%,transparent)]",
+    text: "text-[var(--accent-teal)]",
     icon: <TrendingDown className="w-4 h-4" strokeWidth={2} />,
   },
+};
+
+/** 口径标签与配色。券商=金（口径标注，不是方向），KOL=墨。 */
+const SIGNAL_CLASS_META: Record<string, { label: string; color: string }> = {
+  broker_recommendation: { label: "券商 · 个股评级", color: "var(--accent-gold)" },
+  broker_sector_view: { label: "券商 · 板块观点", color: "var(--accent-gold)" },
+  kol_statement: { label: "KOL 自述", color: "var(--ink-soft)" },
 };
 
 const DIRECTION_LABELS: Record<OpinionDirection, string> = {
@@ -71,7 +83,7 @@ const DIRECTION_LABELS: Record<OpinionDirection, string> = {
 };
 
 const VERIFICATION_ICONS: Record<VerificationStatus, React.ReactNode> = {
-  success: <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />,
+  success: <CheckCircle className="w-3.5 h-3.5 text-success" />,
   failed: <XCircle className="w-3.5 h-3.5 text-red-500" />,
   pending: <Clock className="w-3.5 h-3.5 text-amber-500" />,
 };
@@ -99,10 +111,14 @@ function formatConfidence(confidence: number): string {
   return `${Math.round(confidence * 100)}%`;
 }
 
+/**
+ * 置信度进度条配色。**置信度不是方向**——用中性墨阶而非红绿，
+ * 否则同一张卡上「高置信度=绿」会与「看空=绿」撞在一起读不出区别。
+ */
 function getConfidenceColor(confidence: number): string {
-  if (confidence >= 0.8) return "bg-emerald-500";
-  if (confidence >= 0.6) return "bg-amber-500";
-  return "bg-stone-400";
+  if (confidence >= 0.8) return "bg-[color-mix(in_srgb,var(--foreground)_62%,transparent)]";
+  if (confidence >= 0.6) return "bg-[color-mix(in_srgb,var(--foreground)_38%,transparent)]";
+  return "bg-[color-mix(in_srgb,var(--foreground)_20%,transparent)]";
 }
 
 // ============================================
@@ -117,8 +133,10 @@ export function TimelineNode({
 }: TimelineNodeProps) {
   const [isHovered, setIsHovered] = useState(false);
 
-  const dirStyle = DIRECTION_STYLES[opinion.direction];
-  const verificationIcon = VERIFICATION_ICONS[opinion.verificationStatus];
+  // 契约外取值兜底：后端新增方向/状态时页面降级而不是白屏
+  const dirStyle = DIRECTION_STYLES[opinion.direction] ?? DIRECTION_STYLES.neutral;
+  const verificationIcon =
+    VERIFICATION_ICONS[opinion.verificationStatus] ?? VERIFICATION_ICONS.pending;
 
   // 计算节点尺寸
   const nodeWidth = Math.round(NODE_WIDTH * zoom);
@@ -153,7 +171,7 @@ export function TimelineNode({
           </div>
         </div>
 
-        {/* 标的 */}
+        {/* 标的 + 口径 */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-sm font-bold text-foreground truncate">
             {opinion.ticker}
@@ -164,6 +182,22 @@ export function TimelineNode({
             </span>
           )}
         </div>
+        {/* R6 口径隔离：券商研报与 KOL 自述基准率不同，必须可分辨。
+            现役语料 4,919 条里绝大多数是券商研报——不标注会被整体读成 KOL 观点。 */}
+        {opinion.signalClass && SIGNAL_CLASS_META[opinion.signalClass] ? (
+          <div className="mb-2">
+            <span
+              className="inline-flex items-center rounded-sm px-1.5 py-0.5 text-[9px] font-bold tracking-wider"
+              style={{
+                color: SIGNAL_CLASS_META[opinion.signalClass].color,
+                border: `1px solid color-mix(in srgb, ${SIGNAL_CLASS_META[opinion.signalClass].color} 32%, transparent)`,
+                backgroundColor: `color-mix(in srgb, ${SIGNAL_CLASS_META[opinion.signalClass].color} 10%, transparent)`,
+              }}
+            >
+              {SIGNAL_CLASS_META[opinion.signalClass].label}
+            </span>
+          </div>
+        ) : null}
 
         {/* 方向 + 置信度 */}
         <div className="flex items-center gap-2 mb-3">
@@ -174,7 +208,7 @@ export function TimelineNode({
           )}>
             {dirStyle.icon}
             <span className="text-[11px] font-bold uppercase tracking-wide">
-              {DIRECTION_LABELS[opinion.direction]}
+              {DIRECTION_LABELS[opinion.direction] ?? opinion.direction}
             </span>
           </div>
         </div>

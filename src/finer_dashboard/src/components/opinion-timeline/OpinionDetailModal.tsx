@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { TimelineOpinion, OpinionDirection, ActionStep } from "./OpinionTimeline";
 import { cn } from "@/lib/utils";
+import { returnToneClass } from "@/lib/finance-format";
 
 // ============================================
 // 类型定义
@@ -55,14 +56,15 @@ const STYLES = {
 const DIRECTION_CONFIG: Record<OpinionDirection, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
   bullish: {
     label: "看多",
-    color: "text-emerald-600",
-    bg: "bg-emerald-50 border-emerald-200",
+    // 中国惯例：红=看多。此前是西方口径，与全仓其余组件正相反。
+    color: "text-[color:var(--chart-up)]",
+    bg: "bg-[color-mix(in_srgb,var(--chart-up)_8%,transparent)] border-[color-mix(in_srgb,var(--chart-up)_28%,transparent)]",
     icon: <TrendingUp className="w-5 h-5" />,
   },
   bearish: {
     label: "看空",
-    color: "text-red-600",
-    bg: "bg-red-50 border-red-200",
+    color: "text-[color:var(--chart-down)]",
+    bg: "bg-[color-mix(in_srgb,var(--chart-down)_10%,transparent)] border-[color-mix(in_srgb,var(--chart-down)_28%,transparent)]",
     icon: <TrendingDown className="w-5 h-5" />,
   },
   neutral: {
@@ -86,7 +88,9 @@ const DIRECTION_CONFIG: Record<OpinionDirection, { label: string; color: string;
 };
 
 const VERIFICATION_CONFIG = {
-  success: { label: "验证成功", icon: <CheckCircle className="w-4 h-4 text-emerald-500" />, color: "text-emerald-600", bg: "bg-emerald-50" },
+  // 验证成功/失败是**结算结论**，不是行情方向——走 success/morningstar-red，
+  // 不占用 --chart-up/-down，否则与同屏的看多看空撞色。
+  success: { label: "验证成功", icon: <CheckCircle className="w-4 h-4 text-success" />, color: "text-success", bg: "bg-success/10" },
   failed: { label: "验证失败", icon: <XCircle className="w-4 h-4 text-red-500" />, color: "text-red-600", bg: "bg-red-50" },
   pending: { label: "待验证", icon: <Clock className="w-4 h-4 text-amber-500" />, color: "text-amber-600", bg: "bg-amber-50" },
 };
@@ -117,7 +121,7 @@ function actionTypeLabel(
   if (actionType === "reduce") {
     return direction === "bullish" ? "减空仓" : "减仓";
   }
-  return ACTION_TYPE_LABELS[actionType];
+  return ACTION_TYPE_LABELS[actionType] ?? actionType;
 }
 
 // ============================================
@@ -131,10 +135,10 @@ interface VerificationResultProps {
 }
 
 function VerificationResult({ status, priceChange, holdingDays }: VerificationResultProps) {
-  const config = VERIFICATION_CONFIG[status];
+  const config = VERIFICATION_CONFIG[status] ?? VERIFICATION_CONFIG.pending;
 
   return (
-    <div className={cn(STYLES.card, status === "success" && "border-emerald-200", status === "failed" && "border-red-200")}>
+    <div className={cn(STYLES.card, status === "success" && "border-success/30", status === "failed" && "border-[color-mix(in_srgb,var(--morningstar-red)_30%,transparent)]")}>
       <div className="flex items-center gap-3 mb-4">
         {config.icon}
         <span className={cn("text-sm font-bold", config.color)}>{config.label}</span>
@@ -143,9 +147,10 @@ function VerificationResult({ status, priceChange, holdingDays }: VerificationRe
       {status !== "pending" && priceChange !== undefined && (
         <div className="grid grid-cols-2 gap-4">
           <div className="text-center p-4 rounded-lg bg-stone-50">
+            {/* 收益是方向量：红涨绿跌（中国惯例）。此前这里是反的。 */}
             <div className={cn(
-              "text-2xl font-bold",
-              priceChange >= 0 ? "text-emerald-600" : "text-red-600"
+              "text-2xl font-bold tabular-nums",
+              returnToneClass(priceChange)
             )}>
               {priceChange >= 0 ? "+" : ""}{priceChange.toFixed(2)}%
             </div>
@@ -202,8 +207,11 @@ function ActionChainDisplay({ steps, direction }: ActionChainDisplayProps) {
             <div className="flex items-center gap-2 mb-2">
               <span className={cn(
                 "px-2 py-0.5 rounded text-xs font-bold",
-                (step.actionType === "long" || step.actionType === "add") && "bg-emerald-100 text-emerald-700",
-                step.actionType === "short" && "bg-red-100 text-red-700",
+                // long/add = 建立多头暴露 → 红；short = 空头 → 绿（中国惯例）
+                (step.actionType === "long" || step.actionType === "add") &&
+                  "bg-[color-mix(in_srgb,var(--chart-up)_12%,transparent)] text-[color:var(--chart-up)]",
+                step.actionType === "short" &&
+                  "bg-[color-mix(in_srgb,var(--chart-down)_14%,transparent)] text-[color:var(--chart-down)]",
                 step.actionType === "reduce" && "bg-orange-100 text-orange-700",
                 step.actionType === "watch" && "bg-blue-100 text-blue-700",
                 (step.actionType === "close_long" || step.actionType === "close_short") && "bg-purple-100 text-purple-700"
@@ -265,11 +273,15 @@ interface RLHFStatusProps {
 function RLHFStatus({ status = "pending", rating }: RLHFStatusProps) {
   const statusConfig = {
     pending: { label: "待评价", color: "text-amber-600", bg: "bg-amber-50" },
-    reviewed: { label: "已评价", color: "text-emerald-600", bg: "bg-emerald-50" },
+    // RLHF 复核状态是流程语义，走 success token 不占方向色
+    reviewed: { label: "已评价", color: "text-success", bg: "bg-success/10" },
     skipped: { label: "已跳过", color: "text-stone-500", bg: "bg-stone-100" },
   };
 
-  const config = statusConfig[status];
+  // 后端 rlhf_status 是 Optional[str] → JSON `null`。默认参数只对 undefined
+  // 生效，`statusConfig[null]` 是 undefined，取 .bg 直接 TypeError。
+  // 这个组件从未被挂载过，所以这条崩溃两个月没人撞到。
+  const config = statusConfig[status ?? "pending"] ?? statusConfig.pending;
 
   return (
     <div className={cn(STYLES.card, config.bg)}>
@@ -329,7 +341,8 @@ export function OpinionDetailModal({ opinion, open, onClose }: OpinionDetailModa
 
   if (!open) return null;
 
-  const dirConfig = DIRECTION_CONFIG[opinion.direction];
+  // 契约外方向兜底到中性，不让未知取值把整页打崩
+  const dirConfig = DIRECTION_CONFIG[opinion.direction] ?? DIRECTION_CONFIG.neutral;
 
   return (
     <div

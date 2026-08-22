@@ -269,8 +269,8 @@ function ActiveFilterTags({
         {filters.directions.map(dir => (
           <span key={dir} className={cn(
             STYLES.tag,
-            dir === "bullish" && "bg-emerald-50 text-emerald-600 border border-emerald-200",
-            dir === "bearish" && "bg-red-50 text-red-600 border border-red-200",
+            dir === "bullish" && "bg-[color-mix(in_srgb,var(--chart-up)_8%,transparent)] text-[color:var(--chart-up)] border border-[color-mix(in_srgb,var(--chart-up)_28%,transparent)]",
+            dir === "bearish" && "bg-[color-mix(in_srgb,var(--chart-down)_10%,transparent)] text-[color:var(--chart-down)] border border-[color-mix(in_srgb,var(--chart-down)_28%,transparent)]",
             dir === "neutral" && "bg-stone-100 text-stone-600 border border-stone-300"
           )}>
             {DIRECTION_OPTIONS.find(o => o.value === dir)?.label}

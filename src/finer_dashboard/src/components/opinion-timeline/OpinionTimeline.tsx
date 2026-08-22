@@ -10,6 +10,7 @@ import {
   RefreshCw,
   GripHorizontal,
 } from "lucide-react";
+import type { SignalClass } from "@/lib/contracts";
 import { TimelineNode } from "./TimelineNode";
 import { TimelineFilter, TimelineFilters } from "./TimelineFilter";
 import { OpinionDetailModal } from "./OpinionDetailModal";
@@ -49,6 +50,12 @@ export interface TimelineOpinion {
   author?: string;
   platform?: string;
   market?: string; // target market, e.g. "CN"
+  /**
+   * kol_statement / broker_recommendation / broker_sector_view。
+   * 后端一直在发，这个组件此前没声明——现役 4,919 条里绝大多数是券商研报，
+   * 不标出来会被整体读成 KOL 观点（R6 口径隔离的前端义务）。
+   */
+  signalClass?: SignalClass;
   traceStatus?: string; // canonical_trace_status of the F5 action
   instrumentType?: string; // stock/etf/index_future/…/unspecified (concept downgrade)
   executableAt?: string; // canonical execution clock (real signal time)
