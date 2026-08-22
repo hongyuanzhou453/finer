@@ -153,7 +153,7 @@ const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
   done: { label: "已就绪", cls: "bg-[rgba(16,185,129,0.12)] text-[#0f7a54]" },
   pending: { label: "待授权", cls: "bg-[rgba(155,123,69,0.14)] text-[var(--accent-gold)]" },
   user: { label: "待实跑", cls: "bg-[var(--surface-muted)] text-foreground/55" },
-  active: { label: "进行中", cls: "bg-[rgba(159,29,34,0.10)] text-morningstar-red" },
+  active: { label: "进行中", cls: "bg-[color-mix(in_srgb,var(--morningstar-red)_10%,transparent)] text-morningstar-red" },
   locked: { label: "方法论已锁定", cls: "bg-[rgba(155,123,69,0.14)] text-[var(--accent-gold)]" },
   research: { label: "预研边界", cls: "bg-[var(--surface-muted)] text-foreground/55" },
 };
@@ -554,7 +554,7 @@ export default function TrainingPage() {
                     <div className="border-l border-[var(--grid-line)] bg-[rgba(16,185,129,0.04)] px-4 py-4 text-foreground/85">
                       {r.chosen}
                     </div>
-                    <div className="border-l border-[var(--grid-line)] bg-[rgba(159,29,34,0.04)] px-4 py-4 text-foreground/85">
+                    <div className="border-l border-[var(--grid-line)] bg-[color-mix(in_srgb,var(--morningstar-red)_4%,transparent)] px-4 py-4 text-foreground/85">
                       {r.rejected}
                     </div>
                   </div>
@@ -578,7 +578,7 @@ export default function TrainingPage() {
                       {REAL_PAIR_CASE.chosen}
                     </p>
                   </div>
-                  <div className="rounded-sm border border-[#ecd1d3] bg-[rgba(159,29,34,0.04)] p-3">
+                  <div className="rounded-sm border border-[#ecd1d3] bg-[color-mix(in_srgb,var(--morningstar-red)_4%,transparent)] p-3">
                     <div className="flex items-center gap-1.5 text-[12px] font-bold text-morningstar-red">
                       <X className="h-3.5 w-3.5" strokeWidth={2.5} /> rejected
                     </div>

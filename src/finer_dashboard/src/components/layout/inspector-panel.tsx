@@ -208,7 +208,7 @@ export function InspectorPanel({
                     {selectedAsset?.contentType || "untyped"}
                   </span>
                 </div>
-                <div className="mt-3 inline-flex items-center rounded-full border border-[rgba(159,29,34,0.18)] bg-[rgba(159,29,34,0.07)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-morningstar-red">
+                <div className="mt-3 inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--morningstar-red)_18%,transparent)] bg-[color-mix(in_srgb,var(--morningstar-red)_7%,transparent)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-morningstar-red">
                   Current stage {tier}
                 </div>
               </div>
@@ -318,7 +318,7 @@ export function InspectorPanel({
             {selectedAsset?.tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full border border-[rgba(159,29,34,0.12)] bg-[rgba(159,29,34,0.05)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-morningstar-red"
+                className="rounded-full border border-[color-mix(in_srgb,var(--morningstar-red)_12%,transparent)] bg-[color-mix(in_srgb,var(--morningstar-red)_5%,transparent)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-morningstar-red"
               >
                 {tag}
               </span>

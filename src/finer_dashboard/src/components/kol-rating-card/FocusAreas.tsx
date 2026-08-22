@@ -207,14 +207,14 @@ export function FocusRadar({
         {/* Data polygon */}
         <path
           d={pathD}
-          fill="rgba(159,29,34,0.15)"
-          stroke="rgba(159,29,34,0.6)"
+          fill="color-mix(in srgb, var(--morningstar-red) 15%, transparent)"
+          stroke="color-mix(in srgb, var(--morningstar-red) 60%, transparent)"
           strokeWidth={2}
         />
 
         {/* Data points */}
         {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={3} fill="#9f1d22" />
+          <circle key={i} cx={p.x} cy={p.y} r={3} fill="var(--morningstar-red)" />
         ))}
       </svg>
 

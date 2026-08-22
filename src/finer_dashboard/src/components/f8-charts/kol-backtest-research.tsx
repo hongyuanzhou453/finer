@@ -15,8 +15,9 @@ const chartColors = {
   faint: "#cbd5e1",
   grid: "rgba(54, 38, 24, 0.1)",
   gridSoft: "rgba(54, 38, 24, 0.05)",
-  band: "rgba(159, 29, 34, 0.05)",
-  subject: "#9f1d22",
+  band: "color-mix(in srgb, var(--morningstar-red) 5%, transparent)",
+  // 主体线用品牌红。此前硬编码 #9f1d22，与 token 统一后（#e11b22）分叉。
+  subject: "var(--morningstar-red)",
   benchmark: "#1e293b",
   peer: "#94a3b8",
   good: "#e11b22",

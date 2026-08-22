@@ -314,7 +314,7 @@ export function AnnotationWorkbench({
                 {payload.ambiguityNotes.map((note) => (
                   <div
                     key={note}
-                    className="rounded-sm border border-[rgba(159,29,34,0.08)] bg-[rgba(159,29,34,0.04)] px-4 py-3 text-[13px] leading-relaxed text-foreground/75"
+                    className="rounded-sm border border-[color-mix(in_srgb,var(--morningstar-red)_8%,transparent)] bg-[color-mix(in_srgb,var(--morningstar-red)_4%,transparent)] px-4 py-3 text-[13px] leading-relaxed text-foreground/75"
                   >
                     {note}
                   </div>

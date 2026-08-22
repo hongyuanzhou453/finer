@@ -191,7 +191,7 @@ export function KOLRatingCard({
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
             {/* Avatar */}
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[rgba(159,29,34,0.1)] to-[rgba(31,106,103,0.1)] flex items-center justify-center text-lg font-bold text-foreground/80 border border-[rgba(95,67,40,0.12)]">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[color-mix(in_srgb,var(--morningstar-red)_10%,transparent)] to-[rgba(31,106,103,0.1)] flex items-center justify-center text-lg font-bold text-foreground/80 border border-[rgba(95,67,40,0.12)]">
               {rating.name.charAt(0)}
             </div>
             <div>

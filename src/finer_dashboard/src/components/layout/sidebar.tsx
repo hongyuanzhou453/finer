@@ -143,7 +143,7 @@ export function Sidebar({
             <div className="text-[10px] font-bold text-[var(--ink-soft)] uppercase tracking-[0.18em]">
               Current workflow
             </div>
-            <span className="rounded-full bg-[rgba(159,29,34,0.08)] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-morningstar-red">
+            <span className="rounded-full bg-[color-mix(in_srgb,var(--morningstar-red)_8%,transparent)] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-morningstar-red">
               {activeItem.badge}
             </span>
           </div>
@@ -173,7 +173,7 @@ export function Sidebar({
                   className={cn(
                     "w-full rounded-sm border px-3 py-2.5 text-left transition-all duration-150",
                     isActive
-                      ? "border-[rgba(159,29,34,0.2)] bg-[rgba(159,29,34,0.06)] shadow-sm"
+                      ? "border-[color-mix(in_srgb,var(--morningstar-red)_20%,transparent)] bg-[color-mix(in_srgb,var(--morningstar-red)_6%,transparent)] shadow-sm"
                       : "border-transparent bg-transparent hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
                   )}
                 >
@@ -182,7 +182,7 @@ export function Sidebar({
                       className={cn(
                         "mt-0.5 rounded-sm border p-2",
                         isActive
-                          ? "border-[rgba(159,29,34,0.16)] bg-white text-morningstar-red"
+                          ? "border-[color-mix(in_srgb,var(--morningstar-red)_16%,transparent)] bg-white text-morningstar-red"
                           : "border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] text-[var(--ink-soft)]"
                       )}
                     >
@@ -230,7 +230,7 @@ export function Sidebar({
                   className={cn(
                     "w-full rounded-sm border px-3 py-2.5 text-left transition-all duration-150",
                     isActive
-                      ? "border-[rgba(159,29,34,0.2)] bg-[rgba(159,29,34,0.06)] shadow-sm"
+                      ? "border-[color-mix(in_srgb,var(--morningstar-red)_20%,transparent)] bg-[color-mix(in_srgb,var(--morningstar-red)_6%,transparent)] shadow-sm"
                       : "border-transparent bg-transparent hover:border-[rgba(95,67,40,0.1)] hover:bg-[rgba(255,252,247,0.62)]"
                   )}
                 >
@@ -239,7 +239,7 @@ export function Sidebar({
                       className={cn(
                         "mt-0.5 rounded-sm border p-2",
                         isActive
-                          ? "border-[rgba(159,29,34,0.16)] bg-white text-morningstar-red"
+                          ? "border-[color-mix(in_srgb,var(--morningstar-red)_16%,transparent)] bg-white text-morningstar-red"
                           : "border-[rgba(95,67,40,0.1)] bg-[rgba(99,76,55,0.04)] text-[var(--ink-soft)]"
                       )}
                     >

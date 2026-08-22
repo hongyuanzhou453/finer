@@ -88,7 +88,7 @@ function OpinionRow({
       className={cn(
         "flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer",
         "bg-white border-[rgba(95,67,40,0.08)]",
-        "hover:border-[rgba(159,29,34,0.2)] hover:shadow-sm"
+        "hover:border-[color-mix(in_srgb,var(--morningstar-red)_20%,transparent)] hover:shadow-sm"
       )}
       onClick={onClick}
     >

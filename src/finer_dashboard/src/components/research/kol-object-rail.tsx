@@ -133,7 +133,7 @@ export function KolObjectRail({
                     className={cn(
                       "relative w-full border-b border-[var(--grid-line)] px-5 py-3.5 text-left transition-colors",
                       active
-                        ? "bg-[rgba(159,29,34,0.05)]"
+                        ? "bg-[color-mix(in_srgb,var(--morningstar-red)_5%,transparent)]"
                         : "hover:bg-[rgba(99,76,55,0.04)]",
                     )}
                   >

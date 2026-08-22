@@ -42,7 +42,7 @@ export function MainBoard({
         <div className="flex flex-1 min-w-[min(100%,34rem)] flex-wrap items-center gap-5">
           <div className="min-w-[16rem] flex-1 space-y-1">
             <div className="flex items-center gap-3">
-              <span className="shrink-0 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em] uppercase rounded-full border border-[rgba(159,29,34,0.18)] bg-[rgba(159,29,34,0.07)] text-morningstar-red">
+              <span className="shrink-0 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em] uppercase rounded-full border border-[color-mix(in_srgb,var(--morningstar-red)_18%,transparent)] bg-[color-mix(in_srgb,var(--morningstar-red)_7%,transparent)] text-morningstar-red">
                 {stageLabel}
               </span>
               <h2 className="min-w-0 text-[18px] font-bold text-foreground/90 tracking-tight">{title}</h2>

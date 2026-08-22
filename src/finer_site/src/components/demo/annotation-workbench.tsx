@@ -533,7 +533,7 @@ export function AnnotationWorkbench({
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-sm border border-[#ecd1d3] bg-[rgba(159,29,34,0.03)] p-3">
+                  <div className="rounded-sm border border-[#ecd1d3] bg-[color-mix(in_srgb,var(--morningstar-red)_3%,transparent)] p-3">
                     <div className="flex items-center gap-1.5 text-[11px] font-bold text-morningstar-red">
                       <X className="h-3.5 w-3.5" strokeWidth={2.5} /> rejected · 模型原错
                     </div>
@@ -652,7 +652,7 @@ export function AnnotationWorkbench({
                   <SourceCard text={f6.passage} />
                 </div>
 
-                <div className="mt-3 rounded-sm border border-[#ecd1d3] bg-[rgba(159,29,34,0.03)] p-3">
+                <div className="mt-3 rounded-sm border border-[#ecd1d3] bg-[color-mix(in_srgb,var(--morningstar-red)_3%,transparent)] p-3">
                   <div className="flex items-center gap-1.5 text-[11px] font-bold text-morningstar-red">
                     <X className="h-3.5 w-3.5" strokeWidth={2.5} /> 模型 F5 抽取（待复核）
                   </div>

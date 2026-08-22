@@ -453,7 +453,7 @@ export default function TrainingPage() {
                     <div className="border-l border-[var(--grid-line)] bg-[rgba(16,185,129,0.04)] px-4 py-4 text-foreground/85">
                       {r.chosen}
                     </div>
-                    <div className="border-l border-[var(--grid-line)] bg-[rgba(159,29,34,0.04)] px-4 py-4 text-foreground/85">
+                    <div className="border-l border-[var(--grid-line)] bg-[color-mix(in_srgb,var(--morningstar-red)_4%,transparent)] px-4 py-4 text-foreground/85">
                       {r.rejected}
                     </div>
                   </div>
@@ -477,7 +477,7 @@ export default function TrainingPage() {
                       {REAL_PAIR_CASE.chosen}
                     </p>
                   </div>
-                  <div className="rounded-sm border border-[#ecd1d3] bg-[rgba(159,29,34,0.04)] p-3">
+                  <div className="rounded-sm border border-[#ecd1d3] bg-[color-mix(in_srgb,var(--morningstar-red)_4%,transparent)] p-3">
                     <div className="flex items-center gap-1.5 text-[12px] font-bold text-morningstar-red">
                       <X className="h-3.5 w-3.5" strokeWidth={2.5} /> rejected
                     </div>

@@ -19,7 +19,13 @@
   --surface-strong: rgba(255, 255, 255, 0.88);
   --grid-line: rgba(54, 38, 24, 0.1);
   --ink-soft: rgba(24, 21, 18, 0.64);
-  --morningstar-red: #9f1d22;
+  /* 品牌红。2026-08-22 统一为 #e11b22——此前 @theme 的
+     --color-morningstar-red（工具类 bg-/text-morningstar-red 的来源）
+     是 #e11b22，而这里的 var(--morningstar-red) 是 #9f1d22：
+     同名两值，site 走工具类、dashboard 走 var，两个 app 屏幕上的
+     「晨星红」是两个颜色。取值与 --chart-up 相同但语义通道不同
+     （品牌 vs 行情上涨），保持两个名字。 */
+  --morningstar-red: #e11b22;
   --accent-gold: #9b7b45;
   --accent-teal: #1f6a67;
   --shadow-soft: 0 12px 30px rgba(64, 44, 27, 0.08);
@@ -27,7 +33,7 @@
   /* Morningstar Chart & Data Tokens */
   --chart-benchmark: #1e293b;
   --chart-peer: #94a3b8;
-  --chart-drawdown: rgba(159, 29, 34, 0.15);
+  --chart-drawdown: color-mix(in srgb, var(--morningstar-red) 15%, transparent);
   --chart-up: #e11b22;
   --chart-down: #10b981;
   --table-border: #cbd5e1;
@@ -95,7 +101,7 @@ h1, h2, h3, h4 {
 }
 
 ::selection {
-  background: rgba(159, 29, 34, 0.16);
+  background: color-mix(in srgb, var(--morningstar-red) 16%, transparent);
 }
 
 button,
